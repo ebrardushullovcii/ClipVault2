@@ -1,5 +1,17 @@
 # clangd configuration for ClipVault
 # This helps the language server understand the project structure
+# 
+# SETUP INSTRUCTIONS:
+# 1. Install LLVM (includes clangd): scoop install llvm
+# 2. Build project once: .\build.ps1  
+# 3. Install "clangd" extension in VS Code/Cursor (NOT Microsoft's C/C++ extension)
+# 4. Restart VS Code/Cursor
+# 5. Open any .cpp file - you should see autocomplete and diagnostics
+#
+# TROUBLESHOOTING:
+# - If clangd not found in PATH: Restart terminal or VS Code
+# - If no autocomplete: Check build/compile_commands.json exists
+# - If OBS headers not found: Run .\build.ps1 to generate compile commands
 
 CompileFlags:
   # Add missing includes that clangd might not find automatically
