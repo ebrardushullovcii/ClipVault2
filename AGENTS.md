@@ -22,6 +22,46 @@
 .\bin\ClipVault.exe
 ```
 
+## Language Server (clangd)
+
+**clangd** provides IDE features: autocomplete, go-to-definition, real-time error checking.
+
+### Install clangd
+
+```powershell
+# Via scoop (recommended)
+scoop install llvm
+
+# Or download from https://github.com/clangd/clangd/releases
+```
+
+### Setup
+
+1. **Generate compile commands** (required for clangd to understand includes):
+```powershell
+# Build once to generate compile_commands.json in build/
+.\build.ps1
+```
+
+2. **Editor setup**:
+   - **VS Code**: Install "clangd" extension (NOT Microsoft's C/C++ extension)
+   - **Cursor**: Same as VS Code - install clangd extension
+   - **Other editors**: See https://clangd.llvm.org/installation.html
+
+### Configuration Files
+
+- `.clangd` - clangd configuration with OBS-specific settings
+- `CMakePresets.json` - CMake preset to ensure compile_commands.json is generated
+- `build/compile_commands.json` - Auto-generated on build, tells clangd how files are compiled
+
+### Verify LSP Works
+
+1. Open any `.cpp` file in editor
+2. You should see:
+   - Autocomplete on `#include <obs.h>` types
+   - Error squiggles for invalid code
+   - "Go to definition" on OBS functions (F12 in VS Code)
+
 ## Testing
 
 **No automated test suite.** Tests are manual verification per TESTING.md:

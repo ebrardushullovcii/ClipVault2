@@ -1,0 +1,36 @@
+# clangd configuration for ClipVault
+# This helps the language server understand the project structure
+
+CompileFlags:
+  # Add missing includes that clangd might not find automatically
+  Add:
+    - -xc++
+    - -std=c++17
+    - -Wall
+    - -Wextra
+    - -DWIN32_LEAN_AND_MEAN
+    - -DNOMINMAX
+    - -D_CRT_SECURE_NO_WARNINGS
+
+  # Remove any flags that might confuse clangd
+  Remove:
+    - -fno-exceptions
+
+Diagnostics:
+  # Suppress common false positives in Windows/OBS code
+  Suppress:
+    - "unknown-argument"
+    - "pragma-once-outside-header"
+
+Index:
+  # Enable background indexing for better code navigation
+  Background: Build
+
+# Tell clangd where to find the compile commands
+CompileCommandsDir: build
+
+# Extra includes for OBS headers
+InlayHints:
+  Enabled: true
+  ParameterNames: true
+  DeducedTypes: true
