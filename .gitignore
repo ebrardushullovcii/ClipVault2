@@ -1,0 +1,53 @@
+# Build output
+bin/
+build/
+out/
+
+# But keep config templates
+!bin/config/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Makefile
+
+# Visual Studio
+.vs/
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+Debug/
+Release/
+x64/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs (local only)
+*.log
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Third party builds (keep submodule, ignore build)
+third_party/obs-build/
+
+# Local config overrides
+config/settings.local.json
+
+# Cache files
+.cache/
+.claude/
+
+# Third party source (we clone this separately)
+third_party/obs-studio-src/
+third_party/obs-download/
+third_party/*.zip

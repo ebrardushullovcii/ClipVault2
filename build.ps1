@@ -1,0 +1,132 @@
+<#
+.SYNOPSIS
+    Build script for ClipVault
+
+.PARAMETER Clean
+    Remove build directory before building
+
+.PARAMETER Run
+    Run the application after building
+
+.PARAMETER Debug
+    Build with debug configuration
+
+.PARAMETER Setup
+    First-time setup (clone OBS, build libobs)
+
+.EXAMPLE
+    .\build.ps1
+    .\build.ps1 -Clean
+    .\build.ps1 -Run
+    .\build.ps1 -Setup
+#>
+
+param(
+    [switch]$Clean,
+    [switch]$Run,
+    [switch]$Debug,
+    [switch]$Setup
+)
+
+$ErrorActionPreference = "Stop"
+$ProjectRoot = $PSScriptRoot
+
+Write-Host "=== ClipVault Build ===" -ForegroundColor Cyan
+
+# Check for required tools
+function Check-Tool {
+    param([string]$Name, [string]$Command)
+
+    if (!(Get-Command $Command -ErrorAction SilentlyContinue)) {
+        Write-Host "ERROR: $Name not found. Install with: scoop install $Name" -ForegroundColor Red
+        exit 1
+    }
+}
+
+Check-Tool "CMake" "cmake"
+Check-Tool "MinGW" "g++"
+
+# Setup - clone OBS and build libobs
+if ($Setup) {
+    Write-Host "`n[Setup] This will clone OBS Studio and build libobs..." -ForegroundColor Yellow
+
+    # Create third_party directory
+    $ThirdParty = Join-Path $ProjectRoot "third_party"
+    if (!(Test-Path $ThirdParty)) {
+        New-Item -ItemType Directory -Path $ThirdParty | Out-Null
+    }
+
+    # Clone OBS if not present
+    $ObsDir = Join-Path $ThirdParty "obs-studio"
+    if (!(Test-Path $ObsDir)) {
+        Write-Host "Cloning OBS Studio (this may take a while)..."
+        git clone --depth 1 --branch 30.0.0 https://github.com/obsproject/obs-studio.git $ObsDir
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: Failed to clone OBS Studio" -ForegroundColor Red
+            exit 1
+        }
+    } else {
+        Write-Host "OBS Studio already cloned"
+    }
+
+    Write-Host "`n[Setup] OBS cloned. Building libobs will be added in Phase 1.2" -ForegroundColor Green
+    Write-Host "For now, the basic build system is ready.`n"
+}
+
+# Clean
+if ($Clean) {
+    Write-Host "`n[Clean] Removing build directory..."
+    $BuildDir = Join-Path $ProjectRoot "build"
+    if (Test-Path $BuildDir) {
+        Remove-Item -Recurse -Force $BuildDir
+    }
+
+    $BinExe = Join-Path $ProjectRoot "bin\ClipVault.exe"
+    if (Test-Path $BinExe) {
+        Remove-Item -Force $BinExe
+    }
+}
+
+# Create build directory
+$BuildDir = Join-Path $ProjectRoot "build"
+if (!(Test-Path $BuildDir)) {
+    New-Item -ItemType Directory -Path $BuildDir | Out-Null
+}
+
+# Configure
+Write-Host "`n[Configure] Running CMake..."
+$BuildType = if ($Debug) { "Debug" } else { "Release" }
+
+Push-Location $BuildDir
+try {
+    cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=$BuildType
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: CMake configuration failed" -ForegroundColor Red
+        exit 1
+    }
+
+    # Build
+    Write-Host "`n[Build] Compiling..."
+    cmake --build . --parallel
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: Build failed" -ForegroundColor Red
+        exit 1
+    }
+} finally {
+    Pop-Location
+}
+
+Write-Host "`n[Success] Build complete!" -ForegroundColor Green
+Write-Host "Output: bin\ClipVault.exe"
+
+# Run
+if ($Run) {
+    Write-Host "`n[Run] Starting ClipVault..."
+    $Exe = Join-Path $ProjectRoot "bin\ClipVault.exe"
+    if (Test-Path $Exe) {
+        & $Exe
+    } else {
+        Write-Host "ERROR: Executable not found" -ForegroundColor Red
+        exit 1
+    }
+}

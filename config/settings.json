@@ -1,0 +1,25 @@
+{
+    "output_path": "D:\\Clips\\ClipVault",
+    "buffer_seconds": 120,
+    "video": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 60,
+        "encoder": "auto",
+        "quality": 20
+    },
+    "audio": {
+        "sample_rate": 48000,
+        "bitrate": 160,
+        "system_audio_enabled": true,
+        "microphone_enabled": true
+    },
+    "hotkey": {
+        "save_clip": "F9"
+    },
+    "ui": {
+        "show_notifications": true,
+        "minimize_to_tray": true,
+        "start_with_windows": false
+    }
+}
