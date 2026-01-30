@@ -7,7 +7,7 @@ A **lightweight, open-source game clipping tool** for Windows. Press F9, instant
 **Goal**: Create a performance-focused clipping software comparable to **Outplayed** or **SteelSeries GG** - minimal CPU/GPU/RAM usage while maintaining excellent capture quality.
 
 **Key Requirements**:
-- **Performance**: ~5% CPU with NVENC, ~200MB RAM for 2-min buffer
+- **Performance**: Minimal resource usage comparable to commercial tools (actual targets TBD based on measurement)
 - **Quality**: Visually comparable to commercial solutions (slightly lower acceptable)
 - **Audio**: Two separate channels (system audio + microphone) for later mixing
 - **Workflow**: Non-destructive editing → export short clips from 2-3 min recordings
@@ -16,34 +16,41 @@ A **lightweight, open-source game clipping tool** for Windows. Press F9, instant
 
 ## Features
 
-- **Invisible** - Runs in system tray, under 5% CPU with NVENC
+- **Invisible** - Runs in system tray with minimal CPU usage (NVENC hardware encoding)
 - **Two Audio Tracks** - Game audio (track 1) + microphone (track 2), separately adjustable
 - **Anti-Cheat Safe** - Monitor capture only, no hooks or injection
 - **Hardware Encoding** - NVIDIA NVENC (GTX 600+) with CPU x264 fallback
 - **Configurable** - JSON settings for resolution, FPS, quality, buffer duration
 - **Non-Destructive Editing** - Phase 2: Library + trim/export without re-encoding
-- **Lightweight** - Minimal resource usage, designed for long recording sessions
+- **Lightweight** - Designed for long recording sessions without impacting gameplay
 
-## Target Performance
+## Performance Goals
 
-| Metric | Target | Comparable To |
-|--------|--------|---------------|
-| CPU (NVENC) | <5% | Outplayed, Medal |
-| CPU (x264) | <15% | Acceptable fallback |
-| RAM | ~200MB for 2-min buffer | Similar to competitors |
-| Quality | High (1080p60, ~15Mbps) | Comparable to commercial tools |
-| Latency | <100ms impact | Unnoticeable in gameplay |
+**Target**: Comparable to tools like Outplayed, Medal, or SteelSeries GG
 
-**Acceptable Trade-offs**: 
-- Slightly lower quality than premium tools (5-10% acceptable)
-- Slightly higher resource usage (within 20% of competitors acceptable)
-- Focus is on reliability and low maintenance over bleeding-edge features
+**Observed with similar tools**:
+- Outplayed: ~1.2-1.5GB RAM usage
+- CPU impact: Minimal with hardware encoding
+- No noticeable FPS drops during gameplay
+
+**Our Approach**:
+- Use NVENC hardware encoding to minimize CPU load
+- Buffer compressed video (not raw frames) in memory
+- Optimize for user's specific hardware
+- Measure actual performance once replay buffer is implemented
+- Tune settings based on real-world usage
+
+**Quality Settings** (configurable in `config/settings.json`):
+- Resolution: 1080p (configurable)
+- Framerate: 60 FPS (configurable)
+- Bitrate: ~15 Mbps for high quality
+- Acceptable trade-off: Slightly lower quality than premium tools is okay (5-10% difference)
 
 ## Requirements
 
 - Windows 10/11
-- NVIDIA GPU (GTX 600+) for NVENC, or CPU fallback
-- ~200MB RAM for 2-minute buffer
+- NVIDIA GPU (GTX 600+) for NVENC hardware encoding, or CPU x264 fallback
+- RAM: Depends on buffer duration and quality settings (typical 1-2GB for 2-minute 1080p60)
 
 ## Quick Start
 

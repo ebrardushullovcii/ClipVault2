@@ -30,12 +30,16 @@
 ## Agent Rules & Responsibilities
 
 ### Project Goal
-Create a **lightweight, high-performance game clipping tool** comparable to Outplayed or SteelSeries GG:
-- **Performance**: <5% CPU (NVENC), ~200MB RAM for 2-min buffer
-- **Quality**: High quality (1080p60, ~15Mbps), visually comparable to commercial tools
-- **Audio**: Two separate tracks (system + mic) for later mixing
-- **Workflow**: Save 2-3 min clips → browse library → non-destructive edit → export short highlights
-- **Config**: JSON-based settings (resolution, FPS, buffer duration, quality)
+Create a **lightweight, open-source game clipping tool** for Windows with performance comparable to commercial tools like Outplayed or SteelSeries GG.
+
+**Key Requirements**:
+- **Performance**: Minimal CPU/GPU impact using hardware encoding (NVENC). Actual memory usage depends on buffer size and quality settings.
+- **Quality**: High quality capture (1080p60 default) visually comparable to commercial tools
+- **Audio**: Two separate tracks (system + microphone) for independent mixing later
+- **Workflow**: 2-3 min buffer clips → library browser → non-destructive editing → export short highlights
+- **Configuration**: JSON-based settings (resolution, FPS, buffer duration, quality, hotkey)
+
+**Reference**: Similar tools (Outplayed) typically use 1-2GB RAM for 1080p60 2-minute buffers. We aim for comparable efficiency.
 
 ### What You CAN Do ✅
 - **Write and modify code** in `src/`, `scripts/`, `config/`
