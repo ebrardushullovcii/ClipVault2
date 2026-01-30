@@ -1,5 +1,32 @@
 # AGENTS.md - Agent Guidelines for ClipVault
 
+> **For LLM Agents**: Read this file first, then check `AGENT_WORKFLOW.md` for the step-by-step development process.
+
+## Quick Start for Agents
+
+1. **Verify environment**: ` .\scripts\verify-env.ps1`
+2. **Check current status**: See Implementation Status below
+3. **Read workflow**: `AGENT_WORKFLOW.md`
+4. **Build**: `.\build.ps1`
+5. **Implement next task** from PLAN.md
+6. **Test**: Run `.\bin\ClipVault.exe` and check `.\bin\clipvault.log`
+
+## Implementation Status
+
+| Component | Status | Files | Notes |
+|-----------|--------|-------|-------|
+| **Project Setup** | ✅ Complete | All docs, scripts | Environment ready |
+| **OBS Core** | ✅ Complete | obs_core.cpp | Initializes/shutdown cleanly |
+| **Capture** | ✅ Complete | capture.cpp | Monitor + audio sources |
+| **Encoders** | 🟡 Partial | encoder.cpp | Class exists, needs integration |
+| **Replay Buffer** | 🔴 **Not Started** | replay.h stub | ⬅️ **NEXT TASK** |
+| **Hotkey** | 🔴 Not Started | hotkey.h stub | Needs implementation |
+| **Config** | ✅ Complete | config.cpp | JSON settings working |
+| **Tray** | 🟡 Partial | tray.cpp | Basic, needs notifications |
+
+**Current Phase**: 1.5 (Replay Buffer) - See PLAN.md
+**Priority**: Implement `src/replay.cpp` - this is the core feature that saves clips
+
 ## Build Commands
 
 ```powershell
