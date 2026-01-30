@@ -27,6 +27,60 @@
 **Current Phase**: 1.5 (Replay Buffer) - See PLAN.md
 **Priority**: Implement `src/replay.cpp` - this is the core feature that saves clips
 
+## Agent Rules & Responsibilities
+
+### Project Goal
+Create a **lightweight, high-performance game clipping tool** comparable to Outplayed or SteelSeries GG:
+- **Performance**: <5% CPU (NVENC), ~200MB RAM for 2-min buffer
+- **Quality**: High quality (1080p60, ~15Mbps), visually comparable to commercial tools
+- **Audio**: Two separate tracks (system + mic) for later mixing
+- **Workflow**: Save 2-3 min clips → browse library → non-destructive edit → export short highlights
+- **Config**: JSON-based settings (resolution, FPS, buffer duration, quality)
+
+### What You CAN Do ✅
+- **Write and modify code** in `src/`, `scripts/`, `config/`
+- **Update documentation** when you discover new patterns, gotchas, or outdated info
+- **Add new docs** for complex features or agent workflows
+- **Create headers** for planned components (like we did with `replay.h`, `hotkey.h`)
+- **Mark tasks complete** in PLAN.md when you finish them
+- **Add rules/guidelines** when you learn something important
+- **Fix documentation errors** immediately when you spot them
+
+### What You CANNOT Do ❌
+- **NEVER commit code** - The user commits manually when satisfied
+- **NEVER push to GitHub** - Wait for explicit user instruction  
+- **NEVER modify** `.gitignore`, `LICENSE`, or repo structure without asking
+- **NEVER delete** documentation files without asking
+
+### Rule Documentation Process (IMPORTANT)
+**When the user tells you:**
+> "Always do X..." or "Never do Y..." or "When Z happens, do this..."
+
+**You MUST ask:**
+> "Should I add this rule to AGENTS.md (or another doc) so future agents know it?"
+
+**Why?** So knowledge persists across sessions. Future agents (Opencode, Claude, etc.) need to follow the same rules.
+
+### Keeping Documentation Updated
+These are **living documents**. Update them when:
+1. ✅ You complete a task (mark it done in PLAN.md)
+2. 🐛 You discover a bug/gotcha not documented
+3. 📚 You learn a new OBS pattern
+4. 🔄 You change how something works
+5. ❓ You find unclear instructions
+
+**Docs you should update most often:**
+- **PLAN.md** - Mark completed items, update status
+- **AGENTS.md** - Add new patterns, fix errors
+- **CONVENTIONS.md** - Document new code style decisions
+- **docs/LIBOBS.md** - Add new API examples
+
+### Before You Start Work
+1. Run `scripts\verify-env.ps1`
+2. Read AGENT_WORKFLOW.md for the process
+3. Check PLAN.md for current phase
+4. Read the Implementation section of the relevant phase in docs/IMPLEMENTATION.md
+
 ## Build Commands
 
 ```powershell
@@ -254,10 +308,28 @@ obs_output_set_mixers(output, 0x03);  // Enable tracks 1+2
 - Don't call obs_add_data_path before obs_startup (crash)
 - Don't forget trailing slash on data paths
 
-## Documentation
+## Documentation Map
 
-- **docs/LIBOBS.md** - Full libobs API reference
-- **docs/IMPLEMENTATION.md** - Step-by-step implementation guide
-- **CONVENTIONS.md** - Complete style guide
-- **TESTING.md** - Manual test procedures
-- **PLAN.md** - Development roadmap
+**Quick Reference:**
+| Document | Purpose | When to Read |
+|----------|---------|--------------|
+| **README.md** | Project overview, quick start | First time viewing repo |
+| **AGENTS.md** (this file) | Agent rules, build commands, OBS patterns | Every agent session |
+| **AGENT_WORKFLOW.md** | Step-by-step development process | Before starting work |
+| **PLAN.md** | Development roadmap, phase status | To find next task |
+| **CONVENTIONS.md** | Complete code style guide | When writing new code |
+| **TESTING.md** | Manual test procedures | After completing features |
+
+**Technical References:**
+| Document | Purpose |
+|----------|---------|
+| **docs/LIBOBS.md** | Full libobs API reference, OBS patterns |
+| **docs/IMPLEMENTATION.md** | Step-by-step coding examples by phase |
+| **docs/ARCHITECTURE.md** | System design and data flow |
+| **docs/BUILD.md** | Detailed build instructions |
+| **TROUBLESHOOTING.md** | Common errors and solutions |
+
+**Configuration:**
+- **config/settings.json** - App configuration reference
+- **.clangd** - LSP configuration for clangd
+- **CMakeLists.txt** - Build system configuration

@@ -1,14 +1,43 @@
 # ClipVault
 
-A lightweight game clipping tool for Windows. Press F9, get the last 2 minutes as a perfect-quality MP4.
+A **lightweight, open-source game clipping tool** for Windows. Press F9, instantly save the last 2 minutes as a high-quality MP4 with separate audio tracks.
+
+## Project Vision
+
+**Goal**: Create a performance-focused clipping software comparable to **Outplayed** or **SteelSeries GG** - minimal CPU/GPU/RAM usage while maintaining excellent capture quality.
+
+**Key Requirements**:
+- **Performance**: ~5% CPU with NVENC, ~200MB RAM for 2-min buffer
+- **Quality**: Visually comparable to commercial solutions (slightly lower acceptable)
+- **Audio**: Two separate channels (system audio + microphone) for later mixing
+- **Workflow**: Non-destructive editing → export short clips from 2-3 min recordings
+- **Configuration**: JSON-based settings (resolution, FPS, buffer length, etc.)
+- **Target Users**: Personal use + friends (small scale, open source)
 
 ## Features
 
-- **Invisible** - Runs in system tray, under 5% CPU
-- **Two Audio Tracks** - Game audio + microphone, separately adjustable
+- **Invisible** - Runs in system tray, under 5% CPU with NVENC
+- **Two Audio Tracks** - Game audio (track 1) + microphone (track 2), separately adjustable
 - **Anti-Cheat Safe** - Monitor capture only, no hooks or injection
-- **Hardware Encoding** - NVENC for minimal performance impact
-- **Simple** - One hotkey, no complex UI
+- **Hardware Encoding** - NVIDIA NVENC (GTX 600+) with CPU x264 fallback
+- **Configurable** - JSON settings for resolution, FPS, quality, buffer duration
+- **Non-Destructive Editing** - Phase 2: Library + trim/export without re-encoding
+- **Lightweight** - Minimal resource usage, designed for long recording sessions
+
+## Target Performance
+
+| Metric | Target | Comparable To |
+|--------|--------|---------------|
+| CPU (NVENC) | <5% | Outplayed, Medal |
+| CPU (x264) | <15% | Acceptable fallback |
+| RAM | ~200MB for 2-min buffer | Similar to competitors |
+| Quality | High (1080p60, ~15Mbps) | Comparable to commercial tools |
+| Latency | <100ms impact | Unnoticeable in gameplay |
+
+**Acceptable Trade-offs**: 
+- Slightly lower quality than premium tools (5-10% acceptable)
+- Slightly higher resource usage (within 20% of competitors acceptable)
+- Focus is on reliability and low maintenance over bleeding-edge features
 
 ## Requirements
 
@@ -120,6 +149,60 @@ Remove-Item -Recurse -Force .\build
 ```
 
 For more issues, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+
+## Documentation Map
+
+**For Users:**
+- This README - Quick start and usage
+- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Common problems and fixes
+- `config/settings.json` - Configuration reference
+
+**For Developers/Agents:**
+| Document | Purpose | Read When |
+|----------|---------|-----------|
+| [AGENTS.md](AGENTS.md) | **START HERE** - Build commands, code style, OBS patterns | Every agent session |
+| [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md) | Step-by-step development process | Before starting work |
+| [PLAN.md](PLAN.md) | Development roadmap and current status | To find next task |
+| [CONVENTIONS.md](CONVENTIONS.md) | Complete code style guide | When writing new code |
+| [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) | Step-by-step coding examples | When implementing features |
+| [docs/LIBOBS.md](docs/LIBOBS.md) | Full libobs API reference | When using OBS functions |
+| [TESTING.md](TESTING.md) | Manual test procedures | After completing features |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design and data flow | Understanding overall structure |
+| [docs/BUILD.md](docs/BUILD.md) | Detailed build instructions | Build troubleshooting |
+
+## For Agents (Opencode, Claude Code, etc.)
+
+### What You Can Do
+✅ **Write and modify code** (src/, scripts/)  
+✅ **Update documentation** (AGENTS.md, PLAN.md, etc.) when things change  
+✅ **Add new documentation** when you discover patterns or gotchas  
+✅ **Fix errors** in existing docs if you find them  
+✅ **Create TODOs** in code comments for future work  
+
+### What You CANNOT Do
+❌ **NEVER commit code** - The user will commit manually when ready  
+❌ **NEVER push to GitHub** - Wait for user instruction  
+❌ **NEVER modify** `.gitignore`, `LICENSE`, or repository structure without asking  
+
+### Rule Documentation Process
+**If the user tells you:**
+- "Always do X..."
+- "Never do Y..."  
+- "When Z happens, do this..."
+
+**You MUST ask:**
+> "Should I add this rule to AGENTS.md or another documentation file so future agents know it?"
+
+This ensures knowledge persists across sessions and all agents follow the same rules.
+
+### Updating This Repo
+The documentation files are living documents. If you:
+1. Discover a new pattern or gotcha
+2. Find outdated information
+3. Complete a phase/task
+4. Learn something that would help future agents
+
+**Update the relevant docs** (especially AGENTS.md and PLAN.md) to keep them current.
 
 ## Building from Source
 
