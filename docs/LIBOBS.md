@@ -32,7 +32,13 @@ obs_add_data_path("./data/libobs/");  // Note the trailing slash!
 // 3. Add module paths
 obs_add_module_path("./obs-plugins/64bit", "./data/obs-plugins");
 
-// 4. Reset video (MUST set graphics_module on Windows)
+// 4. Load modules (BEFORE video/audio reset - CRITICAL!)
+// If you reset video before loading modules, monitor_capture will be BLACK
+// See: https://github.com/obsproject/obs-studio/discussions/12367
+obs_load_all_modules();
+obs_post_load_modules();
+
+// 5. Reset video (AFTER modules loaded, MUST set graphics_module on Windows)
 obs_video_info ovi = {};
 ovi.graphics_module = "libobs-d3d11";  // CRITICAL!
 ovi.fps_num = 60;
@@ -49,16 +55,14 @@ ovi.range = VIDEO_RANGE_PARTIAL;
 ovi.scale_type = OBS_SCALE_BICUBIC;
 obs_reset_video(&ovi);
 
-// 5. Reset audio
+// 6. Reset audio (AFTER modules loaded)
 obs_audio_info oai = {};
 oai.samples_per_sec = 48000;
 oai.speakers = SPEAKERS_STEREO;
 obs_reset_audio(&oai);
-
-// 6. Load modules (AFTER video and audio)
-obs_load_all_modules();
-obs_post_load_modules();
 ```
+
+**⚠️ WARNING**: If you call `obs_reset_video()` before `obs_load_all_modules()`, capture sources like `monitor_capture` will produce **black frames**. The modules must be loaded first so capture plugins can register their graphics capabilities.
 
 ## Sources
 
@@ -82,16 +86,39 @@ obs_data_set_bool(settings, "capture_cursor", true);
 obs_source_t *monitor = obs_source_create("monitor_capture", "my_monitor", settings, nullptr);
 obs_data_release(settings);
 
-// System audio
+// System audio (WASAPI output/loopback)
 obs_data_t *audio_settings = obs_data_create();
+obs_data_set_string(audio_settings, "device_id", "default");  // Use "default" or specific device ID
+obs_data_set_bool(audio_settings, "use_device_timing", true);
 obs_source_t *desktop = obs_source_create("wasapi_output_capture", "desktop_audio", audio_settings, nullptr);
 obs_data_release(audio_settings);
 
-// Microphone
+// Microphone (WASAPI input)
 obs_data_t *mic_settings = obs_data_create();
+obs_data_set_string(mic_settings, "device_id", "default");  // Use "default" or specific device ID
 obs_source_t *mic = obs_source_create("wasapi_input_capture", "microphone", mic_settings, nullptr);
 obs_data_release(mic_settings);
 ```
+
+### Audio Source Activation (CRITICAL)
+
+Audio sources must be **activated** and **connected to output channels** to capture:
+
+```cpp
+// Create and configure source
+obs_source_t *desktop = obs_source_create("wasapi_output_capture", "desktop", settings, nullptr);
+
+// 1. Activate the source (starts capture)
+obs_source_activate(desktop);
+
+// 2. Connect to output channel (CRITICAL: channels 1-6 are for audio)
+obs_set_output_source(1, desktop);  // Channel 1 = first audio source
+
+// 3. Route to mixer track
+obs_source_set_audio_mixers(desktop, 1);  // Track 1
+```
+
+**⚠️ WARNING**: Without `obs_source_activate()` and `obs_set_output_source()`, audio sources will be silent even though they appear to be working!
 
 ### Audio Routing
 
@@ -114,10 +141,12 @@ obs_source_set_audio_mixers(source, 3);
 
 | ID | Description |
 |----|-------------|
-| `jim_nvenc` | NVIDIA NVENC H.264 (recommended) |
-| `ffmpeg_nvenc` | Alternative NVENC implementation |
+| `ffmpeg_nvenc` | NVIDIA NVENC H.264 (recommended) - provided by obs-ffmpeg.dll |
+| `jim_nvenc` | Alternative NVENC (requires obs-nvenc.dll plugin) |
 | `obs_x264` | CPU x264 (fallback) |
 | `ffmpeg_aac` | AAC audio encoder |
+
+**Note on NVENC**: We use `ffmpeg_nvenc` as the primary encoder because it's provided by `obs-ffmpeg.dll` which is always present. The `jim_nvenc` encoder requires a separate `obs-nvenc.dll` plugin which may not be included in all OBS distributions.
 
 ### Creating Video Encoder
 
@@ -125,13 +154,14 @@ obs_source_set_audio_mixers(source, 3);
 obs_data_t *settings = obs_data_create();
 obs_data_set_string(settings, "rate_control", "CQP");
 obs_data_set_int(settings, "cqp", 20);  // Quality (lower = better)
-obs_data_set_string(settings, "preset", "p4");  // Speed/quality tradeoff
+obs_data_set_string(settings, "preset", "p4");  // NVENC preset (p1-p7)
 
-// Try NVENC first
-obs_encoder_t *video_enc = obs_video_encoder_create("jim_nvenc", "video", settings, nullptr);
+// Try NVENC first (ffmpeg_nvenc)
+obs_encoder_t *video_enc = obs_video_encoder_create("ffmpeg_nvenc", "video", settings, nullptr);
 
 if (!video_enc) {
     // Fallback to x264
+    obs_data_set_string(settings, "preset", "veryfast");  // x264 preset
     video_enc = obs_video_encoder_create("obs_x264", "video", settings, nullptr);
 }
 

@@ -20,8 +20,11 @@ set(SOURCES
     src/logger.cpp
     src/config.cpp
     src/tray.cpp
+    src/hotkey.cpp
     src/obs_core.cpp
     src/capture.cpp
+    src/encoder.cpp
+    src/replay.cpp
 )
 
 # Create executable as Windows GUI app (no console window)
@@ -47,6 +50,9 @@ target_link_libraries(ClipVault PRIVATE
     shell32
     user32
 )
+
+# Static linking to avoid C++ runtime mismatch
+set(CMAKE_EXE_LINKER_FLAGS "-static-libgcc -static-libstdc++")
 
 # Windows defines
 target_compile_definitions(ClipVault PRIVATE

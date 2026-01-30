@@ -99,7 +99,10 @@ $BuildType = if ($Debug) { "Debug" } else { "Release" }
 
 Push-Location $BuildDir
 try {
-    cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=$BuildType
+    # Explicitly specify MinGW compilers to avoid Clang being picked up
+    $env:CC = "gcc"
+    $env:CXX = "g++"
+    cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=$BuildType -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: CMake configuration failed" -ForegroundColor Red
         exit 1

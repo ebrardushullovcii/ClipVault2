@@ -19,7 +19,7 @@ Before starting ANY work:
 .\build.ps1
 
 # 3. Check current implementation status
-Get-Content PLAN.md | Select-String "Phase 1\.[0-9]"
+Get-Content PROGRESS.md | Select-String "Current Phase|Active Task"
 ```
 
 If `verify-env.ps1` fails, STOP and ask user to run `.\build.ps1 -Setup`
@@ -198,12 +198,16 @@ You should see:
 
 ### Step 10: Update Documentation
 
-Mark complete in PLAN.md:
+Mark complete in PROGRESS.md:
 ```markdown
+## Completed ✅
+
 ### Phase X.Y: Component Name
-- [x] Create src/component.cpp (COMPLETED)
-- [x] Implement feature Y (COMPLETED)
+- [x] Create src/component.cpp
+- [x] Implement feature Y
 ```
+
+Also update the "Current Status Overview" section at the top.
 
 ## Common Agent Mistakes (And How to Avoid)
 
@@ -280,7 +284,7 @@ Run verify-env.ps1
 Fails? --> STOP, ask user to run build.ps1 -Setup
     |
     v
-Read PLAN.md for current phase
+Read PROGRESS.md for current phase and task
     |
     v
 Check if similar component exists
@@ -319,7 +323,7 @@ Check log for errors
 Errors? --> Debug and fix
     |
     v
-Update PLAN.md
+Update PROGRESS.md
     |
     v
 DONE - Report success
@@ -430,7 +434,7 @@ foreach ($file in $required) {
 - [ ] Integrated into main.cpp
 - [ ] Tested by running .\bin\ClipVault.exe
 - [ ] Checked .\bin\clipvault.log for errors
-- [ ] Updated PLAN.md with completion status
+- [ ] Updated PROGRESS.md with completion status
 - [ ] Followed naming conventions from AGENTS.md
 - [ ] No TODO comments left in code
 - [ ] All OBS objects properly released

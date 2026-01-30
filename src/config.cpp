@@ -17,6 +17,28 @@ std::string trim(const std::string& s) {
     return s.substr(start, end - start + 1);
 }
 
+std::string unescape_json_string(const std::string& s) {
+    std::string result;
+    result.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '\\' && i + 1 < s.size()) {
+            char next = s[i + 1];
+            switch (next) {
+                case '\\': result += '\\'; i++; break;
+                case '"': result += '"'; i++; break;
+                case 'n': result += '\n'; i++; break;
+                case 'r': result += '\r'; i++; break;
+                case 't': result += '\t'; i++; break;
+                case '/': result += '/'; i++; break;
+                default: result += s[i]; break;
+            }
+        } else {
+            result += s[i];
+        }
+    }
+    return result;
+}
+
 std::string extract_string(const std::string& json, const std::string& key) {
     std::string search = "\"" + key + "\"";
     size_t pos = json.find(search);
@@ -28,10 +50,15 @@ std::string extract_string(const std::string& json, const std::string& key) {
     pos = json.find('"', pos + 1);
     if (pos == std::string::npos) return "";
 
-    size_t end = json.find('"', pos + 1);
-    if (end == std::string::npos) return "";
+    // Find end quote, handling escaped quotes
+    size_t end = pos + 1;
+    while (end < json.size()) {
+        if (json[end] == '"' && json[end - 1] != '\\') break;
+        end++;
+    }
+    if (end >= json.size()) return "";
 
-    return json.substr(pos + 1, end - pos - 1);
+    return unescape_json_string(json.substr(pos + 1, end - pos - 1));
 }
 
 int extract_int(const std::string& json, const std::string& key, int default_val = 0) {

@@ -72,20 +72,6 @@ Remove-Item -Recurse -Force .\build
 .\build.ps1
 ```
 
-## Development Status
-
-**Current Phase: 1.3 - Capture Sources**
-
-Completed:
-- ✅ File logging system
-- ✅ System tray with menu
-- ✅ Configuration loading from JSON
-- ✅ Clips folder management
-- ✅ OBS initialization (video + audio)
-- ✅ OBS module loading
-
-Next: Capture sources (monitor, system audio, microphone)
-
 ## Usage
 
 1. Run ClipVault (starts in system tray - look for icon in bottom-right)
@@ -168,8 +154,9 @@ For more issues, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 | Document | Purpose | Read When |
 |----------|---------|-----------|
 | [AGENTS.md](AGENTS.md) | **START HERE** - Build commands, code style, OBS patterns | Every agent session |
+| [PROGRESS.md](PROGRESS.md) | **Current status, active tasks, blockers** | **Check every session!** |
 | [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md) | Step-by-step development process | Before starting work |
-| [PLAN.md](PLAN.md) | Development roadmap and current status | To find next task |
+| [PLAN.md](PLAN.md) | Static development roadmap (don't modify) | Reference only |
 | [CONVENTIONS.md](CONVENTIONS.md) | Complete code style guide | When writing new code |
 | [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) | Step-by-step coding examples | When implementing features |
 | [docs/LIBOBS.md](docs/LIBOBS.md) | Full libobs API reference | When using OBS functions |
@@ -177,14 +164,15 @@ For more issues, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design and data flow | Understanding overall structure |
 | [docs/BUILD.md](docs/BUILD.md) | Detailed build instructions | Build troubleshooting |
 
+**Important**: Use PROGRESS.md for all status updates. PLAN.md is static - don't modify it.
+
 ## For Agents (Opencode, Claude Code, etc.)
 
 ### What You Can Do
 ✅ **Write and modify code** (src/, scripts/)  
-✅ **Update documentation** (AGENTS.md, PLAN.md, etc.) when things change  
+✅ **Update PROGRESS.md** when you complete tasks or discover blockers  
 ✅ **Add new documentation** when you discover patterns or gotchas  
 ✅ **Fix errors** in existing docs if you find them  
-✅ **Create TODOs** in code comments for future work  
 
 ### What You CANNOT Do
 ❌ **NEVER commit code** - The user will commit manually when ready  
@@ -209,7 +197,7 @@ The documentation files are living documents. If you:
 3. Complete a phase/task
 4. Learn something that would help future agents
 
-**Update the relevant docs** (especially AGENTS.md and PLAN.md) to keep them current.
+**Update PROGRESS.md** to reflect current status and keep documentation accurate.
 
 ## Building from Source
 

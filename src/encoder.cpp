@@ -82,11 +82,16 @@ bool EncoderManager::create_video_encoder()
     obs_api::data_set_int(settings, "cqp", video_cfg.quality);
 
     // Try NVENC first (NVIDIA hardware encoding)
-    LOG_INFO("    Trying NVENC (jim_nvenc)...");
-    video_encoder_ = obs_api::video_encoder_create("jim_nvenc", "video_encoder", settings, nullptr);
+    // Note: ffmpeg_nvenc is provided by obs-ffmpeg.dll (jim_nvenc requires obs-nvenc.dll)
+    LOG_INFO("    Trying NVENC (ffmpeg_nvenc)...");
+    // ffmpeg_nvenc uses "preset2" for new NVENC API, "preset" for old
+    obs_api::data_set_string(settings, "preset2", "p5");  // p1 (fast) to p7 (slow)
+    obs_api::data_set_string(settings, "tune", "hq");     // hq, ll, ull
+    obs_api::data_set_string(settings, "profile", "high");
+    video_encoder_ = obs_api::video_encoder_create("ffmpeg_nvenc", "video_encoder", settings, nullptr);
 
     if (video_encoder_) {
-        encoder_name_ = "NVENC (Hardware)";
+        encoder_name_ = "NVENC (Hardware - ffmpeg)";
         LOG_INFO("    NVENC encoder created successfully");
     } else {
         // Fallback to x264 (CPU encoding)
@@ -155,6 +160,47 @@ bool EncoderManager::create_audio_encoders()
     obs_api::data_release(settings);
 
     LOG_INFO("    Audio encoders: AAC @ " + std::to_string(audio_cfg.bitrate) + "kbps");
+    return true;
+}
+
+bool EncoderManager::fallback_to_x264()
+{
+    if (!initialized_ || !video_encoder_) {
+        return false;
+    }
+
+    // Check if already using x264
+    if (encoder_name_.find("x264") != std::string::npos) {
+        LOG_INFO("  Already using x264, no fallback needed");
+        return false;
+    }
+
+    LOG_INFO("  Switching video encoder from NVENC/ffmpeg_nvenc to x264...");
+
+    // Release the current video encoder
+    obs_api::encoder_release(video_encoder_);
+    video_encoder_ = nullptr;
+
+    // Create x264 encoder
+    const auto& video_cfg = ConfigManager::instance().video();
+    obs_data_t* settings = obs_api::data_create();
+    obs_api::data_set_string(settings, "rate_control", "CQP");
+    obs_api::data_set_int(settings, "cqp", video_cfg.quality);
+    obs_api::data_set_string(settings, "preset", "veryfast");
+
+    video_encoder_ = obs_api::video_encoder_create("obs_x264", "video_encoder", settings, nullptr);
+    obs_api::data_release(settings);
+
+    if (!video_encoder_) {
+        last_error_ = "Failed to create x264 fallback encoder";
+        LOG_ERROR(last_error_);
+        return false;
+    }
+
+    obs_api::encoder_set_video(video_encoder_, obs_api::get_video());
+    encoder_name_ = "x264 (Software - Fallback)";
+    LOG_INFO("    Switched to x264 encoder successfully");
+
     return true;
 }
 

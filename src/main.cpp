@@ -3,6 +3,9 @@
 #include "tray.h"
 #include "obs_core.h"
 #include "capture.h"
+#include "encoder.h"
+#include "replay.h"
+#include "hotkey.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -103,7 +106,45 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         return 1;
     }
 
-    // Initialize system tray
+    // Initialize encoders
+    auto& encoder = clipvault::EncoderManager::instance();
+    if (!encoder.initialize()) {
+        LOG_ERROR("Failed to initialize encoders: " + encoder.last_error());
+        MessageBoxA(nullptr, ("Failed to initialize encoders:\n" + encoder.last_error()).c_str(),
+                    "ClipVault Error", MB_OK | MB_ICONERROR);
+        capture.shutdown();
+        obs.shutdown();
+        clipvault::Logger::instance().shutdown();
+        return 1;
+    }
+
+    // Initialize and start replay buffer
+    auto& replay = clipvault::ReplayManager::instance();
+    if (!replay.initialize()) {
+        LOG_ERROR("Failed to initialize replay buffer: " + replay.last_error());
+        MessageBoxA(nullptr, ("Failed to initialize replay buffer:\n" + replay.last_error()).c_str(),
+                    "ClipVault Error", MB_OK | MB_ICONERROR);
+        encoder.shutdown();
+        capture.shutdown();
+        obs.shutdown();
+        clipvault::Logger::instance().shutdown();
+        return 1;
+    }
+
+    // Start the replay buffer
+    if (!replay.start()) {
+        LOG_ERROR("Failed to start replay buffer: " + replay.last_error());
+        MessageBoxA(nullptr, ("Failed to start replay buffer:\n" + replay.last_error()).c_str(),
+                    "ClipVault Error", MB_OK | MB_ICONERROR);
+        replay.shutdown();
+        encoder.shutdown();
+        capture.shutdown();
+        obs.shutdown();
+        clipvault::Logger::instance().shutdown();
+        return 1;
+    }
+
+    // Initialize system tray (also initializes hotkey manager with tray window handle)
     auto& tray = clipvault::SystemTray::instance();
     if (!tray.initialize(hInstance)) {
         LOG_ERROR("Failed to initialize system tray");
@@ -114,6 +155,25 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     // Set menu callback
     tray.set_menu_callback(on_menu_action);
+
+    // Setup hotkey callback to trigger save
+    auto& hotkey = clipvault::HotkeyManager::instance();
+    hotkey.set_callback([&replay]() {
+        LOG_INFO("Hotkey callback executing - triggering save...");
+        if (!replay.save_clip()) {
+            LOG_ERROR("Failed to save clip: " + replay.last_error());
+        }
+    });
+    LOG_INFO("Hotkey registered - ready to save clips");
+
+    // Set callback for when clip is saved
+    replay.set_save_callback([](const std::string& path, bool success) {
+        if (success) {
+            clipvault::SystemTray::instance().show_notification("Clip Saved", "Saved to: " + path);
+        } else {
+            clipvault::SystemTray::instance().show_notification("Save Failed", "Could not save clip");
+        }
+    });
 
     // Show startup notification
     tray.show_notification("ClipVault", "Running in system tray. Right-click for options.");
@@ -127,6 +187,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     // Cleanup
     LOG_INFO("Shutting down...");
     tray.shutdown();
+    replay.shutdown();
+    encoder.shutdown();
     capture.shutdown();
     obs.shutdown();
 

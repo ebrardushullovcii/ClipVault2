@@ -1,5 +1,7 @@
 #include "tray.h"
 #include "logger.h"
+#include "hotkey.h"
+#include "config.h"
 
 #include <shellapi.h>
 
@@ -57,6 +59,15 @@ bool SystemTray::initialize(HINSTANCE hInstance)
     // Store instance pointer for window proc
     SetWindowLongPtrA(hwnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 
+    // Initialize hotkey manager with tray window handle
+    // Read hotkey from config, default to F9
+    std::string hotkey_key = "F9";
+    const auto& config = ConfigManager::instance();
+    if (config.hotkey().save_clip.empty() == false) {
+        hotkey_key = config.hotkey().save_clip;
+    }
+    HotkeyManager::instance().initialize(hotkey_key, hwnd_);
+
     // Setup tray icon
     nid_.cbSize = sizeof(NOTIFYICONDATAA);
     nid_.hWnd = hwnd_;
@@ -95,6 +106,9 @@ void SystemTray::shutdown()
 
     LOG_INFO("Shutting down system tray...");
 
+    // Shutdown hotkey manager first
+    HotkeyManager::instance().shutdown();
+
     if (menu_) {
         DestroyMenu(menu_);
         menu_ = nullptr;
@@ -118,6 +132,7 @@ int SystemTray::run()
     }
 
     LOG_INFO("Entering message loop...");
+    LOG_INFO("  Waiting for messages (tray, hotkey, etc.)");
     running_ = true;
 
     MSG msg;
@@ -171,6 +186,13 @@ LRESULT CALLBACK SystemTray::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         case WM_COMMAND:
             if (self && self->menu_callback_) {
                 self->menu_callback_(LOWORD(wParam));
+            }
+            return 0;
+
+        case WM_HOTKEY:
+            if (self) {
+                LOG_DEBUG("WM_HOTKEY received in tray WindowProc (ID: " + std::to_string((int)wParam) + ")");
+                HotkeyManager::instance().handle_hotkey_message(wParam);
             }
             return 0;
 

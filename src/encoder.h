@@ -1,9 +1,7 @@
 #pragma once
 
 #include <string>
-
-struct obs_encoder;
-typedef struct obs_encoder obs_encoder_t;
+#include "obs_core.h"  // For obs_encoder_t
 
 namespace clipvault {
 
@@ -24,6 +22,9 @@ public:
 
     // Get encoder name (for logging)
     const std::string& encoder_name() const { return encoder_name_; }
+
+    // Fallback to x264 if NVENC fails (returns true if switched)
+    bool fallback_to_x264();
 
 private:
     EncoderManager() = default;

@@ -2,6 +2,7 @@
 #include "logger.h"
 #include "config.h"
 #include "obs_core.h"
+#include <windows.h>
 
 namespace clipvault {
 
@@ -61,6 +62,12 @@ void CaptureManager::shutdown()
         desktop_audio_ = nullptr;
     }
 
+    // Release scene first (it holds a ref to video_source_)
+    if (scene_) {
+        obs_api::scene_release(scene_);
+        scene_ = nullptr;
+    }
+
     if (video_source_) {
         obs_api::source_release(video_source_);
         video_source_ = nullptr;
@@ -72,28 +79,119 @@ void CaptureManager::shutdown()
 
 bool CaptureManager::create_video_source()
 {
-    LOG_INFO("  Creating monitor capture source...");
-
-    // Create settings for monitor capture
+    const char* capture_method_used = "none";
+    
+    // Try monitor_capture with DXGI method first (most reliable for background capture)
     obs_data_t* settings = obs_api::data_create();
     obs_api::data_set_int(settings, "monitor", 0);  // Primary monitor
     obs_api::data_set_bool(settings, "capture_cursor", true);
-
-    // Create the monitor capture source
-    // "monitor_capture" is anti-cheat safe (doesn't hook games)
+    obs_api::data_set_int(settings, "method", 1);  // 1 = DXGI (more reliable than WGC for background)
+    
     video_source_ = obs_api::source_create("monitor_capture", "monitor_capture", settings, nullptr);
     obs_api::data_release(settings);
+    
+    if (video_source_) {
+        capture_method_used = "monitor_capture";
+        LOG_INFO("  Using monitor_capture (DXGI method - most reliable)");
+    } else {
+        // Try monitor_capture with WGC method as fallback
+        settings = obs_api::data_create();
+        obs_api::data_set_int(settings, "monitor", 0);  // Primary monitor
+        obs_api::data_set_bool(settings, "capture_cursor", true);
+        obs_api::data_set_int(settings, "method", 0);  // 0 = WGC
+        
+        video_source_ = obs_api::source_create("monitor_capture", "monitor_capture", settings, nullptr);
+        obs_api::data_release(settings);
+        
+        if (video_source_) {
+            capture_method_used = "monitor_capture";
+            LOG_INFO("  Using monitor_capture (WGC method)");
+        } else {
+            obs_api::data_release(settings);
+            
+            // Fallback to window_capture
+            settings = obs_api::data_create();
+            
+            HWND foreground = GetForegroundWindow();
+            if (foreground) {
+                char window_title[256];
+                GetWindowTextA(foreground, window_title, sizeof(window_title));
+                LOG_INFO("  Using window_capture: " + std::string(window_title));
+                obs_api::data_set_string(settings, "window", window_title);
+            } else {
+                LOG_INFO("  Using window_capture (no foreground window)");
+            }
+            
+            video_source_ = obs_api::source_create("window_capture", "window_capture", settings, nullptr);
+            
+            if (video_source_) {
+                capture_method_used = "window_capture";
+            }
+        }
+        
+        obs_api::data_release(settings);
+    }
 
     if (!video_source_) {
-        last_error_ = "Failed to create monitor capture source";
+        last_error_ = "Failed to create any capture source";
+        LOG_ERROR(last_error_);
+        
+        // Last resort - try game_capture
+        settings = obs_api::data_create();
+        obs_api::data_set_string(settings, "capture_mode", "any_fullscreen");
+        obs_api::data_set_bool(settings, "capture_cursor", true);
+        LOG_INFO("  Using game_capture (any_fullscreen mode - last resort)");
+        
+        video_source_ = obs_api::source_create("game_capture", "game_capture", settings, nullptr);
+        obs_api::data_release(settings);
+        
+        if (video_source_) {
+            capture_method_used = "game_capture";
+        }
+    }
+
+    if (!video_source_) {
+        last_error_ = "Failed to create any video capture source";
         LOG_ERROR(last_error_);
         return false;
     }
 
-    // Add to the main output channel so it's rendered
-    obs_api::set_output_source(0, video_source_);
+    // CRITICAL: Create a scene and add the video source to it
+    // In OBS, sources must be in a scene to produce output frames
+    LOG_INFO("  Creating scene for video rendering...");
+    scene_ = obs_api::scene_create("capture_scene");
+    if (!scene_) {
+        last_error_ = "Failed to create scene";
+        LOG_ERROR(last_error_);
+        obs_api::source_release(video_source_);
+        video_source_ = nullptr;
+        return false;
+    }
+    
+    // Add the video source to the scene
+    obs_sceneitem_t* item = obs_api::scene_add(scene_, video_source_);
+    if (!item) {
+        LOG_WARNING("  Failed to add video source to scene (source may still work)");
+    } else {
+        LOG_INFO("  Video source added to scene");
+    }
+    
+    // Set the scene's source as the main output (this is what produces frames)
+    obs_source_t* scene_source = obs_api::scene_get_source(scene_);
+    if (!scene_source) {
+        last_error_ = "Failed to get scene source";
+        LOG_ERROR(last_error_);
+        obs_api::scene_release(scene_);
+        scene_ = nullptr;
+        obs_api::source_release(video_source_);
+        video_source_ = nullptr;
+        return false;
+    }
+    
+    obs_api::set_output_source(0, scene_source);
+    LOG_INFO("  Scene set as output source (this enables video rendering)");
 
-    LOG_INFO("    Monitor capture source created");
+    LOG_INFO("  Video capture source created: " + std::string(capture_method_used));
     return true;
 }
 
@@ -106,7 +204,11 @@ bool CaptureManager::create_audio_sources()
         LOG_INFO("  Creating desktop audio capture...");
 
         obs_data_t* settings = obs_api::data_create();
-        // Empty settings uses default device
+        // CRITICAL: Use "device_id" (not "device") and "default" for default device
+        obs_api::data_set_string(settings, "device_id", "default");
+        // use_device_timing is recommended for output capture
+        obs_api::data_set_bool(settings, "use_device_timing", true);
+        
         desktop_audio_ = obs_api::source_create("wasapi_output_capture", "desktop_audio", settings, nullptr);
         obs_api::data_release(settings);
 
@@ -115,6 +217,14 @@ bool CaptureManager::create_audio_sources()
             LOG_ERROR(last_error_);
             return false;
         }
+
+        // CRITICAL: Activate the source to start capturing
+        obs_api::source_activate(desktop_audio_);
+        LOG_INFO("    Desktop audio source activated");
+
+        // CRITICAL: Connect to output channel 1 (desktop audio channel)
+        obs_api::set_output_source(1, desktop_audio_);
+        LOG_INFO("    Desktop audio connected to output channel 1");
 
         // Route desktop audio to mixer track 1 (bit 0 = 0x01)
         obs_api::source_set_audio_mixers(desktop_audio_, 1);
@@ -126,7 +236,9 @@ bool CaptureManager::create_audio_sources()
         LOG_INFO("  Creating microphone capture...");
 
         obs_data_t* settings = obs_api::data_create();
-        // Empty settings uses default device
+        // CRITICAL: Use "device_id" (not "device")
+        obs_api::data_set_string(settings, "device_id", "default");
+        
         microphone_ = obs_api::source_create("wasapi_input_capture", "microphone", settings, nullptr);
         obs_api::data_release(settings);
 
@@ -136,12 +248,45 @@ bool CaptureManager::create_audio_sources()
             return false;
         }
 
+        // CRITICAL: Activate the source to start capturing
+        obs_api::source_activate(microphone_);
+        LOG_INFO("    Microphone source activated");
+
+        // CRITICAL: Connect to output channel 2 (microphone channel)
+        obs_api::set_output_source(2, microphone_);
+        LOG_INFO("    Microphone connected to output channel 2");
+
         // Route microphone to mixer track 2 (bit 1 = 0x02)
         obs_api::source_set_audio_mixers(microphone_, 2);
         LOG_INFO("    Microphone -> Track 2");
     }
 
     return true;
+}
+
+obs_source_t* CaptureManager::get_scene_source() const
+{
+    if (scene_) {
+        return obs_api::scene_get_source(scene_);
+    }
+    return nullptr;
+}
+
+bool CaptureManager::is_producing_frames() const
+{
+    if (!video_source_ || !scene_) {
+        return false;
+    }
+    
+    // Check if source is active
+    bool source_active = obs_api::source_active(video_source_);
+    bool scene_active = obs_api::source_active(obs_api::scene_get_source(scene_));
+    
+    LOG_INFO("[CAPTURE] Frame production check:");
+    LOG_INFO("  Video source active: " + std::string(source_active ? "YES" : "NO"));
+    LOG_INFO("  Scene source active: " + std::string(scene_active ? "YES" : "NO"));
+    
+    return source_active && scene_active;
 }
 
 } // namespace clipvault

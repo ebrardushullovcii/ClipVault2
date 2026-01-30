@@ -2,6 +2,8 @@
 
 This document outlines the complete development roadmap for ClipVault, split into two major phases.
 
+**Note**: This is a static roadmap. For current implementation status, see `PROGRESS.md`.
+
 ---
 
 ## Phase 1: Core Clipping Engine
@@ -11,128 +13,101 @@ This document outlines the complete development roadmap for ClipVault, split int
 **Success Criteria**: Press F9 → MP4 file appears with video, system audio (track 1), and microphone (track 2).
 
 ### 1.1 Project Setup
-- [x] Initialize git repository
-- [x] Clone OBS Studio as submodule (`third_party/obs-studio-src`)
-- [x] Create build script (`build.ps1`)
-- [x] Copy required DLLs and data files to `third_party/obs-download/`
-- [ ] Build libobs from source (NOT REQUIRED - using prebuilt from obs-download)
+- Initialize git repository
+- Clone OBS Studio as submodule (`third_party/obs-studio-src`)
+- Create build script (`build.ps1`)
+- Copy required DLLs and data files to `third_party/obs-download/`
 
-**Status**: ✅ COMPLETE - Using prebuilt OBS binaries
 **Verification**: `third_party/obs-studio-src/libobs/obs.h` and `third_party/obs-download/bin/64bit/obs.dll` exist.
 
 ### 1.2 Minimal OBS Application
-- [x] Create `src/main.cpp` with WinMain
-- [x] Create `src/logger.cpp` for file logging
-- [x] Create `src/obs_core.cpp` with OBS initialization
-- [x] Implement proper init sequence:
+- Create `src/main.cpp` with WinMain
+- Create `src/logger.cpp` for file logging
+- Create `src/obs_core.cpp` with OBS initialization
+- Implement proper init sequence:
   1. `obs_startup()`
   2. `obs_add_data_path()` (with trailing slash!)
   3. `obs_add_module_path()`
   4. `obs_reset_video()` (with `graphics_module = "libobs-d3d11"`)
   5. `obs_reset_audio()`
   6. `obs_load_all_modules()`
-- [x] Implement clean shutdown
+- Implement clean shutdown
 
-**Status**: ✅ COMPLETE
 **Verification**: App starts, logs "OBS initialized", shuts down cleanly.
 
 ### 1.3 Capture Sources
-- [x] Create `src/capture.cpp`
-- [x] Implement monitor capture (`monitor_capture` source)
-- [x] Implement system audio capture (`wasapi_output_capture`)
-- [x] Implement microphone capture (`wasapi_input_capture`)
-- [ ] Route system audio to mixer track 1 (PENDING - needs replay buffer)
-- [ ] Route microphone to mixer track 2 (PENDING - needs replay buffer)
+- Create `src/capture.cpp`
+- Implement monitor capture (`monitor_capture` source)
+- Implement system audio capture (`wasapi_output_capture`)
+- Implement microphone capture (`wasapi_input_capture`)
+- Route system audio to mixer track 1
+- Route microphone to mixer track 2
 
-**Status**: 🟡 PARTIAL - Sources created but not routed (waiting for replay buffer)
 **Verification**: All three sources created without errors in log.
 
 ### 1.4 Encoders
-- [x] Create `src/encoder.cpp` / `src/encoder.h`
-- [x] Implement NVENC video encoder (`jim_nvenc`)
-- [x] Implement x264 fallback (`obs_x264`)
-- [x] Implement AAC encoder creation
-- [ ] Connect encoders to replay buffer (PENDING - needs replay buffer implementation)
+- Create `src/encoder.cpp` / `src/encoder.h`
+- Implement NVENC video encoder (`jim_nvenc`)
+- Implement x264 fallback (`obs_x264`)
+- Implement AAC encoder creation
+- Connect encoders to replay buffer
 
-**Status**: 🟡 PARTIAL - Encoder class exists but not integrated into main flow
 **Verification**: Encoders created, log shows "NVENC" or "x264" selected.
 
-### 1.5 Replay Buffer ⬅️ CURRENT TASK
-- [x] Create `src/replay.h` (header stub created)
-- [ ] Create `src/replay.cpp` (NEEDS IMPLEMENTATION)
-- [ ] Create replay buffer output (`replay_buffer`)
-- [ ] Connect video encoder to output
-- [ ] Connect both audio encoders to output
-- [ ] Set mixer mask to `0x03` (tracks 1 + 2)
-- [ ] Start replay buffer
-- [ ] Implement save trigger via `proc_handler_call`
-- [ ] Connect to "saved" signal for confirmation
+### 1.5 Replay Buffer
+- Create `src/replay.h` (header)
+- Create `src/replay.cpp` (implementation)
+- Create replay buffer output (`replay_buffer`)
+- Connect video encoder to output
+- Connect both audio encoders to output
+- Set mixer mask to `0x03` (tracks 1 + 2)
+- Start replay buffer
+- Implement save trigger via `proc_handler_call`
+- Connect to "saved" signal for confirmation
 
-**Status**: 🔴 NOT STARTED - Header exists, implementation needed
-**Priority**: HIGH - This is the CORE FEATURE
 **Verification**: "Replay buffer running" in log, no errors.
 **Reference**: See `docs/IMPLEMENTATION.md` Phase 5 for code examples
 
 ### 1.6 Hotkey & Save
-- [x] Create `src/hotkey.h` (header stub created)
-- [ ] Create `src/hotkey.cpp` (NEEDS IMPLEMENTATION)
-- [ ] Register global F9 hotkey (Windows API)
-- [ ] On F9 press, trigger replay buffer save
-- [ ] Generate filename with timestamp
-- [ ] Log save path on completion
+- Create `src/hotkey.h` (header)
+- Create `src/hotkey.cpp` (implementation)
+- Register global F9 hotkey (Windows API)
+- On F9 press, trigger replay buffer save
+- Generate filename with timestamp
+- Log save path on completion
 
-**Status**: 🔴 NOT STARTED - Header exists, implementation needed
-**Priority**: HIGH - Required for user interaction
-**Blocked by**: Phase 1.5 (Replay Buffer)
 **Verification**: Press F9 → MP4 file created in output folder.
 
 ### 1.7 Configuration
-- [x] Create `src/config.cpp` / `src/config.h`
-- [x] Load settings from `config/settings.json`
-- [x] Support: buffer duration, resolution, FPS, output path, hotkey
-- [x] Create default config if missing
+- Create `src/config.cpp` / `src/config.h`
+- Load settings from `config/settings.json`
+- Support: buffer duration, resolution, FPS, output path, hotkey
+- Create default config if missing
 
-**Status**: ✅ COMPLETE
 **Verification**: Changing `settings.json` affects app behavior.
 
 ### 1.8 System Tray
-- [x] Create `src/tray.cpp` / `src/tray.h`
-- [x] Add system tray icon
-- [x] Context menu: Open Clips Folder, Exit (Status/Settings pending)
-- [ ] Show notification on clip save (PENDING - needs replay buffer)
+- Create `src/tray.cpp` / `src/tray.h`
+- Add system tray icon
+- Context menu: Open Clips Folder, Exit
+- Show notification on clip save
 
-**Status**: 🟡 PARTIAL - Basic tray working, notifications need replay buffer
 **Verification**: Tray icon appears, menu works, notification shows on save.
 
 ### 1.9 Polish & Testing
-- [ ] Test with multiple games
-- [ ] Verify 2 audio tracks with `ffprobe`
-- [ ] Test NVENC and x264 fallback
-- [ ] Test various resolutions (1080p, 1440p, 4K)
-- [ ] Memory usage profiling (should be ~200MB for 2 min buffer)
-- [ ] CPU usage profiling (should be <5% with NVENC)
-
-**Phase 1 Current Status**:
-
-| Component | Status | Files |
-|-----------|--------|-------|
-| Project Setup | ✅ Complete | build.ps1, .gitignore, docs |
-| OBS Core | ✅ Complete | obs_core.cpp, logger.cpp |
-| Capture Sources | ✅ Complete | capture.cpp |
-| Encoders | 🟡 Partial | encoder.cpp (not integrated) |
-| **Replay Buffer** | 🔴 **Not Started** | **replay.h stub, needs .cpp** ⬅️ |
-| **Hotkey** | 🔴 **Not Started** | **hotkey.h stub, needs .cpp** |
-| Configuration | ✅ Complete | config.cpp |
-| System Tray | 🟡 Partial | tray.cpp (basic, needs notifications) |
+- Test with multiple games
+- Verify 2 audio tracks with `ffprobe`
+- Test NVENC and x264 fallback
+- Test various resolutions (1080p, 1440p, 4K)
+- Memory usage profiling
+- CPU usage profiling
 
 **Phase 1 Complete When**:
 - App runs silently in system tray
 - F9 saves last 2 minutes as MP4
 - MP4 has video + 2 separate audio tracks
 - Works with anti-cheat games (monitor capture only)
-- CPU/memory usage is minimal
-
-**Next Priority**: Implement `src/replay.cpp` (see docs/IMPLEMENTATION.md Phase 5)
+- CPU/memory usage is reasonable (measure and compare to commercial tools)
 
 ---
 
@@ -143,54 +118,54 @@ This document outlines the complete development roadmap for ClipVault, split int
 **Success Criteria**: User can trim clips, adjust audio levels, add markers, and export without re-encoding.
 
 ### 2.1 UI Framework Setup
-- [ ] Choose UI framework (options: Qt, Dear ImGui, or web-based with Electron/Tauri)
-- [ ] Set up project structure for UI
-- [ ] Create main window with basic layout
+- Choose UI framework (options: Qt, Dear ImGui, or web-based with Electron/Tauri)
+- Set up project structure for UI
+- Create main window with basic layout
 
 ### 2.2 Clip Browser
-- [ ] Scan clips folder for MP4 files
-- [ ] Display clips in grid/list view
-- [ ] Show thumbnails (extract frame from video)
-- [ ] Sort by date, game, duration
-- [ ] Filter by game (using `games.json` detection)
+- Scan clips folder for MP4 files
+- Display clips in grid/list view
+- Show thumbnails (extract frame from video)
+- Sort by date, game, duration
+- Filter by game (using `games.json` detection)
 
 ### 2.3 Video Preview
-- [ ] Embed video player in UI
-- [ ] Play/pause/seek controls
-- [ ] Timeline scrubber
-- [ ] Frame-accurate seeking
-- [ ] Audio track selection (play track 1, track 2, or both)
+- Embed video player in UI
+- Play/pause/seek controls
+- Timeline scrubber
+- Frame-accurate seeking
+- Audio track selection (play track 1, track 2, or both)
 
 ### 2.4 Non-Destructive Editing
-- [ ] **Trim**: Set in/out points without re-encoding
-- [ ] **Audio Levels**: Adjust track 1/track 2 volume independently
-- [ ] **Markers**: Add named markers to timeline
-- [ ] **Metadata**: Edit clip title, tags, notes
-- [ ] Store edits in sidecar file (e.g., `clip.mp4.edit.json`)
+- **Trim**: Set in/out points without re-encoding
+- **Audio Levels**: Adjust track 1/track 2 volume independently
+- **Markers**: Add named markers to timeline
+- **Metadata**: Edit clip title, tags, notes
+- Store edits in sidecar file (e.g., `clip.mp4.edit.json`)
 
 ### 2.5 Export
-- [ ] Export trimmed clip (fast, no re-encode using FFmpeg `-c copy`)
-- [ ] Export with audio adjustments (requires audio re-encode only)
-- [ ] Export presets: Discord (8MB limit), YouTube, Full Quality
-- [ ] Batch export multiple clips
+- Export trimmed clip (fast, no re-encode using FFmpeg `-c copy`)
+- Export with audio adjustments (requires audio re-encode only)
+- Export presets: Discord (8MB limit), YouTube, Full Quality
+- Batch export multiple clips
 
 ### 2.6 Clip Management
-- [ ] Delete clips (with confirmation)
-- [ ] Move clips to folders
-- [ ] Favorite/star clips
-- [ ] Search clips by name/tags
+- Delete clips (with confirmation)
+- Move clips to folders
+- Favorite/star clips
+- Search clips by name/tags
 
 ### 2.7 Settings UI
-- [ ] Configure buffer duration
-- [ ] Configure output folder
-- [ ] Configure hotkey
-- [ ] Configure video quality (resolution, FPS, encoder settings)
-- [ ] Audio device selection
+- Configure buffer duration
+- Configure output folder
+- Configure hotkey
+- Configure video quality (resolution, FPS, encoder settings)
+- Audio device selection
 
 ### 2.8 Integration
-- [ ] Launch editor from tray menu
-- [ ] Auto-open editor after saving clip (optional)
-- [ ] Tray notification click opens clip in editor
+- Launch editor from tray menu
+- Auto-open editor after saving clip (optional)
+- Tray notification click opens clip in editor
 
 **Phase 2 Complete When**:
 - Clean UI for browsing all clips
@@ -239,25 +214,20 @@ Recommendation: **Qt** for native performance and good multimedia support, or **
 
 ## File Checklist
 
-### Phase 1 Files - Implementation Status
+### Phase 1 Files
 
 ```
 src/
-├── main.cpp           ✅ Entry point (WinMain)
-├── obs_core.h/cpp     ✅ OBS initialization (COMPLETE)
-├── capture.h/cpp      ✅ Video/audio sources (COMPLETE)
-├── encoder.h/cpp      🟡 NVENC/AAC encoders (class exists, needs integration)
-├── replay.h           ✅ Header stub created
-├── replay.cpp         🔴 NEEDS IMPLEMENTATION ⬅️ NEXT TASK
-├── hotkey.h           ✅ Header stub created
-├── hotkey.cpp         🔴 NEEDS IMPLEMENTATION
-├── config.h/cpp       ✅ JSON settings (COMPLETE)
-├── logger.h/cpp       ✅ File logging (COMPLETE)
-└── tray.h/cpp         🟡 System tray (basic implementation)
+├── main.cpp           # Entry point (WinMain)
+├── obs_core.h/cpp     # OBS initialization
+├── capture.h/cpp      # Video/audio sources
+├── encoder.h/cpp      # NVENC/AAC encoders
+├── replay.h/cpp       # Replay buffer (CORE FEATURE)
+├── hotkey.h/cpp       # F9 handler
+├── config.h/cpp       # JSON settings
+├── logger.h/cpp       # File logging
+└── tray.h/cpp         # System tray
 ```
-
-**Missing Core Feature**: `replay.cpp` - This is the replay buffer that saves clips
-**See**: `docs/IMPLEMENTATION.md` Phase 5 for implementation guide
 
 ### Phase 2 Files (TBD based on framework)
 ```
@@ -280,3 +250,5 @@ ui/
 4. **Common failure point**: OBS initialization order and data paths
 5. **Don't skip steps** - each builds on the previous
 6. **Ask user** before making technology decisions for Phase 2
+
+**For current status**: See `PROGRESS.md` (dynamic, updated frequently)

@@ -4,35 +4,40 @@
 
 ## Quick Start for Agents
 
-1. **Verify environment**: ` .\scripts\verify-env.ps1`
-2. **Check current status**: See Implementation Status below
-3. **Read workflow**: `AGENT_WORKFLOW.md`
+1. **Verify environment**: `.\scripts\verify-env.ps1`
+2. **Check current status**: Read `PROGRESS.md` (dynamic status, updated frequently)
+3. **Read workflow**: `AGENT_WORKFLOW.md` (how to implement)
 4. **Build**: `.\build.ps1`
-5. **Implement next task** from PLAN.md
-6. **Test**: Run `.\bin\ClipVault.exe` and check `.\bin\clipvault.log`
+5. **Implement next task** (see PROGRESS.md for current priority)
+6. **Update PROGRESS.md**: Mark tasks complete, add notes
+7. **Test**: Run `.\bin\ClipVault.exe` and check `.\bin\clipvault.log`
 
-## Implementation Status
+**Note**: PLAN.md is the static roadmap (don't modify). Use PROGRESS.md for day-to-day status updates.
 
-| Component | Status | Files | Notes |
-|-----------|--------|-------|-------|
-| **Project Setup** | ✅ Complete | All docs, scripts | Environment ready |
-| **OBS Core** | ✅ Complete | obs_core.cpp | Initializes/shutdown cleanly |
-| **Capture** | ✅ Complete | capture.cpp | Monitor + audio sources |
-| **Encoders** | 🟡 Partial | encoder.cpp | Class exists, needs integration |
-| **Replay Buffer** | 🔴 **Not Started** | replay.h stub | ⬅️ **NEXT TASK** |
-| **Hotkey** | 🔴 Not Started | hotkey.h stub | Needs implementation |
-| **Config** | ✅ Complete | config.cpp | JSON settings working |
-| **Tray** | 🟡 Partial | tray.cpp | Basic, needs notifications |
+## Current Status
 
-**Current Phase**: 1.5 (Replay Buffer) - See PLAN.md
-**Priority**: Implement `src/replay.cpp` - this is the core feature that saves clips
+**See `PROGRESS.md` for full implementation status** - it contains:
+
+- Current phase and active task
+- Completed items ✅
+- What's blocked/waiting ⏸️
+- Recent changes
+- Agent notes and blockers
+
+**Quick Summary** (check PROGRESS.md for details):
+
+- **Phase**: 1.5 (Replay Buffer Implementation)
+- **Next Task**: Implement `src/replay.cpp` (see PROGRESS.md)
+- **Priority**: HIGH - this is the core feature that saves clips
 
 ## Agent Rules & Responsibilities
 
 ### Project Goal
+
 Create a **lightweight, open-source game clipping tool** for Windows with performance comparable to commercial tools like Outplayed or SteelSeries GG.
 
 **Key Requirements**:
+
 - **Performance**: Minimal CPU/GPU impact using hardware encoding (NVENC). Actual memory usage depends on buffer size and quality settings.
 - **Quality**: High quality capture (1080p60 default) visually comparable to commercial tools
 - **Audio**: Two separate tracks (system + microphone) for independent mixing later
@@ -42,47 +47,56 @@ Create a **lightweight, open-source game clipping tool** for Windows with perfor
 **Reference**: Similar tools (Outplayed) typically use 1-2GB RAM for 1080p60 2-minute buffers. We aim for comparable efficiency.
 
 ### What You CAN Do ✅
+
 - **Write and modify code** in `src/`, `scripts/`, `config/`
 - **Update documentation** when you discover new patterns, gotchas, or outdated info
 - **Add new docs** for complex features or agent workflows
 - **Create headers** for planned components (like we did with `replay.h`, `hotkey.h`)
-- **Mark tasks complete** in PLAN.md when you finish them
+- **Mark tasks complete** in PROGRESS.md when you finish them
 - **Add rules/guidelines** when you learn something important
 - **Fix documentation errors** immediately when you spot them
 
 ### What You CANNOT Do ❌
+
 - **NEVER commit code** - The user commits manually when satisfied
-- **NEVER push to GitHub** - Wait for explicit user instruction  
+- **NEVER push to GitHub** - Wait for explicit user instruction
 - **NEVER modify** `.gitignore`, `LICENSE`, or repo structure without asking
 - **NEVER delete** documentation files without asking
 
 ### Rule Documentation Process (IMPORTANT)
+
 **When the user tells you:**
+
 > "Always do X..." or "Never do Y..." or "When Z happens, do this..."
 
 **You MUST ask:**
+
 > "Should I add this rule to AGENTS.md (or another doc) so future agents know it?"
 
 **Why?** So knowledge persists across sessions. Future agents (Opencode, Claude, etc.) need to follow the same rules.
 
 ### Keeping Documentation Updated
+
 These are **living documents**. Update them when:
-1. ✅ You complete a task (mark it done in PLAN.md)
+
+1. ✅ You complete a task (mark it done in PROGRESS.md)
 2. 🐛 You discover a bug/gotcha not documented
 3. 📚 You learn a new OBS pattern
 4. 🔄 You change how something works
 5. ❓ You find unclear instructions
 
 **Docs you should update most often:**
-- **PLAN.md** - Mark completed items, update status
+
+- **PROGRESS.md** - Mark completed items, note blockers, update status
 - **AGENTS.md** - Add new patterns, fix errors
 - **CONVENTIONS.md** - Document new code style decisions
 - **docs/LIBOBS.md** - Add new API examples
 
 ### Before You Start Work
+
 1. Run `scripts\verify-env.ps1`
 2. Read AGENT_WORKFLOW.md for the process
-3. Check PLAN.md for current phase
+3. Check PROGRESS.md for current phase and priority task
 4. Read the Implementation section of the relevant phase in docs/IMPLEMENTATION.md
 
 ## Build Commands
@@ -123,6 +137,7 @@ scoop install llvm
 ### Setup
 
 1. **Generate compile commands** (required for clangd to understand includes):
+
 ```powershell
 # Build once to generate compile_commands.json in build/
 .\build.ps1
@@ -162,6 +177,7 @@ ffprobe -show_streams clip.mp4 2>&1 | Select-String "codec_type=audio"
 ## Code Style (C++17)
 
 ### Naming
+
 - Files: `snake_case.cpp`, `snake_case.h`
 - Classes: `PascalCase`
 - Functions/variables: `snake_case`
@@ -169,6 +185,7 @@ ffprobe -show_streams clip.mp4 2>&1 | Select-String "codec_type=audio"
 - Private members: `snake_case_` (trailing underscore)
 
 ### Formatting
+
 - 4 spaces (no tabs)
 - Functions: brace on new line
 - Control structures: brace on same line
@@ -184,6 +201,7 @@ void function()
 ```
 
 ### Includes Order
+
 ```cpp
 #pragma once
 
@@ -252,6 +270,7 @@ LOG_DEBUG("Debug info: " << value);  // Debug builds only
 ## Critical OBS Patterns
 
 ### Reference Counting (ALWAYS release)
+
 ```cpp
 obs_data_t* settings = obs_data_create();
 // ... use settings ...
@@ -262,6 +281,7 @@ obs_source_release(source);  // REQUIRED when done
 ```
 
 ### Initialization Order (MUST follow)
+
 ```cpp
 obs_startup("en-US", config_path, nullptr);
 obs_add_data_path("./data/libobs/");  // Trailing slash REQUIRED
@@ -279,6 +299,7 @@ obs_load_all_modules();
 ```
 
 ### Two Audio Tracks
+
 ```cpp
 // Route sources to tracks
 obs_source_set_audio_mixers(system_audio, 1);  // Track 1
@@ -292,15 +313,15 @@ obs_output_set_mixers(output, 0x03);  // Enable tracks 1+2
 
 ## Common IDs
 
-| Component | ID |
-|-----------|-----|
-| Monitor capture | `monitor_capture` |
-| System audio | `wasapi_output_capture` |
-| Microphone | `wasapi_input_capture` |
-| NVENC encoder | `jim_nvenc` |
-| x264 fallback | `obs_x264` |
-| Audio encoder | `ffmpeg_aac` |
-| Replay buffer | `replay_buffer` |
+| Component       | ID                      |
+| --------------- | ----------------------- |
+| Monitor capture | `monitor_capture`       |
+| System audio    | `wasapi_output_capture` |
+| Microphone      | `wasapi_input_capture`  |
+| NVENC encoder   | `ffmpeg_nvenc`          |
+| x264 fallback   | `obs_x264`              |
+| Audio encoder   | `ffmpeg_aac`            |
+| Replay buffer   | `replay_buffer`         |
 
 ## Don't Do
 
@@ -320,9 +341,12 @@ obs_output_set_mixers(output, 0x03);  // Enable tracks 1+2
 | **README.md** | Project overview, quick start | First time viewing repo |
 | **AGENTS.md** (this file) | Agent rules, build commands, OBS patterns | Every agent session |
 | **AGENT_WORKFLOW.md** | Step-by-step development process | Before starting work |
-| **PLAN.md** | Development roadmap, phase status | To find next task |
+| **PROGRESS.md** | **Current status, active tasks, blockers** | **Every session - this is your source of truth!** |
+| **PLAN.md** | Static roadmap (don't modify) | Reference only |
 | **CONVENTIONS.md** | Complete code style guide | When writing new code |
 | **TESTING.md** | Manual test procedures | After completing features |
+
+**Important**: PLAN.md is static - don't modify it. Use PROGRESS.md to track actual progress, mark completed tasks, and note any blockers.
 
 **Technical References:**
 | Document | Purpose |
@@ -334,6 +358,7 @@ obs_output_set_mixers(output, 0x03);  // Enable tracks 1+2
 | **TROUBLESHOOTING.md** | Common errors and solutions |
 
 **Configuration:**
+
 - **config/settings.json** - App configuration reference
 - **.clangd** - LSP configuration for clangd
 - **CMakeLists.txt** - Build system configuration

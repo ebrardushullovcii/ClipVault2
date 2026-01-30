@@ -100,7 +100,13 @@ int main() {
     // Add module path
     obs_add_module_path("./obs-plugins/64bit", "./data/obs-plugins");
 
-    // Video config
+    // CRITICAL: Load modules BEFORE video/audio init!
+    // Otherwise monitor_capture will have black screen
+    obs_load_all_modules();
+    obs_post_load_modules();
+    printf("Modules loaded\n");
+
+    // Video config (AFTER modules loaded)
     obs_video_info ovi = {};
     ovi.graphics_module = "libobs-d3d11";  // CRITICAL
     ovi.fps_num = 60;
@@ -125,18 +131,7 @@ int main() {
 
     printf("Video initialized: 1920x1080 @ 60fps\n");
 
-    obs_shutdown();
-    return 0;
-}
-```
-
-**Verify**: No errors, prints "Video initialized".
-
-### Step 2.3: Add Audio Initialization
-
-Add after video:
-
-```cpp
+    // Audio config (AFTER modules loaded)
     obs_audio_info oai = {};
     oai.samples_per_sec = 48000;
     oai.speakers = SPEAKERS_STEREO;
@@ -148,21 +143,21 @@ Add after video:
     }
 
     printf("Audio initialized: 48000 Hz stereo\n");
+
+    obs_shutdown();
+    return 0;
+}
 ```
 
-**Verify**: No errors, prints "Audio initialized".
+**Verify**: No errors, prints "Video initialized" and "Audio initialized".
+
+### Step 2.3: Add Audio Initialization
+
+Already included in Step 2.2 above.
 
 ### Step 2.4: Load Modules
 
-Add after audio:
-
-```cpp
-    obs_load_all_modules();
-    obs_post_load_modules();
-    printf("Modules loaded\n");
-```
-
-**Verify**: Console shows loaded modules (win-capture, obs-ffmpeg, etc.)
+Already included in Step 2.2 above (must be BEFORE video/audio init).
 
 ---
 

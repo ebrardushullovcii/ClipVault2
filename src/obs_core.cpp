@@ -27,6 +27,12 @@ typedef obs_source_t* (*obs_source_create_t)(const char *id, const char *name, o
 typedef void (*obs_source_release_t)(obs_source_t *source);
 typedef void (*obs_source_set_audio_mixers_t)(obs_source_t *source, uint32_t mixers);
 typedef void (*obs_set_output_source_t)(uint32_t channel, obs_source_t *source);
+typedef bool (*obs_source_active_t)(obs_source_t *source);
+typedef void (*obs_source_activate_t)(obs_source_t *source);
+typedef void (*obs_source_deactivate_t)(obs_source_t *source, uint32_t hint);
+
+// Video render function (CRITICAL for frame production)
+typedef void (*obs_render_main_texture_t)(void);
 
 // Encoder functions
 typedef obs_encoder_t* (*obs_video_encoder_create_t)(const char *id, const char *name, obs_data_t *settings, obs_data_t *hotkey_data);
@@ -36,6 +42,45 @@ typedef void (*obs_encoder_set_video_t)(obs_encoder_t *encoder, video_t *video);
 typedef void (*obs_encoder_set_audio_t)(obs_encoder_t *encoder, audio_t *audio);
 typedef video_t* (*obs_get_video_t)(void);
 typedef audio_t* (*obs_get_audio_t)(void);
+
+// Output functions
+typedef obs_output_t* (*obs_output_create_t)(const char *id, const char *name, obs_data_t *settings, obs_data_t *hotkey_data);
+typedef void (*obs_output_release_t)(obs_output_t *output);
+typedef void (*obs_output_set_video_encoder_t)(obs_output_t *output, obs_encoder_t *encoder);
+typedef void (*obs_output_set_audio_encoder_t)(obs_output_t *output, obs_encoder_t *encoder, size_t idx);
+typedef bool (*obs_output_start_t)(obs_output_t *output);
+typedef void (*obs_output_stop_t)(obs_output_t *output);
+typedef bool (*obs_output_active_t)(obs_output_t *output);
+typedef signal_handler_t* (*obs_output_get_signal_handler_t)(obs_output_t *output);
+typedef void (*signal_handler_connect_t)(signal_handler_t *handler, const char *signal, void (*callback)(void*, calldata_t*), void *data);
+typedef void (*obs_output_signal_t)(obs_output_t *output, const char *signal);
+typedef const char* (*calldata_string_t)(calldata_t *data, const char *name);
+typedef const char* (*obs_output_get_last_error_t)(obs_output_t *output);
+typedef bool (*obs_output_can_begin_data_capture_t)(obs_output_t *output, uint32_t flags);
+typedef void (*obs_output_set_mixers_t)(obs_output_t *output, uint32_t mixers);
+typedef void (*obs_output_set_video_source_t)(obs_output_t *output, obs_source_t *source);
+
+// Debug/diagnostic functions
+typedef uint32_t (*obs_output_get_flags_t)(obs_output_t *output);
+typedef const char* (*obs_encoder_get_id_t)(const obs_encoder_t *encoder);
+typedef bool (*obs_encoder_active_t)(const obs_encoder_t *encoder);
+typedef const char* (*obs_output_get_id_t)(const obs_output_t *output);
+typedef const char* (*obs_output_get_name_t)(const obs_output_t *output);
+typedef obs_encoder_t* (*obs_output_get_video_encoder_t)(const obs_output_t *output);
+typedef obs_encoder_t* (*obs_output_get_audio_encoder_t)(const obs_output_t *output, size_t idx);
+typedef const char* (*obs_data_get_json_t)(obs_data_t *data);
+
+// Procedure handler functions (for replay buffer save)
+typedef proc_handler_t* (*obs_output_get_proc_handler_t)(obs_output_t *output);
+typedef void (*calldata_init_t)(calldata_t *data);
+typedef void (*calldata_free_t)(calldata_t *data);
+typedef bool (*proc_handler_call_t)(proc_handler_t *handler, const char *name, calldata_t *data);
+
+// Scene functions (needed for video rendering pipeline)
+typedef obs_scene_t* (*obs_scene_create_t)(const char *name);
+typedef void (*obs_scene_release_t)(obs_scene_t *scene);
+typedef obs_source_t* (*obs_scene_get_source_t)(const obs_scene_t *scene);
+typedef obs_sceneitem_t* (*obs_scene_add_t)(obs_scene_t *scene, obs_source_t *source);
 
 namespace clipvault {
 
@@ -60,6 +105,12 @@ static obs_source_create_t g_obs_source_create = nullptr;
 static obs_source_release_t g_obs_source_release = nullptr;
 static obs_source_set_audio_mixers_t g_obs_source_set_audio_mixers = nullptr;
 static obs_set_output_source_t g_obs_set_output_source = nullptr;
+static obs_source_active_t g_obs_source_active = nullptr;
+static obs_source_activate_t g_obs_source_activate = nullptr;
+static obs_source_deactivate_t g_obs_source_deactivate = nullptr;
+
+// Video render function pointer (CRITICAL for frame production)
+static obs_render_main_texture_t g_obs_render_main_texture = nullptr;
 
 // Encoder function pointers
 static obs_video_encoder_create_t g_obs_video_encoder_create = nullptr;
@@ -69,6 +120,45 @@ static obs_encoder_set_video_t g_obs_encoder_set_video = nullptr;
 static obs_encoder_set_audio_t g_obs_encoder_set_audio = nullptr;
 static obs_get_video_t g_obs_get_video = nullptr;
 static obs_get_audio_t g_obs_get_audio = nullptr;
+
+// Output function pointers
+static obs_output_create_t g_obs_output_create = nullptr;
+static obs_output_release_t g_obs_output_release = nullptr;
+static obs_output_set_video_encoder_t g_obs_output_set_video_encoder = nullptr;
+static obs_output_set_audio_encoder_t g_obs_output_set_audio_encoder = nullptr;
+static obs_output_start_t g_obs_output_start = nullptr;
+static obs_output_stop_t g_obs_output_stop = nullptr;
+static obs_output_active_t g_obs_output_active = nullptr;
+static obs_output_get_signal_handler_t g_obs_output_get_signal_handler = nullptr;
+static signal_handler_connect_t g_signal_handler_connect = nullptr;
+static obs_output_signal_t g_obs_output_signal = nullptr;
+static calldata_string_t g_calldata_string = nullptr;
+static obs_output_get_last_error_t g_obs_output_get_last_error = nullptr;
+static obs_output_can_begin_data_capture_t g_obs_output_can_begin_data_capture = nullptr;
+static obs_output_set_mixers_t g_obs_output_set_mixers = nullptr;
+static obs_output_set_video_source_t g_obs_output_set_video_source = nullptr;
+
+// Debug function pointers
+static obs_output_get_flags_t g_obs_output_get_flags = nullptr;
+static obs_encoder_get_id_t g_obs_encoder_get_id = nullptr;
+static obs_encoder_active_t g_obs_encoder_active = nullptr;
+static obs_output_get_id_t g_obs_output_get_id = nullptr;
+static obs_output_get_name_t g_obs_output_get_name = nullptr;
+static obs_output_get_video_encoder_t g_obs_output_get_video_encoder = nullptr;
+static obs_output_get_audio_encoder_t g_obs_output_get_audio_encoder = nullptr;
+static obs_data_get_json_t g_obs_data_get_json = nullptr;
+
+// Procedure handler function pointers
+static obs_output_get_proc_handler_t g_obs_output_get_proc_handler = nullptr;
+static calldata_init_t g_calldata_init = nullptr;
+static calldata_free_t g_calldata_free = nullptr;
+static proc_handler_call_t g_proc_handler_call = nullptr;
+
+// Scene function pointers
+static obs_scene_create_t g_obs_scene_create = nullptr;
+static obs_scene_release_t g_obs_scene_release = nullptr;
+static obs_scene_get_source_t g_obs_scene_get_source = nullptr;
+static obs_scene_add_t g_obs_scene_add = nullptr;
 
 OBSCore& OBSCore::instance()
 {
@@ -108,6 +198,17 @@ static bool load_obs_functions()
     g_obs_source_release = (obs_source_release_t)GetProcAddress(g_obs_module, "obs_source_release");
     g_obs_source_set_audio_mixers = (obs_source_set_audio_mixers_t)GetProcAddress(g_obs_module, "obs_source_set_audio_mixers");
     g_obs_set_output_source = (obs_set_output_source_t)GetProcAddress(g_obs_module, "obs_set_output_source");
+    g_obs_source_active = (obs_source_active_t)GetProcAddress(g_obs_module, "obs_source_active");
+    g_obs_source_activate = (obs_source_activate_t)GetProcAddress(g_obs_module, "obs_source_activate");
+    g_obs_source_deactivate = (obs_source_deactivate_t)GetProcAddress(g_obs_module, "obs_source_deactivate");
+    
+    // CRITICAL: Load video render function (needed to produce frames)
+    g_obs_render_main_texture = (obs_render_main_texture_t)GetProcAddress(g_obs_module, "obs_render_main_texture");
+    if (!g_obs_render_main_texture) {
+        LOG_WARNING("Failed to load obs_render_main_texture - video may be black");
+    } else {
+        LOG_INFO("obs_render_main_texture loaded successfully - frame rendering available");
+    }
 
     if (!g_obs_startup || !g_obs_shutdown || !g_obs_add_data_path ||
         !g_obs_add_module_path || !g_obs_reset_video || !g_obs_reset_audio ||
@@ -134,6 +235,57 @@ static bool load_obs_functions()
     if (!g_obs_video_encoder_create || !g_obs_audio_encoder_create ||
         !g_obs_encoder_release || !g_obs_get_video || !g_obs_get_audio) {
         LOG_ERROR("Failed to load encoder OBS functions");
+        return false;
+    }
+
+    // Output functions
+    g_obs_output_create = (obs_output_create_t)GetProcAddress(g_obs_module, "obs_output_create");
+    g_obs_output_release = (obs_output_release_t)GetProcAddress(g_obs_module, "obs_output_release");
+    g_obs_output_set_video_encoder = (obs_output_set_video_encoder_t)GetProcAddress(g_obs_module, "obs_output_set_video_encoder");
+    g_obs_output_set_audio_encoder = (obs_output_set_audio_encoder_t)GetProcAddress(g_obs_module, "obs_output_set_audio_encoder");
+    g_obs_output_start = (obs_output_start_t)GetProcAddress(g_obs_module, "obs_output_start");
+    g_obs_output_stop = (obs_output_stop_t)GetProcAddress(g_obs_module, "obs_output_stop");
+    g_obs_output_active = (obs_output_active_t)GetProcAddress(g_obs_module, "obs_output_active");
+    g_obs_output_get_signal_handler = (obs_output_get_signal_handler_t)GetProcAddress(g_obs_module, "obs_output_get_signal_handler");
+    g_signal_handler_connect = (signal_handler_connect_t)GetProcAddress(g_obs_module, "signal_handler_connect");
+    g_obs_output_signal = (obs_output_signal_t)GetProcAddress(g_obs_module, "obs_output_signal");
+    g_calldata_string = (calldata_string_t)GetProcAddress(g_obs_module, "calldata_string");
+    g_obs_output_get_last_error = (obs_output_get_last_error_t)GetProcAddress(g_obs_module, "obs_output_get_last_error");
+g_obs_output_can_begin_data_capture = (obs_output_can_begin_data_capture_t)GetProcAddress(g_obs_module, "obs_output_can_begin_data_capture");
+    g_obs_output_set_mixers = (obs_output_set_mixers_t)GetProcAddress(g_obs_module, "obs_output_set_mixers");
+    g_obs_output_set_video_source = (obs_output_set_video_source_t)GetProcAddress(g_obs_module, "obs_output_set_video_source");
+
+// Debug functions (optional - don't fail if not found)
+    g_obs_output_get_flags = (obs_output_get_flags_t)GetProcAddress(g_obs_module, "obs_output_get_flags");
+    g_obs_encoder_get_id = (obs_encoder_get_id_t)GetProcAddress(g_obs_module, "obs_encoder_get_id");
+    g_obs_encoder_active = (obs_encoder_active_t)GetProcAddress(g_obs_module, "obs_encoder_active");
+    g_obs_output_get_id = (obs_output_get_id_t)GetProcAddress(g_obs_module, "obs_output_get_id");
+    g_obs_output_get_name = (obs_output_get_name_t)GetProcAddress(g_obs_module, "obs_output_get_name");
+    g_obs_output_get_video_encoder = (obs_output_get_video_encoder_t)GetProcAddress(g_obs_module, "obs_output_get_video_encoder");
+    g_obs_output_get_audio_encoder = (obs_output_get_audio_encoder_t)GetProcAddress(g_obs_module, "obs_output_get_audio_encoder");
+    g_obs_data_get_json = (obs_data_get_json_t)GetProcAddress(g_obs_module, "obs_data_get_json");
+
+    // Procedure handler functions (for replay buffer save)
+    g_obs_output_get_proc_handler = (obs_output_get_proc_handler_t)GetProcAddress(g_obs_module, "obs_output_get_proc_handler");
+    g_calldata_init = (calldata_init_t)GetProcAddress(g_obs_module, "calldata_init");
+    g_calldata_free = (calldata_free_t)GetProcAddress(g_obs_module, "calldata_free");
+    g_proc_handler_call = (proc_handler_call_t)GetProcAddress(g_obs_module, "proc_handler_call");
+
+    // Scene functions (needed for video rendering pipeline)
+    g_obs_scene_create = (obs_scene_create_t)GetProcAddress(g_obs_module, "obs_scene_create");
+    g_obs_scene_release = (obs_scene_release_t)GetProcAddress(g_obs_module, "obs_scene_release");
+    g_obs_scene_get_source = (obs_scene_get_source_t)GetProcAddress(g_obs_module, "obs_scene_get_source");
+    g_obs_scene_add = (obs_scene_add_t)GetProcAddress(g_obs_module, "obs_scene_add");
+
+    if (!g_obs_output_create || !g_obs_output_release || !g_obs_output_start ||
+        !g_obs_output_stop || !g_obs_output_active) {
+        LOG_ERROR("Failed to load output OBS functions");
+        return false;
+    }
+
+    // Scene functions are critical - fail if not found
+    if (!g_obs_scene_create || !g_obs_scene_release || !g_obs_scene_get_source || !g_obs_scene_add) {
+        LOG_ERROR("Failed to load scene OBS functions");
         return false;
     }
 
@@ -210,8 +362,16 @@ bool OBSCore::initialize(const std::string& exe_dir)
     // Also add bin directory as module path for graphics modules
     g_obs_add_module_path(exe_dir_fwd.c_str(), exe_dir_fwd.c_str());
 
-    // Step 4: Reset video
-    LOG_INFO("  Step 4: obs_reset_video()");
+    // Step 4: Load modules FIRST (CRITICAL: must load before video/audio reset)
+    // Otherwise monitor_capture will have black screen
+    // See: https://github.com/obsproject/obs-studio/discussions/12367
+    LOG_INFO("  Step 4: Loading modules (must be before video/audio init)");
+    g_obs_load_all_modules();
+    g_obs_post_load_modules();
+    LOG_INFO("    Modules loaded");
+
+    // Step 5: Reset video (AFTER modules are loaded!)
+    LOG_INFO("  Step 5: obs_reset_video()");
     const auto& video_cfg = ConfigManager::instance().video();
 
     obs_video_info ovi = {};
@@ -249,8 +409,8 @@ bool OBSCore::initialize(const std::string& exe_dir)
     LOG_INFO("    Video initialized: " + std::to_string(video_cfg.width) + "x" +
              std::to_string(video_cfg.height) + "@" + std::to_string(video_cfg.fps) + "fps");
 
-    // Step 5: Reset audio
-    LOG_INFO("  Step 5: obs_reset_audio()");
+    // Step 6: Reset audio (AFTER modules are loaded!)
+    LOG_INFO("  Step 6: obs_reset_audio()");
     const auto& audio_cfg = ConfigManager::instance().audio();
 
     obs_audio_info oai = {};
@@ -266,12 +426,6 @@ bool OBSCore::initialize(const std::string& exe_dir)
         return false;
     }
     LOG_INFO("    Audio initialized: " + std::to_string(audio_cfg.sample_rate) + "Hz stereo");
-
-    // Step 6: Load modules (plugins)
-    LOG_INFO("  Step 6: Loading modules");
-    g_obs_load_all_modules();
-    g_obs_post_load_modules();
-    LOG_INFO("    Modules loaded");
 
     initialized_ = true;
     LOG_INFO("OBS initialized successfully!");
@@ -358,6 +512,26 @@ void set_output_source(uint32_t channel, obs_source_t* source)
     if (g_obs_set_output_source) g_obs_set_output_source(channel, source);
 }
 
+bool source_active(obs_source_t* source)
+{
+    return g_obs_source_active && source ? g_obs_source_active(source) : false;
+}
+
+void source_activate(obs_source_t* source)
+{
+    if (g_obs_source_activate && source) g_obs_source_activate(source);
+}
+
+void source_deactivate(obs_source_t* source, uint32_t hint)
+{
+    if (g_obs_source_deactivate && source) g_obs_source_deactivate(source, hint);
+}
+
+void render_main_texture()
+{
+    if (g_obs_render_main_texture) g_obs_render_main_texture();
+}
+
 // Encoder functions
 obs_encoder_t* video_encoder_create(const char* id, const char* name, obs_data_t* settings, obs_data_t* hotkey_data)
 {
@@ -392,6 +566,223 @@ video_t* get_video()
 audio_t* get_audio()
 {
     return g_obs_get_audio ? g_obs_get_audio() : nullptr;
+}
+
+// Output functions
+obs_output_t* output_create(const char* id, const char* name, obs_data_t* settings, obs_data_t* hotkey_data)
+{
+    return g_obs_output_create ? g_obs_output_create(id, name, settings, hotkey_data) : nullptr;
+}
+
+void output_release(obs_output_t* output)
+{
+    if (g_obs_output_release && output) g_obs_output_release(output);
+}
+
+void output_set_video_encoder(obs_output_t* output, obs_encoder_t* encoder)
+{
+    if (g_obs_output_set_video_encoder && output) g_obs_output_set_video_encoder(output, encoder);
+}
+
+void output_set_audio_encoder(obs_output_t* output, obs_encoder_t* encoder, size_t idx)
+{
+    if (g_obs_output_set_audio_encoder && output) g_obs_output_set_audio_encoder(output, encoder, idx);
+}
+
+void output_set_mixers(obs_output_t* output, uint32_t mixers)
+{
+    if (g_obs_output_set_mixers && output) g_obs_output_set_mixers(output, mixers);
+}
+
+void output_set_video_source(obs_output_t* output, obs_source_t* source)
+{
+    if (g_obs_output_set_video_source && output) g_obs_output_set_video_source(output, source);
+}
+
+bool output_start(obs_output_t* output)
+{
+    return g_obs_output_start && output ? g_obs_output_start(output) : false;
+}
+
+void output_stop(obs_output_t* output)
+{
+    if (g_obs_output_stop && output) g_obs_output_stop(output);
+}
+
+bool output_active(obs_output_t* output)
+{
+    return g_obs_output_active && output ? g_obs_output_active(output) : false;
+}
+
+signal_handler_t* output_get_signal_handler(obs_output_t* output)
+{
+    return g_obs_output_get_signal_handler && output ? g_obs_output_get_signal_handler(output) : nullptr;
+}
+
+void signal_handler_connect(signal_handler_t* handler, const char* signal, void (*callback)(void*, calldata_t*), void* data)
+{
+    if (g_signal_handler_connect && handler) g_signal_handler_connect(handler, signal, callback, data);
+}
+
+void output_signal(obs_output_t* output, const char* signal)
+{
+    if (g_obs_output_signal && output) g_obs_output_signal(output, signal);
+}
+
+const char* calldata_string(calldata_t* data, const char* name)
+{
+    return g_calldata_string && data ? g_calldata_string(data, name) : nullptr;
+}
+
+const char* output_get_last_error(obs_output_t* output)
+{
+    return g_obs_output_get_last_error && output ? g_obs_output_get_last_error(output) : nullptr;
+}
+
+bool output_can_begin_data_capture(obs_output_t* output, uint32_t flags)
+{
+    return g_obs_output_can_begin_data_capture && output ? g_obs_output_can_begin_data_capture(output, flags) : false;
+}
+
+uint32_t output_get_flags(obs_output_t* output)
+{
+    return g_obs_output_get_flags && output ? g_obs_output_get_flags(output) : 0;
+}
+
+const char* encoder_get_id(obs_encoder_t* encoder)
+{
+    return g_obs_encoder_get_id && encoder ? g_obs_encoder_get_id(encoder) : nullptr;
+}
+
+bool encoder_active(obs_encoder_t* encoder)
+{
+    return g_obs_encoder_active && encoder ? g_obs_encoder_active(encoder) : false;
+}
+
+const char* output_get_id(obs_output_t* output)
+{
+    return g_obs_output_get_id && output ? g_obs_output_get_id(output) : nullptr;
+}
+
+const char* output_get_name(obs_output_t* output)
+{
+    return g_obs_output_get_name && output ? g_obs_output_get_name(output) : nullptr;
+}
+
+obs_encoder_t* output_get_video_encoder(obs_output_t* output)
+{
+    return g_obs_output_get_video_encoder && output ? g_obs_output_get_video_encoder(output) : nullptr;
+}
+
+obs_encoder_t* output_get_audio_encoder(obs_output_t* output, size_t idx)
+{
+    return g_obs_output_get_audio_encoder && output ? g_obs_output_get_audio_encoder(output, idx) : nullptr;
+}
+
+const char* data_get_json(obs_data_t* data)
+{
+    return g_obs_data_get_json && data ? g_obs_data_get_json(data) : nullptr;
+}
+
+// Debug helper implementations
+void debug_log_output_state(obs_output_t* output, const char* label)
+{
+    if (!output) {
+        LOG_INFO(std::string("[DEBUG ") + label + "] Output is NULL");
+        return;
+    }
+
+    const char* id = output_get_id(output);
+    const char* name = output_get_name(output);
+    uint32_t flags = output_get_flags(output);
+    bool active = output_active(output);
+    bool can_capture = output_can_begin_data_capture(output, 0);
+    const char* last_error = output_get_last_error(output);
+
+    obs_encoder_t* video_enc = output_get_video_encoder(output);
+    obs_encoder_t* audio_enc0 = output_get_audio_encoder(output, 0);
+    obs_encoder_t* audio_enc1 = output_get_audio_encoder(output, 1);
+
+    LOG_INFO(std::string("[DEBUG ") + label + "] Output State:");
+    LOG_INFO(std::string("  ID: ") + (id ? id : "null"));
+    LOG_INFO(std::string("  Name: ") + (name ? name : "null"));
+    LOG_INFO(std::string("  Flags: 0x") + std::to_string(flags));
+    LOG_INFO(std::string("  Active: ") + (active ? "yes" : "no"));
+    LOG_INFO(std::string("  Can capture: ") + (can_capture ? "yes" : "no"));
+    LOG_INFO(std::string("  Last error: ") + (last_error ? last_error : "none"));
+    LOG_INFO(std::string("  Video encoder: ") + (video_enc ? "connected" : "NULL"));
+    LOG_INFO(std::string("  Audio encoder 0: ") + (audio_enc0 ? "connected" : "NULL"));
+    LOG_INFO(std::string("  Audio encoder 1: ") + (audio_enc1 ? "connected" : "NULL"));
+
+    if (video_enc) {
+        const char* venc_id = encoder_get_id(video_enc);
+        bool venc_active = encoder_active(video_enc);
+        LOG_INFO(std::string("    Video encoder ID: ") + (venc_id ? venc_id : "null"));
+        LOG_INFO(std::string("    Video encoder active: ") + (venc_active ? "yes" : "no"));
+    }
+    if (audio_enc0) {
+        const char* aenc_id = encoder_get_id(audio_enc0);
+        bool aenc_active = encoder_active(audio_enc0);
+        LOG_INFO(std::string("    Audio0 encoder ID: ") + (aenc_id ? aenc_id : "null"));
+        LOG_INFO(std::string("    Audio0 encoder active: ") + (aenc_active ? "yes" : "no"));
+    }
+}
+
+void debug_log_encoder_state(obs_encoder_t* encoder, const char* label)
+{
+    if (!encoder) {
+        LOG_INFO(std::string("[DEBUG ") + label + "] Encoder is NULL");
+        return;
+    }
+
+    const char* id = encoder_get_id(encoder);
+    bool active = encoder_active(encoder);
+
+    LOG_INFO(std::string("[DEBUG ") + label + "] Encoder State:");
+    LOG_INFO(std::string("  ID: ") + (id ? id : "null"));
+    LOG_INFO(std::string("  Active: ") + (active ? "yes" : "no"));
+}
+
+// Procedure handler functions (for replay buffer save)
+proc_handler_t* output_get_proc_handler(obs_output_t* output)
+{
+    return g_obs_output_get_proc_handler && output ? g_obs_output_get_proc_handler(output) : nullptr;
+}
+
+void calldata_init(calldata_t* data)
+{
+    if (g_calldata_init && data) g_calldata_init(data);
+}
+
+void calldata_free(calldata_t* data)
+{
+    if (g_calldata_free && data) g_calldata_free(data);
+}
+
+bool proc_handler_call(proc_handler_t* handler, const char* name, calldata_t* data)
+{
+    return g_proc_handler_call && handler ? g_proc_handler_call(handler, name, data) : false;
+}
+
+// Scene functions (needed for video rendering pipeline)
+obs_scene_t* scene_create(const char* name)
+{
+    return g_obs_scene_create ? g_obs_scene_create(name) : nullptr;
+}
+
+void scene_release(obs_scene_t* scene)
+{
+    if (g_obs_scene_release && scene) g_obs_scene_release(scene);
+}
+
+obs_source_t* scene_get_source(const obs_scene_t* scene)
+{
+    return g_obs_scene_get_source && scene ? g_obs_scene_get_source(scene) : nullptr;
+}
+
+obs_sceneitem_t* scene_add(obs_scene_t* scene, obs_source_t* source)
+{
+    return g_obs_scene_add && scene && source ? g_obs_scene_add(scene, source) : nullptr;
 }
 
 } // namespace obs_api

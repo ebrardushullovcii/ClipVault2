@@ -2,55 +2,73 @@
 
 #include <string>
 #include <functional>
+#include <thread>
+#include <atomic>
+#include "obs_core.h"
+
+// Forward declaration
+struct obs_output;
+typedef struct obs_output obs_output_t;
 
 namespace clipvault {
-
-// Forward declarations for OBS types (defined in .cpp to avoid header deps)
-struct obs_output_t;
-struct obs_encoder_t;
 
 class ReplayManager {
 public:
     static ReplayManager& instance();
-    
-    // Initialize replay buffer with encoders from EncoderManager
-    // Must be called AFTER EncoderManager::initialize()
-    bool initialize(int buffer_seconds);
+
+    // Initialize replay buffer
+    bool initialize();
     void shutdown();
-    
-    // Trigger save to output_path
-    // Returns immediately, actual save happens async
-    // Listen for "saved" signal or check is_save_pending()
+
+    // Start/stop the replay buffer
+    bool start();
+    void stop();
+
+    // Save the current buffer to file
     bool save_clip();
-    
-    // Check if save is in progress
-    bool is_save_pending() const;
-    
-    // Check if replay buffer is running
-    bool is_running() const { return initialized_; }
-    
-    // Get last error message
+
+    // Check status
+    bool is_initialized() const { return initialized_; }
+    bool is_active() const { return active_; }
+    bool is_save_pending() const { return save_pending_; }
     const std::string& last_error() const { return last_error_; }
-    
+    const std::string& last_saved_file() const { return last_saved_file_; }
+
     // Callback for when save completes
-    using SaveCallback = std::function<void(const std::string& path)>;
+    using SaveCallback = std::function<void(const std::string& path, bool success)>;
     void set_save_callback(SaveCallback callback) { save_callback_ = callback; }
+    
+    // Debug: log pipeline statistics
+    void log_pipeline_stats();
 
 private:
     ReplayManager() = default;
     ~ReplayManager();
-    
-    // OBS objects - forward declared to avoid exposing OBS headers
-    void* replay_output_ = nullptr;  // Actually obs_output_t*
-    
+
+    ReplayManager(const ReplayManager&) = delete;
+    ReplayManager& operator=(const ReplayManager&) = delete;
+
+    obs_output_t* replay_output_ = nullptr;
+
     bool initialized_ = false;
+    bool active_ = false;
     bool save_pending_ = false;
     std::string last_error_;
+    std::string last_saved_file_;
     SaveCallback save_callback_;
-    
-    // Signal handler callbacks
-    static void on_replay_saved(void* data, void* cd);  // Actually calldata_t*
-    static void on_replay_stopped(void* data, void* cd);
+
+    // Render thread (CRITICAL: must run continuously to produce video frames)
+    std::thread render_thread_;
+    std::atomic<bool> render_thread_running_{false};
+
+    // Start/stop render thread
+    void start_render_thread();
+    void stop_render_thread();
+    void render_thread_loop();
+
+    // Signal callbacks
+    static void on_replay_saved(void* data, calldata_t* calldata);
+    static void on_replay_stopped(void* data, calldata_t* calldata);
 };
 
 } // namespace clipvault
