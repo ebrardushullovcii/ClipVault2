@@ -957,13 +957,13 @@ ipcMain.handle('export:showPreview', async (_, filePath: string) => {
             // Configure video encoding based on target size
             if (useTargetSize && videoBitrate) {
               // Use H.264 with target bitrate for size-constrained export
+              // Note: Don't use -crf with -b:v - they conflict (CRF overrides bitrate)
               command.videoCodec('libx264')
               command.outputOptions([
                 '-b:v', `${videoBitrate}k`,
                 '-maxrate', `${Math.floor(videoBitrate * 1.5)}k`,
                 '-bufsize', `${videoBitrate * 2}k`,
                 '-preset', 'fast',
-                '-crf', '23',
                 '-pix_fmt', 'yuv420p'
               ])
             } else {

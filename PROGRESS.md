@@ -193,6 +193,13 @@ npm run dev
 
 ## Recent Changes
 
+### 2026-01-31 - File Size Target Export Fix
+
+- **Fixed FFmpeg Command**: Removed `-crf 23` parameter when using target bitrate encoding
+  - CRF (Constant Rate Factor) overrides bitrate settings in libx264, causing target file sizes to not be respected
+  - Now uses only `-b:v`, `-maxrate`, `-bufsize` for proper bitrate control
+  - Results in more accurate file size targeting during export
+
 ### 2026-01-31 - File Size Target Export Feature
 
 - **File Size Target Export**: Added dropdown next to export button with size options: Original, 10MB, 50MB, 100MB
@@ -241,7 +248,7 @@ None - all features working as expected.
 - [x] **5. Export Quality Presets** - Add quality selector to export screen (Quick/High/Max)
 - [x] **6. Settings Screen** - GUI for changing buffer duration, quality, hotkey, paths
 - [x] **7. Polish Sharing Popup** - Add share buttons (Discord, Twitter, etc.) with proper timeout
-- [x] **8. File Size Target** - Export by target MB instead of quality CRF
+- [ ] **8. File Size Target** - Export by target MB instead of quality CRF
 - [x] **9. Timeline Improvements** - Better drag handles, audio waveforms, trim precision
 
 ### Game Integration

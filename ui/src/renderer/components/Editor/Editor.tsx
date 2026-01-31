@@ -1043,7 +1043,10 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
               </button>
               <div className="relative">
                 <button
-                  onClick={() => setShowSizeDropdown(!showSizeDropdown)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowSizeDropdown(!showSizeDropdown)
+                  }}
                   disabled={isExporting}
                   className={`btn-secondary flex items-center gap-1 px-3 ${
                     isExporting ? 'cursor-not-allowed opacity-80' : ''
@@ -1053,7 +1056,10 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                   <ChevronDown className="h-4 w-4" />
                 </button>
                 {showSizeDropdown && (
-                  <div className="absolute bottom-full right-0 z-50 mb-1 w-40 rounded-lg border border-border bg-background-secondary py-1 shadow-lg">
+                  <div 
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute bottom-full right-0 z-50 mb-1 w-40 rounded-lg border border-border bg-background-secondary py-1 shadow-lg"
+                  >
                     <button
                       onClick={() => {
                         setTargetSizeMB('original')
