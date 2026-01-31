@@ -281,3 +281,42 @@ signal_handler_connect(sh, "saved", on_saved, nullptr);
 4. **Use trailing slash on data paths** - OBS concatenates paths directly
 5. **Set graphics_module** - Required on Windows, crashes without it
 6. **Don't use game_capture** - Not anti-cheat safe, use monitor_capture instead
+
+
+## Troubleshooting
+
+### Hotkey Not Working in Games
+
+**Problem**: Global hotkey (F9) does not trigger when in fullscreen/borderless games.
+
+**Root Cause**: `RegisterHotKey()` API is blocked by games that consume input at driver level.
+
+**Solution**: Use **WH_KEYBOARD_LL** low-level keyboard hook instead of `RegisterHotKey()`:
+
+```cpp
+// Install hook at driver level - works even in fullscreen games
+HHOOK hook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, hInstance, 0);
+
+LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (nCode >= 0) {
+        KBDLLHOOKSTRUCT* kb = (KBDLLHOOKSTRUCT*)lParam;
+        if (kb->vkCode == VK_F9 && wParam == WM_KEYDOWN) {
+            // F9 pressed - works in ANY app including games
+            save_clip();
+        }
+    }
+    return CallNextHookEx(hook, nCode, wParam, lParam);
+}
+```
+
+**Why this works**: WH_KEYBOARD_LL runs in a system thread and sees keystrokes before they reach applications. Games running as fullscreen/borderless cannot block it.
+
+**Reference**: ClipVault uses this approach in `src/hotkey.cpp` to capture F9 reliably.
+
+---
+
+## Useful Resources
+
+- OBS Studio Source Code: https://github.com/obsproject/obs-studio
+- libobs Documentation: https://docs.obsproject.com/
+- OBS API Reference: https://obsproject.com/docs/reference-libobs.html

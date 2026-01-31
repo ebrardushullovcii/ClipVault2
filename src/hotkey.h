@@ -29,8 +29,11 @@ public:
     // Callback when hotkey pressed
     using HotkeyCallback = std::function<void()>;
     void set_callback(HotkeyCallback callback) { callback_ = callback; }
+    bool has_callback() const { return callback_ != nullptr; }
+    void trigger_callback();
     
     // Windows message handler - called from tray.cpp WindowProc
+    // Note: With low-level hook, this is less important but kept for compatibility
     bool handle_hotkey_message(WPARAM wParam);
     
     // Get the hotkey ID for comparison
