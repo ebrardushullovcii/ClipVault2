@@ -187,9 +187,31 @@ None - all features working as expected.
 
 - [ ] NSIS installer for easy distribution
 - [ ] Auto-updater
-- [ ] More encoder options (AMD, Intel)
 - [ ] Cloud sync for clips
 - [ ] Mobile app for viewing clips
+
+## Phase 4: Polish & Optimization (IN PROGRESS)
+
+### Performance & Quality
+- [ ] **1. GPU Decoding** - Enable hardware-accelerated video decoding for smoother playback
+- [ ] **2. Quality Presets** - Test and optimize preset profiles (Low/Medium/High/Ultra)
+- [ ] **3. Resolution/FPS Testing** - Validate 720p30, 1080p60, 1440p60, 4K30 modes
+- [ ] **4. Game Capture Mode** - Add dedicated game capture (not just monitor) with game detection
+
+### Storage & Cleanup
+- [ ] **5. Optimize Temp Deletion** - Bypass recycle bin for temp files, permanent deletion
+
+### UI/UX Improvements
+- [ ] **6. Simplify UI** - Reduce clutter, streamline workflows
+- [ ] **7. Export Quality Presets** - Add quality selector to export screen (Quick/High/Max)
+- [ ] **8. Settings Screen** - GUI for changing buffer duration, quality, hotkey, paths
+- [ ] **9. Polish Sharing Popup** - Add share buttons (Discord, Twitter, etc.) with proper timeout
+- [ ] **10. File Size Target** - Export by target MB instead of quality CRF
+- [ ] **11. Timeline Improvements** - Better drag handles, audio waveforms, trim precision
+
+### Game Integration
+- [ ] **12. Game Detection & Tagging** - Auto-detect game, tag clips, filter by game in UI
+- [ ] **13. Game-Only Capture Mode** - Option to only record when game is running (not desktop)
 
 ## Documentation
 
