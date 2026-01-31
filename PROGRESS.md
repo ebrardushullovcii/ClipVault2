@@ -193,6 +193,57 @@ npm run dev
 
 ## Recent Changes
 
+### 2026-01-31 - Auto-Refresh Library & Manual Refresh Button
+
+- **File Watching**: Automatically detects new clips without manual refresh
+  - Uses `chokidar` to watch the clips folder for changes
+  - Watches for `.mp4` file additions and removals
+  - Waits 500ms after file write completes before triggering (prevents partial file issues)
+  - Sends `clips:new` and `clips:removed` IPC events to UI
+  
+- **Library Auto-Update**: Library component listens for clip changes
+  - Automatically refreshes clips list when new clip is saved
+  - Automatically removes clips from UI when deleted
+  - Uses `window.electronAPI.on()` to listen for events
+  
+- **Manual Refresh Button**: Added to Library toolbar
+  - Located next to view toggle (grid/list)
+  - Shows spinning animation while loading
+  - Accessible when auto-refresh doesn't work
+
+### 2026-01-31 - Configurable Clips Path
+
+- **Removed Hardcoded Path**: Clips path now comes from `settings.json` instead of being hardcoded to `D:\Clips\ClipVault`
+  - Added `getClipsPath()` function in `ui/src/main/main.ts` that reads from settings
+  - Falls back to `D:\Clips\ClipVault` if settings file doesn't exist or path not set
+  - All IPC handlers now use `getClipsPath()` dynamically
+  - Settings UI already had output_path field - now it's actually used!
+  - Backend was already reading from config, no changes needed there
+
+### 2026-01-31 - Temp File Cleanup & Log Rotation
+
+- **File Cleanup Utility** (`ui/src/main/cleanup.ts`): New module for permanent deletion (bypasses recycle bin)
+  - `permanentDelete()`: Permanently deletes files using Node.js `fs.unlink()`
+  - `deleteClipCache()`: Deletes thumbnails and audio cache for a specific clip
+  - `cleanupOrphanedCache()`: Automatically cleans up thumbnails/audio cache for clips that no longer exist
+  - `getCacheStats()`: Reports storage usage of thumbnail/audio cache
+  
+- **Automatic Cleanup**: 
+  - Runs orphaned cache cleanup 5 seconds after app startup
+  - Only deletes cache files (thumbnails, audio) - never touches main clips or exports
+  - Deletes thumbnails from `%APPDATA%\ClipVault\thumbnails\`
+  - Deletes audio cache from `%APPDATA%\ClipVault\thumbnails\audio\`
+  
+- **Backend Log Rotation**:
+  - Max log size: 10 MB per file
+  - Keeps 3 backup files: `clipvault.log.1`, `clipvault.log.2`, `clipvault.log.3`
+  - Automatically rotates when file exceeds 10 MB (checked every 100 writes)
+  - Uses C++17 `<filesystem>` for file operations
+
+- **IPC API Additions**:
+  - `cleanup:orphans` - Trigger orphaned cache cleanup manually
+  - `cleanup:stats` - Get cache storage statistics with formatted sizes
+
 ### 2026-01-31 - File Size Target Export Fix
 
 - **Fixed FFmpeg Command**: Removed `-crf 23` parameter when using target bitrate encoding
@@ -240,7 +291,10 @@ None - all features working as expected.
 
 ### Storage & Cleanup
 
-- [ ] **3. Optimize Temp Deletion** - Bypass recycle bin for temp files, permanent deletion
+- [x] **3. Optimize Temp Deletion** - Bypass recycle bin for temp files, permanent deletion
+  - Created comprehensive file path map: `docs/FILE_PATHS.md`
+  - Documents all paths: clips, exports, thumbnails, audio cache, config, logs
+  - Cleanup only affects thumbnails/audio cache - never main clips or exports
 
 ### UI/UX Improvements
 
@@ -248,7 +302,7 @@ None - all features working as expected.
 - [x] **5. Export Quality Presets** - Add quality selector to export screen (Quick/High/Max)
 - [x] **6. Settings Screen** - GUI for changing buffer duration, quality, hotkey, paths
 - [x] **7. Polish Sharing Popup** - Add share buttons (Discord, Twitter, etc.) with proper timeout
-- [ ] **8. File Size Target** - Export by target MB instead of quality CRF
+- [x] **8. File Size Target** - Export by target MB instead of quality CRF
 - [x] **9. Timeline Improvements** - Better drag handles, audio waveforms, trim precision
 
 ### Game Integration
@@ -263,7 +317,8 @@ None - all features working as expected.
 
 ### Distribution & Installation
 
-- [ ] **14. Easy Installation** - Create NSIS installer for easy distribution
+- [ ] **14. Make sure logs are removed** -
+- [ ] **15. Easy Installation** - Create NSIS installer for easy distribution
   - Use `electron-builder --win` (not `--win --dir`) to generate .exe installer
   - Features: start menu shortcuts, desktop icon option, add to PATH, proper Windows Add/Remove Programs registration
   - Test installer on clean Windows VM

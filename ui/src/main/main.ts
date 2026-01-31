@@ -1,10 +1,11 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol, Menu, nativeImage, Tray, Rectangle, screen } from 'electron'
-import { dirname, join } from 'path'
+import { dirname, join, basename } from 'path'
 import { readFile, writeFile, readdir, stat, mkdir } from 'fs/promises'
-import { existsSync, createReadStream } from 'fs'
+import { existsSync, createReadStream, readFileSync } from 'fs'
 import ffmpeg from 'fluent-ffmpeg'
-import { extname } from 'path'
 import { spawn, execSync } from 'child_process'
+import { cleanupOrphanedCache, getCacheStats, formatBytes } from './cleanup'
+import chokidar from 'chokidar'
 
 // Get the directory containing the main script
 const appPath = process.argv[1] || process.cwd()
@@ -134,8 +135,29 @@ async function restartBackend(): Promise<boolean> {
 
 // App configuration
 const isDev = process.env.NODE_ENV === 'development'
-const clipsPath = 'D:\\Clips\\ClipVault'
 const thumbnailsPath = join(app.getPath('userData'), 'thumbnails')
+
+// Default clips path (fallback if not in settings)
+const DEFAULT_CLIPS_PATH = 'D:\\Clips\\ClipVault'
+
+// Get clips path from settings file
+function getClipsPath(): string {
+  try {
+    const settingsPath = getSettingsPath()
+    if (existsSync(settingsPath)) {
+      const content = readFileSync(settingsPath, 'utf-8')
+      const settings = JSON.parse(content)
+      if (settings.output_path && typeof settings.output_path === 'string') {
+        return settings.output_path
+      }
+    }
+  } catch (error) {
+    console.error('Failed to read clips path from settings:', error)
+  }
+  return DEFAULT_CLIPS_PATH
+}
+
+
 
 // Configure FFmpeg path for bundled version
 const ffmpegPath = join(process.resourcesPath, 'ffmpeg', 'ffmpeg.exe')
@@ -148,7 +170,7 @@ if (existsSync(ffprobePath)) {
   console.log('Using bundled FFprobe:', ffprobePath)
 }
 
-console.log('Config:', { clipsPath, thumbnailsPath, userData: app.getPath('userData') })
+console.log('Config:', { clipsPath: getClipsPath(), thumbnailsPath, userData: app.getPath('userData') })
 
 // Single instance lock - prevent multiple app instances
 const gotTheLock = app.requestSingleInstanceLock()
@@ -240,7 +262,7 @@ function createTray(): void {
     {
       label: 'Open Clips Folder',
       click: async () => {
-        const clipsFolder = clipsPath
+        const clipsFolder = getClipsPath()
         if (!existsSync(clipsFolder)) {
           await mkdir(clipsFolder, { recursive: true })
         }
@@ -497,17 +519,17 @@ ipcMain.handle('system:getMonitors', async () => {
 // Get list of clips
 ipcMain.handle('clips:getList', async () => {
   try {
-    if (!existsSync(clipsPath)) {
-      await mkdir(clipsPath, { recursive: true })
+    if (!existsSync(getClipsPath())) {
+      await mkdir(getClipsPath(), { recursive: true })
       return []
     }
 
-    const files = await readdir(clipsPath)
+    const files = await readdir(getClipsPath())
     const clips = await Promise.all(
       files
         .filter(file => file.endsWith('.mp4'))
         .map(async filename => {
-          const filePath = join(clipsPath, filename)
+          const filePath = join(getClipsPath(), filename)
           const stats = await stat(filePath)
           const metadataPath = filePath.replace('.mp4', '.clipvault.json')
 
@@ -543,7 +565,7 @@ ipcMain.handle('clips:getList', async () => {
 // Save clip metadata
 ipcMain.handle('clips:saveMetadata', async (_, clipId: string, metadata: unknown) => {
   try {
-    const metadataPath = join(clipsPath, `${clipId}.clipvault.json`)
+    const metadataPath = join(getClipsPath(), `${clipId}.clipvault.json`)
     await writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8')
     return true
   } catch (error) {
@@ -555,7 +577,7 @@ ipcMain.handle('clips:saveMetadata', async (_, clipId: string, metadata: unknown
 // Get clip metadata
 ipcMain.handle('clips:getMetadata', async (_, clipId: string) => {
   try {
-    const metadataPath = join(clipsPath, `${clipId}.clipvault.json`)
+    const metadataPath = join(getClipsPath(), `${clipId}.clipvault.json`)
     if (!existsSync(metadataPath)) {
       return null
     }
@@ -569,7 +591,7 @@ ipcMain.handle('clips:getMetadata', async (_, clipId: string) => {
 
 // Open clips folder in file explorer
 ipcMain.handle('system:openFolder', async () => {
-  await shell.openPath(clipsPath)
+  await shell.openPath(getClipsPath())
 })
 
 // Show save dialog
@@ -621,7 +643,7 @@ ipcMain.handle('clips:generateThumbnail', async (_, clipId: string, videoPath: s
 // Get video file URL for loading in video element
 ipcMain.handle('video:getFileUrl', async (_, filename: string) => {
   try {
-    const filePath = join(clipsPath, filename)
+    const filePath = join(getClipsPath(), filename)
     
     if (!existsSync(filePath)) {
       console.error('Video file not found:', filePath)
@@ -927,7 +949,7 @@ ipcMain.handle('export:showPreview', async (_, filePath: string) => {
           const vol2 = audioTrack2Volume ?? 1.0
 
           // Create exported-clips directory if it doesn't exist
-          const exportedClipsPath = join(clipsPath, 'exported-clips')
+          const exportedClipsPath = join(getClipsPath(), 'exported-clips')
           if (!existsSync(exportedClipsPath)) {
             await mkdir(exportedClipsPath, { recursive: true })
           }
@@ -1032,6 +1054,34 @@ ipcMain.handle('export:showPreview', async (_, filePath: string) => {
       }
     )
 
+    // Clean up orphaned cache files (thumbnails/audio for clips that no longer exist)
+    ipcMain.handle('cleanup:orphans', async () => {
+      try {
+        console.log('[Main] Cleaning up orphaned cache files...')
+        const result = await cleanupOrphanedCache(getClipsPath(), thumbnailsPath)
+        return result
+      } catch (error) {
+        console.error('Failed to cleanup orphans:', error)
+        return { deletedCount: 0, errors: [String(error)] }
+      }
+    })
+
+    // Get cache storage statistics
+    ipcMain.handle('cleanup:stats', async () => {
+      try {
+        const stats = await getCacheStats(thumbnailsPath)
+        return {
+          ...stats,
+          thumbnailSizeFormatted: formatBytes(stats.thumbnailSize),
+          audioSizeFormatted: formatBytes(stats.audioSize),
+          totalSizeFormatted: formatBytes(stats.totalSize)
+        }
+      } catch (error) {
+        console.error('Failed to get cache stats:', error)
+        return null
+      }
+    })
+
 // App lifecycle
 app.whenReady().then(async () => {
   console.log('App is ready, creating window...')
@@ -1064,13 +1114,13 @@ app.whenReady().then(async () => {
       // Determine the base path based on the type
       let basePath: string
       if (type === 'clip') {
-        basePath = clipsPath
+        basePath = getClipsPath()
       } else if (type === 'thumb') {
         basePath = thumbnailsPath
       } else if (type === 'audio') {
         basePath = join(thumbnailsPath, 'audio')
       } else if (type === 'exported') {
-        basePath = join(clipsPath, 'exported-clips')
+        basePath = join(getClipsPath(), 'exported-clips')
       } else {
         console.error('Unknown resource type:', type)
         callback({ error: -2 })
@@ -1108,6 +1158,22 @@ app.whenReady().then(async () => {
   console.log('Attempting to start backend...')
   startBackend()
 
+  // Clean up orphaned cache files on startup
+  setTimeout(async () => {
+    try {
+      console.log('[Main] Running orphaned cache cleanup on startup...')
+      const result = await cleanupOrphanedCache(getClipsPath(), thumbnailsPath)
+      if (result.deletedCount > 0) {
+        console.log(`[Main] Cleaned up ${result.deletedCount} orphaned cache files`)
+      }
+      if (result.errors.length > 0) {
+        console.warn('[Main] Cleanup errors:', result.errors)
+      }
+    } catch (error) {
+      console.error('[Main] Failed to run startup cleanup:', error)
+    }
+  }, 5000) // Wait 5 seconds after startup to let backend initialize
+
   // Verify backend started after a short delay
   setTimeout(() => {
     try {
@@ -1129,6 +1195,44 @@ app.whenReady().then(async () => {
       console.log('Could not verify backend status:', e)
     }
   }, 2000)
+
+  // Set up file watching for clips folder to auto-refresh UI
+  const clipsWatcher = chokidar.watch(getClipsPath(), {
+    ignored: /(^|[\/\\])\../, // ignore dotfiles
+    persistent: true,
+    depth: 0, // Only watch immediate directory, not subdirectories
+    awaitWriteFinish: {
+      stabilityThreshold: 500, // Wait 500ms after file size stops changing
+      pollInterval: 100
+    }
+  })
+
+  clipsWatcher.on('add', (filePath) => {
+    // Only notify for .mp4 files
+    if (filePath.endsWith('.mp4')) {
+      console.log('[Watcher] New clip detected:', filePath)
+      // Notify all windows that a new clip is available
+      BrowserWindow.getAllWindows().forEach(window => {
+        window.webContents.send('clips:new', { filename: basename(filePath) })
+      })
+    }
+  })
+
+  clipsWatcher.on('unlink', (filePath) => {
+    // Notify when a clip is deleted
+    if (filePath.endsWith('.mp4')) {
+      console.log('[Watcher] Clip deleted:', filePath)
+      BrowserWindow.getAllWindows().forEach(window => {
+        window.webContents.send('clips:removed', { filename: basename(filePath) })
+      })
+    }
+  })
+
+  clipsWatcher.on('error', (error) => {
+    console.error('[Watcher] Error watching clips folder:', error)
+  })
+
+  console.log('[Watcher] Started watching clips folder:', getClipsPath())
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -120,6 +120,17 @@ export interface ElectronAPI {
   extractAudioTracks: (clipId: string, videoPath: string) => Promise<AudioTrackUrls>
   getVideoFileUrl: (filename: string) => Promise<{ success: boolean; url?: string; path?: string; error?: string }>
   showExportPreview: (filePath: string) => Promise<void>
+  cleanupOrphanedCache: () => Promise<{ deletedCount: number; errors: string[] }>
+  getCacheStats: () => Promise<{
+    thumbnailCount: number
+    thumbnailSize: number
+    audioCount: number
+    audioSize: number
+    totalSize: number
+    thumbnailSizeFormatted: string
+    audioSizeFormatted: string
+    totalSizeFormatted: string
+  } | null>
   openClipsFolder: () => Promise<void>
   showSaveDialog: (options: Electron.SaveDialogOptions) => Promise<Electron.SaveDialogReturnValue>
   dialog: DialogAPI

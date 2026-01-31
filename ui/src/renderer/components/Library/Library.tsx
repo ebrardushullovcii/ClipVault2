@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Search, Grid3X3, List, Loader2, ArrowUpDown } from 'lucide-react'
+import { Search, Grid3X3, List, Loader2, ArrowUpDown, RefreshCw } from 'lucide-react'
 import { ClipCard } from './ClipCard'
 import { useThumbnails } from '../../hooks/useThumbnails'
 import { useVideoMetadata, type VideoMetadata } from '../../hooks/useVideoMetadata'
@@ -27,6 +27,28 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor }) => {
 
   useEffect(() => {
     loadClips()
+
+    // Listen for new clips added via file watcher
+    const unsubscribeNew = window.electronAPI.on('clips:new', (data: unknown) => {
+      const { filename } = data as { filename: string }
+      console.log('[Library] New clip detected:', filename)
+      // Refresh the clips list
+      loadClips()
+    })
+
+    // Listen for clips removed via file watcher
+    const unsubscribeRemoved = window.electronAPI.on('clips:removed', (data: unknown) => {
+      const { filename } = data as { filename: string }
+      console.log('[Library] Clip removed:', filename)
+      // Refresh the clips list
+      loadClips()
+    })
+
+    // Cleanup listeners on unmount
+    return () => {
+      unsubscribeNew?.()
+      unsubscribeRemoved?.()
+    }
   }, [])
 
   const loadClips = async () => {
@@ -163,6 +185,16 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor }) => {
               <List className="h-4 w-4" />
             </button>
           </div>
+
+          {/* Refresh Button */}
+          <button
+            onClick={loadClips}
+            disabled={loading}
+            className="flex items-center gap-2 rounded-lg border border-border bg-background-secondary p-2 text-text-muted transition-all hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+            title="Refresh clips list"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </div>
 

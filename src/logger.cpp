@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
+#include <filesystem>
 
 namespace clipvault {
 
@@ -26,14 +27,63 @@ bool Logger::initialize(const std::string& filename)
         return true;
     }
 
-    file_.open(filename, std::ios::out | std::ios::trunc);
+    filename_ = filename;
+    
+    // If existing log is too large, rotate it before starting fresh
+    if (std::filesystem::exists(filename_) && 
+        std::filesystem::file_size(filename_) > MAX_LOG_SIZE) {
+        rotate_if_needed();
+    }
+
+    file_.open(filename_, std::ios::out | std::ios::trunc);
     if (!file_.is_open()) {
-        std::cerr << "Failed to open log file: " << filename << std::endl;
+        std::cerr << "Failed to open log file: " << filename_ << std::endl;
         return false;
     }
 
     initialized_ = true;
     return true;
+}
+
+std::string Logger::get_rotated_filename(int index) const
+{
+    if (index == 0) {
+        return filename_;
+    }
+    return filename_ + "." + std::to_string(index);
+}
+
+void Logger::rotate_if_needed()
+{
+    // Close current file
+    if (file_.is_open()) {
+        file_.close();
+    }
+    
+    // Rotate existing backups: clipvault.log.2 -> clipvault.log.3, clipvault.log.1 -> clipvault.log.2
+    for (int i = MAX_BACKUP_FILES - 1; i > 0; --i) {
+        std::string old_name = get_rotated_filename(i);
+        std::string new_name = get_rotated_filename(i + 1);
+        
+        if (std::filesystem::exists(old_name)) {
+            if (std::filesystem::exists(new_name)) {
+                std::filesystem::remove(new_name);
+            }
+            std::filesystem::rename(old_name, new_name);
+        }
+    }
+    
+    // Move current log to .1
+    if (std::filesystem::exists(filename_)) {
+        std::string backup_name = get_rotated_filename(1);
+        if (std::filesystem::exists(backup_name)) {
+            std::filesystem::remove(backup_name);
+        }
+        std::filesystem::rename(filename_, backup_name);
+    }
+    
+    // Reopen new log file
+    file_.open(filename_, std::ios::out | std::ios::trunc);
 }
 
 void Logger::shutdown()
@@ -80,6 +130,15 @@ void Logger::log(LogLevel level, const char* file, int line, const std::string& 
        << message;
 
     std::string formatted = ss.str();
+
+    // Check if log rotation is needed (check every ~100 writes to avoid overhead)
+    static int write_count = 0;
+    if (++write_count % 100 == 0 && file_.is_open()) {
+        file_.flush();
+        if (std::filesystem::file_size(filename_) > MAX_LOG_SIZE) {
+            rotate_if_needed();
+        }
+    }
 
     // Write to file
     if (file_.is_open()) {

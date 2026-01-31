@@ -32,11 +32,19 @@ private:
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
 
+    void rotate_if_needed();
+    std::string get_rotated_filename(int index) const;
+
     std::ofstream file_;
     std::mutex mutex_;
+    std::string filename_;
     LogLevel min_level_ = LogLevel::Info;
     bool console_output_ = true;
     bool initialized_ = false;
+    
+    // Log rotation: 10 MB max size, keep 3 backups
+    static constexpr size_t MAX_LOG_SIZE = 10 * 1024 * 1024; // 10 MB
+    static constexpr int MAX_BACKUP_FILES = 3;
 };
 
 } // namespace clipvault

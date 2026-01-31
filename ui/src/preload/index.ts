@@ -61,6 +61,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Export preview
   showExportPreview: (filePath: string) => ipcRenderer.invoke('export:showPreview', filePath),
 
+  // Cleanup - permanent deletion of cache files (bypasses recycle bin)
+  cleanupOrphanedCache: () => ipcRenderer.invoke('cleanup:orphans'),
+  getCacheStats: () => ipcRenderer.invoke('cleanup:stats'),
+
   // System
   openClipsFolder: () => ipcRenderer.invoke('system:openFolder'),
 
@@ -146,6 +150,17 @@ declare global {
       getVideoMetadata: (videoPath: string) => Promise<VideoMetadata>
       extractAudioTracks: (clipId: string, videoPath: string) => Promise<AudioTrackUrls>
       getVideoFileUrl: (filename: string) => Promise<{ success: boolean; url?: string; path?: string; error?: string }>
+      cleanupOrphanedCache: () => Promise<{ deletedCount: number; errors: string[] }>
+      getCacheStats: () => Promise<{
+        thumbnailCount: number
+        thumbnailSize: number
+        audioCount: number
+        audioSize: number
+        totalSize: number
+        thumbnailSizeFormatted: string
+        audioSizeFormatted: string
+        totalSizeFormatted: string
+      } | null>
       openClipsFolder: () => Promise<void>
       showSaveDialog: (
         options: Electron.SaveDialogOptions
