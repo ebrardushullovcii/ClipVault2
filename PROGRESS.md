@@ -5,9 +5,9 @@
 
 ## Current Status Overview
 
-**Last Updated**: 2026-01-31  
-**Status**: ✅ COMPLETE - Full Application Working  
-**Architecture**: Independent Backend (C++) + Electron UI (React/TypeScript)  
+**Last Updated**: 2026-01-31
+**Status**: ✅ COMPLETE - Full Application Working
+**Architecture**: Independent Backend (C++) + Electron UI (React/TypeScript)
 **Packaging**: Single EXE with auto-starting backend
 
 ## Complete Feature Set ✅
@@ -15,6 +15,7 @@
 ### Phase 1: Core Recording Engine ✅
 
 **Backend (C++ with OBS Studio)**
+
 - [x] Monitor capture using DXGI (anti-cheat safe)
 - [x] System audio capture (WASAPI output)
 - [x] Microphone capture (WASAPI input)
@@ -29,6 +30,7 @@
 - [x] Single instance protection (Windows mutex)
 
 **Performance**
+
 - [x] Hardware encoding minimizes CPU usage
 - [x] 1080p60 default (configurable)
 - [x] ~1-2GB RAM usage for 2-minute buffer
@@ -37,6 +39,7 @@
 ### Phase 2: Electron UI ✅
 
 **Clip Library Browser**
+
 - [x] Grid/list view of all clips
 - [x] Thumbnail generation via FFmpeg
 - [x] Search and filter (favorites, recent)
@@ -45,6 +48,7 @@
 - [x] Custom protocol handler (clipvault://)
 
 **Video Editor**
+
 - [x] HTML5 video player with timeline
 - [x] Trim markers (start/end)
 - [x] Audio track controls (desktop + mic volumes)
@@ -54,6 +58,7 @@
 - [x] Non-destructive editing (JSON metadata)
 
 **Export System**
+
 - [x] Export with FFmpeg
 - [x] Apply trim points
 - [x] Audio track selection
@@ -63,6 +68,7 @@
 - [x] Export preview window
 
 **UI Features**
+
 - [x] Dark theme with custom accent color
 - [x] Minimize to system tray
 - [x] F12 developer tools
@@ -73,6 +79,7 @@
 ### Phase 3: Packaging ✅
 
 **Single EXE Distribution**
+
 - [x] Electron UI packaged as single executable
 - [x] C++ backend bundled in resources/bin/
 - [x] OBS DLLs bundled (obs.dll, Qt6, etc.)
@@ -106,6 +113,7 @@ Files:
 ## How to Use
 
 1. **Run the packaged app:**
+
    ```powershell
    cd D:\Projects-Personal\ClipVault2\ui\release\win-unpacked
    .\ClipVault.exe
@@ -178,50 +186,76 @@ npm run dev
 - [x] Single instance (can't open multiple)
 - [x] Second launch restarts backend if stopped
 - [x] Protocol handler for thumbnails
+- [x] Settings UI with automatic backend restart
+- [x] Monitor selector with multi-monitor support
+- [x] File size estimator in settings
+- [x] Resolution presets filtered by monitor capabilities
+
+## Recent Changes
+
+### 2026-01-31 - File Size Target Export Feature
+
+- **File Size Target Export**: Added dropdown next to export button with size options: Original, 10MB, 50MB, 100MB
+- **Smart Bitrate Calculation**: Automatically calculates video bitrate based on target size and clip duration
+- **H.264 Re-encoding**: When size target is selected, uses libx264 with calculated bitrate instead of copying video stream
+- **UI Enhancement**: Export button shows selected size target (e.g., "Export (50MB)"), dropdown shows checkmark for selected option
+
+### 2026-01-31 - Major Settings Update
+
+- **Settings Screen**: Full settings GUI with quality presets, resolution/FPS selection, encoder choice, buffer duration, hotkey config
+- **Monitor Selector**: Detects all connected monitors, allows choosing which to capture, filters resolution options based on monitor capabilities
+- **File Size Estimator**: Real-time calculation showing expected clip size based on duration, resolution, FPS, and quality preset
+- **Buffer Duration Input**: Changed from slider to number input for precise control (30-300 seconds)
+- **Backend Auto-Restart**: Settings changes automatically restart backend to apply new configuration
+- **Config Location**: Moved to standard Windows location `%APPDATA%\ClipVault\settings.json` for consistency
+- **Bug Fix**: Fixed x264 encoder to use correct `crf` parameter instead of `cqp` - quality presets now actually work!
+- **AGENTS.md Update**: Added critical documentation requiring ALL testing be done with packaged version
+
+### 2026-01-31 - Settings UI & Backend Restart (Initial)
+
+- **Settings Screen**: Added full Settings UI with quality presets, resolution/FPS selection, encoder choice, buffer duration, hotkey config
+- **Backend Auto-Restart**: When settings are saved, backend automatically restarts to pick up new configuration
+- **Config Path Fix**: Fixed backend to look for config in both dev location (`bin\config\`) and packaged location (`config\` at app root)
+- **Updated AGENTS.md**: Added clear documentation about ALWAYS testing with packaged version
 
 ## Known Issues
 
 None - all features working as expected.
 
-## Next Steps (Optional Enhancements)
-
-### Distribution & Installation
-- [ ] **Easy Installation** - NSIS installer with start menu shortcuts, desktop icon option, add to PATH option, proper Windows Add/Remove Programs registration
-  - See `docs/PACKAGING.md` for implementation details
-  - Use `electron-builder --win` (not `--win --dir`)
-  - Test installer on clean Windows VM
-  - Scan with antivirus for false positives
-  - Test uninstall cleanly removes all files
-
-### Other Enhancements
-- [ ] Auto-updater
-- [ ] Cloud sync for clips
-- [ ] Mobile app for viewing clips
+## Next Steps (Enhancements)
 
 ## Phase 4: Polish & Optimization (IN PROGRESS)
 
 ### Performance & Quality
-- [ ] **1. GPU Decoding** - Enable hardware-accelerated video decoding for smoother playback
-- [ ] **2. Quality Presets** - Test and optimize preset profiles (Low/Medium/High/Ultra)
-- [ ] **3. Resolution/FPS Testing** - Validate 720p30, 1080p60, 1440p60, 4K30 modes
-- [ ] **4. Game Capture Mode** - Add dedicated game capture (not just monitor) with game detection
+
+- [x] **1. Quality Presets** - Test and optimize preset profiles (Low/Medium/High/Ultra)
+- [x] **2. Resolution/FPS Testing** - Validate 720p30, 1080p60, 1440p60, 4K30 modes
 
 ### Storage & Cleanup
-- [ ] **5. Optimize Temp Deletion** - Bypass recycle bin for temp files, permanent deletion
+
+- [ ] **3. Optimize Temp Deletion** - Bypass recycle bin for temp files, permanent deletion
 
 ### UI/UX Improvements
-- [ ] **6. Simplify UI** - Reduce clutter, streamline workflows
-- [ ] **7. Export Quality Presets** - Add quality selector to export screen (Quick/High/Max)
-- [ ] **8. Settings Screen** - GUI for changing buffer duration, quality, hotkey, paths
-- [ ] **9. Polish Sharing Popup** - Add share buttons (Discord, Twitter, etc.) with proper timeout
-- [ ] **10. File Size Target** - Export by target MB instead of quality CRF
-- [ ] **11. Timeline Improvements** - Better drag handles, audio waveforms, trim precision
+
+- [x] **4. Simplify UI** - Reduce clutter, streamline workflows
+- [x] **5. Export Quality Presets** - Add quality selector to export screen (Quick/High/Max)
+- [x] **6. Settings Screen** - GUI for changing buffer duration, quality, hotkey, paths
+- [x] **7. Polish Sharing Popup** - Add share buttons (Discord, Twitter, etc.) with proper timeout
+- [x] **8. File Size Target** - Export by target MB instead of quality CRF
+- [x] **9. Timeline Improvements** - Better drag handles, audio waveforms, trim precision
 
 ### Game Integration
-- [ ] **12. Game Detection & Tagging** - Auto-detect game, tag clips, filter by game in UI
-- [ ] **13. Game-Only Capture Mode** - Option to only record when game is running (not desktop)
+
+- [ ] **10. Game Detection & Tagging** - Auto-detect game, tag clips, filter by game in UI
+- [ ] **11. Game-Only Capture Mode** - Option to only record when game is running (not desktop)
+- [ ] **12. Game Capture Mode** - Add dedicated game capture (not just monitor) with game detection
+
+### Advanced Features
+
+- [ ] **13. GPU Decoding** - Enable hardware-accelerated video decoding for smoother playback
 
 ### Distribution & Installation
+
 - [ ] **14. Easy Installation** - Create NSIS installer for easy distribution
   - Use `electron-builder --win` (not `--win --dir`) to generate .exe installer
   - Features: start menu shortcuts, desktop icon option, add to PATH, proper Windows Add/Remove Programs registration

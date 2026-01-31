@@ -10,6 +10,7 @@ struct VideoConfig {
     int fps = 60;
     std::string encoder = "auto";
     int quality = 20;
+    int monitor = 0;
 };
 
 struct AudioConfig {

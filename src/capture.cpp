@@ -81,9 +81,13 @@ bool CaptureManager::create_video_source()
 {
     const char* capture_method_used = "none";
     
+    // Get monitor index from config
+    int monitor_index = ConfigManager::instance().video().monitor;
+    LOG_INFO("  Using monitor index: " + std::to_string(monitor_index));
+    
     // Try monitor_capture with DXGI method first (most reliable for background capture)
     obs_data_t* settings = obs_api::data_create();
-    obs_api::data_set_int(settings, "monitor", 0);  // Primary monitor
+    obs_api::data_set_int(settings, "monitor", monitor_index);
     obs_api::data_set_bool(settings, "capture_cursor", true);
     obs_api::data_set_int(settings, "method", 1);  // 1 = DXGI (more reliable than WGC for background)
     
@@ -96,7 +100,7 @@ bool CaptureManager::create_video_source()
     } else {
         // Try monitor_capture with WGC method as fallback
         settings = obs_api::data_create();
-        obs_api::data_set_int(settings, "monitor", 0);  // Primary monitor
+        obs_api::data_set_int(settings, "monitor", monitor_index);
         obs_api::data_set_bool(settings, "capture_cursor", true);
         obs_api::data_set_int(settings, "method", 0);  // 0 = WGC
         

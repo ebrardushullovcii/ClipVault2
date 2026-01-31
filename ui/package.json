@@ -81,29 +81,13 @@
     "win": {
       "target": [
         {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "portable",
+          "target": "dir",
           "arch": [
             "x64"
           ]
         }
       ],
       "icon": "public/icons/icon.ico",
-      "extraFiles": [
-        {
-          "from": "../third_party/obs-studio-src/build/rundir/release/64bit",
-          "to": "",
-          "filter": [
-            "obs.dll",
-            "*.dll"
-          ]
-        }
-      ],
       "verifyUpdateCodeSignature": false,
       "signAndEditExecutable": false,
       "forceCodeSigning": false

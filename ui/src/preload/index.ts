@@ -1,7 +1,47 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 
+// Settings interface
+interface AppSettings {
+  output_path: string
+  buffer_seconds: number
+  video: {
+    width: number
+    height: number
+    fps: number
+    encoder: 'auto' | 'nvenc' | 'x264'
+    quality: number
+  }
+  audio: {
+    sample_rate: number
+    bitrate: number
+    system_audio_enabled: boolean
+    microphone_enabled: boolean
+  }
+  hotkey: {
+    save_clip: string
+  }
+  ui?: {
+    show_notifications: boolean
+    minimize_to_tray: boolean
+    start_with_windows: boolean
+  }
+  launcher?: {
+    autostart_backend: boolean
+    backend_mode: string
+    single_instance: boolean
+  }
+}
+
 // Expose protected methods to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
+  // Settings
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  saveSettings: (settings: AppSettings) => ipcRenderer.invoke('settings:save', settings),
+  restartBackend: () => ipcRenderer.invoke('backend:restart'),
+
+  // System
+  getMonitors: () => ipcRenderer.invoke('system:getMonitors'),
+
   // Clips
   getClipsList: () => ipcRenderer.invoke('clips:getList'),
   saveClipMetadata: (clipId: string, metadata: unknown) =>
@@ -79,6 +119,7 @@ interface ExportParams {
   audioTrack2: boolean
   audioTrack1Volume?: number
   audioTrack2Volume?: number
+  targetSizeMB?: number | 'original'
 }
 
 interface ExportResult {
@@ -96,6 +137,8 @@ interface AudioTrackUrls {
 declare global {
   interface Window {
     electronAPI: {
+      getSettings: () => Promise<AppSettings>
+      saveSettings: (settings: AppSettings) => Promise<{ success: boolean }>
       getClipsList: () => Promise<ClipInfo[]>
       saveClipMetadata: (clipId: string, metadata: unknown) => Promise<boolean>
       getClipMetadata: (clipId: string) => Promise<unknown | null>

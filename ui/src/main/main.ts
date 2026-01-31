@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, protocol, Menu, nativeImage, Tray, Rectangle } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, protocol, Menu, nativeImage, Tray, Rectangle, screen } from 'electron'
 import { dirname, join } from 'path'
 import { readFile, writeFile, readdir, stat, mkdir } from 'fs/promises'
 import { existsSync, createReadStream } from 'fs'
@@ -40,6 +40,97 @@ app.disableHardwareAcceleration()
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
+let backendProcess: ReturnType<typeof spawn> | null = null
+
+// Backend paths
+const getBackendPaths = () => {
+  const inProduction = !isDev
+  return {
+    backendPath: inProduction
+      ? join(process.resourcesPath, 'bin', 'ClipVault.exe')
+      : join(appDir, '..', '..', '..', 'bin', 'ClipVault.exe'),
+    backendLogPath: inProduction
+      ? join(process.resourcesPath, 'bin', 'clipvault.log')
+      : join(appDir, '..', '..', '..', 'bin', 'clipvault.log'),
+  }
+}
+
+// Start backend process
+function startBackend(): boolean {
+  const { backendPath } = getBackendPaths()
+  
+  if (!existsSync(backendPath)) {
+    console.warn('Backend executable not found:', backendPath)
+    return false
+  }
+
+  try {
+    console.log('Spawning backend from:', backendPath)
+    const backendProc = spawn(backendPath, [], {
+      detached: true,
+      stdio: ['ignore', 'ignore', 'ignore'],
+    })
+
+    backendProc.on('error', (error) => {
+      console.error('Backend spawn error:', error)
+    })
+
+    backendProc.on('exit', (code, signal) => {
+      console.log(`Backend exited with code ${code} and signal ${signal}`)
+      if (backendProcess === backendProc) {
+        backendProcess = null
+      }
+    })
+
+    console.log('Backend spawned with PID:', backendProc.pid)
+    backendProcess = backendProc
+
+    // Properly detach the process so it continues running after parent exits
+    backendProc.unref()
+    return true
+  } catch (error) {
+    console.error('Failed to start backend:', error)
+    return false
+  }
+}
+
+// Kill backend process
+function killBackend(): boolean {
+  if (!backendProcess) {
+    // Try to find and kill any existing ClipVault.exe processes (backend only)
+    try {
+      execSync('taskkill /F /IM ClipVault.exe /FI "WINDOWTITLE eq ClipVault"', { 
+        stdio: 'ignore' 
+      })
+      console.log('Killed existing backend processes')
+      return true
+    } catch {
+      // No processes found or already killed
+      return false
+    }
+  }
+
+  try {
+    console.log('Killing backend process with PID:', backendProcess.pid)
+    backendProcess.kill()
+    backendProcess = null
+    return true
+  } catch (error) {
+    console.error('Failed to kill backend:', error)
+    return false
+  }
+}
+
+// Restart backend process
+async function restartBackend(): Promise<boolean> {
+  console.log('Restarting backend...')
+  killBackend()
+  
+  // Wait a moment for the process to fully terminate
+  await new Promise(resolve => setTimeout(resolve, 1000))
+  
+  return startBackend()
+}
 
 // App configuration
 const isDev = process.env.NODE_ENV === 'development'
@@ -291,6 +382,117 @@ async function createWindow() {
 }
 
 // IPC Handlers
+
+// Settings file path - use standard AppData location (same as C++ backend)
+const getSettingsPath = () => {
+  // Use process.env.APPDATA to match C++ backend's CSIDL_APPDATA
+  // This ensures both backend and UI use exact same path
+  const appDataPath = process.env.APPDATA || app.getPath('appData')
+  return join(appDataPath, 'ClipVault', 'settings.json')
+}
+
+// Default settings object
+const defaultSettings = {
+  output_path: 'D:\\Clips\\ClipVault',
+  buffer_seconds: 120,
+  video: {
+    width: 1920,
+    height: 1080,
+    fps: 60,
+    encoder: 'auto',
+    quality: 20,
+  },
+  audio: {
+    sample_rate: 48000,
+    bitrate: 160,
+    system_audio_enabled: true,
+    microphone_enabled: true,
+  },
+  hotkey: {
+    save_clip: 'F9',
+  },
+}
+
+// Get settings
+ipcMain.handle('settings:get', async () => {
+  try {
+    const settingsPath = getSettingsPath()
+    console.log('Settings path:', settingsPath)
+    
+    if (!existsSync(settingsPath)) {
+      console.log('Settings file not found, returning defaults')
+      return defaultSettings
+    }
+    
+    console.log('Reading settings from:', settingsPath)
+    const content = await readFile(settingsPath, 'utf-8')
+    
+    try {
+      return JSON.parse(content)
+    } catch (parseError) {
+      console.error('JSON parse error, returning defaults:', parseError)
+      return defaultSettings
+    }
+  } catch (error) {
+    console.error('Failed to read settings:', error)
+    return defaultSettings
+  }
+})
+
+// Save settings and restart backend
+ipcMain.handle('settings:save', async (_, settings: unknown) => {
+  try {
+    const settingsPath = getSettingsPath()
+    const configDir = join(app.getPath('appData'), 'ClipVault')
+    
+    // Ensure config directory exists
+    if (!existsSync(configDir)) {
+      await mkdir(configDir, { recursive: true })
+    }
+    
+    await writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8')
+    console.log('Settings saved to:', settingsPath)
+    
+    // Restart backend to apply new settings
+    console.log('Settings saved, restarting backend...')
+    const restarted = await restartBackend()
+    
+    return { success: true, restarted }
+  } catch (error) {
+    console.error('Failed to save settings:', error)
+    throw error
+  }
+})
+
+// Restart backend manually
+ipcMain.handle('backend:restart', async () => {
+  try {
+    const restarted = await restartBackend()
+    return { success: true, restarted }
+  } catch (error) {
+    console.error('Failed to restart backend:', error)
+    throw error
+  }
+})
+
+// Get monitor information
+ipcMain.handle('system:getMonitors', async () => {
+  try {
+    const displays = screen.getAllDisplays()
+    return displays.map((display, index) => ({
+      id: index,
+      name: `Monitor ${index + 1}`,
+      width: display.bounds.width,
+      height: display.bounds.height,
+      x: display.bounds.x,
+      y: display.bounds.y,
+      primary: display.bounds.x === 0 && display.bounds.y === 0,
+    }))
+  } catch (error) {
+    console.error('Failed to get monitors:', error)
+    throw error
+  }
+})
 
 // Get list of clips
 ipcMain.handle('clips:getList', async () => {
@@ -703,101 +905,132 @@ ipcMain.handle('export:showPreview', async (_, filePath: string) => {
 
    // Export clip with trim and audio track selection
    ipcMain.handle(
-     'editor:exportClip',
-     async (
-       _,
-       params: {
-         clipPath: string
-         exportFilename: string
-         trimStart: number
-         trimEnd: number
-         audioTrack1: boolean
-         audioTrack2: boolean
-         audioTrack1Volume?: number
-         audioTrack2Volume?: number
-       }
-     ) => {
-       try {
-         const { clipPath, exportFilename, trimStart, trimEnd, audioTrack1, audioTrack2, audioTrack1Volume, audioTrack2Volume } = params
-         const duration = trimEnd - trimStart
-         const vol1 = audioTrack1Volume ?? 1.0
-         const vol2 = audioTrack2Volume ?? 1.0
+      'editor:exportClip',
+      async (
+        _,
+        params: {
+          clipPath: string
+          exportFilename: string
+          trimStart: number
+          trimEnd: number
+          audioTrack1: boolean
+          audioTrack2: boolean
+          audioTrack1Volume?: number
+          audioTrack2Volume?: number
+          targetSizeMB?: number | 'original'
+        }
+      ) => {
+        try {
+          const { clipPath, exportFilename, trimStart, trimEnd, audioTrack1, audioTrack2, audioTrack1Volume, audioTrack2Volume, targetSizeMB = 'original' } = params
+          const duration = trimEnd - trimStart
+          const vol1 = audioTrack1Volume ?? 1.0
+          const vol2 = audioTrack2Volume ?? 1.0
 
-         // Create exported-clips directory if it doesn't exist
-         const exportedClipsPath = join(clipsPath, 'exported-clips')
-         if (!existsSync(exportedClipsPath)) {
-           await mkdir(exportedClipsPath, { recursive: true })
-         }
+          // Create exported-clips directory if it doesn't exist
+          const exportedClipsPath = join(clipsPath, 'exported-clips')
+          if (!existsSync(exportedClipsPath)) {
+            await mkdir(exportedClipsPath, { recursive: true })
+          }
 
-         // Build full output path
-         const outputPath = join(exportedClipsPath, exportFilename)
+          // Build full output path
+          const outputPath = join(exportedClipsPath, exportFilename)
 
-         return new Promise((resolve, reject) => {
-           const command = ffmpeg(clipPath)
-             .seekInput(trimStart)
-             .duration(duration)
-             .videoCodec('copy')
+          // Calculate video bitrate if target size is specified
+          let videoBitrate: number | null = null
+          let useTargetSize = false
+          if (typeof targetSizeMB === 'number' && targetSizeMB > 0 && duration > 0) {
+            // Formula: target_size_mb * 8192 kb / duration_sec - audio_overhead
+            // Leave ~15% overhead for container and audio
+            const targetSizeKB = targetSizeMB * 8192 * 0.85
+            const totalBitrate = Math.floor(targetSizeKB / duration)
+            const audioBitrate = 128 // AAC audio bitrate
+            videoBitrate = Math.max(totalBitrate - audioBitrate, 500) // Minimum 500kbps
+            useTargetSize = true
+            console.log(`Target size: ${targetSizeMB}MB, Duration: ${duration}s, Video bitrate: ${videoBitrate}kbps`)
+          }
 
-           // Map audio tracks based on options
-           if (audioTrack1 && audioTrack2) {
-             // Mix both tracks with volume adjustment
-             const filter = `[0:a:0]volume=${vol1}[a0];[0:a:1]volume=${vol2}[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=3[aout]`
-             command.outputOptions([
-               '-map 0:v:0',
-               '-filter_complex', filter,
-               '-map', '[aout]',
-               '-c:a aac',
-               '-b:a 128k',
-               '-ac 2'
-             ])
-           } else if (audioTrack1) {
-             // Only track 1 with volume
-             if (vol1 < 1.0) {
-               command.outputOptions([
-                 '-map 0:v:0',
-                 '-map 0:a:0',
-                 '-filter:a:0', `volume=${vol1}`
-               ])
-             } else {
-               command.outputOptions(['-map 0:v:0', '-map 0:a:0'])
-             }
-           } else if (audioTrack2) {
-             // Only track 2 with volume
-             if (vol2 < 1.0) {
-               command.outputOptions([
-                 '-map 0:v:0',
-                 '-map 0:a:1',
-                 '-filter:a:0', `volume=${vol2}`
-               ])
-             } else {
-               command.outputOptions(['-map 0:v:0', '-map 0:a:1'])
-             }
-           } else {
-             // No audio - video only
-             command.noAudio()
-           }
+          return new Promise((resolve, reject) => {
+            const command = ffmpeg(clipPath)
+              .seekInput(trimStart)
+              .duration(duration)
 
-           command
-             .on('progress', progress => {
-               if (mainWindow && progress.percent) {
-                 mainWindow.webContents.send('export:progress', { percent: progress.percent })
-               }
-             })
-             .on('end', () => {
-               resolve({ success: true, filePath: outputPath })
-             })
-             .on('error', err => {
-               console.error('Export error:', err)
-               reject(err)
-             })
-             .save(outputPath)
-         })
-       } catch (error) {
-         console.error('Failed to export clip:', error)
-         throw error
-       }
-     }
-   )
+            // Configure video encoding based on target size
+            if (useTargetSize && videoBitrate) {
+              // Use H.264 with target bitrate for size-constrained export
+              command.videoCodec('libx264')
+              command.outputOptions([
+                '-b:v', `${videoBitrate}k`,
+                '-maxrate', `${Math.floor(videoBitrate * 1.5)}k`,
+                '-bufsize', `${videoBitrate * 2}k`,
+                '-preset', 'fast',
+                '-crf', '23',
+                '-pix_fmt', 'yuv420p'
+              ])
+            } else {
+              // Original quality - just copy video stream
+              command.videoCodec('copy')
+            }
+
+            // Map audio tracks based on options
+            if (audioTrack1 && audioTrack2) {
+              // Mix both tracks with volume adjustment
+              const filter = `[0:a:0]volume=${vol1}[a0];[0:a:1]volume=${vol2}[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=3[aout]`
+              command.outputOptions([
+                '-map 0:v:0',
+                '-filter_complex', filter,
+                '-map', '[aout]',
+                '-c:a aac',
+                '-b:a 128k',
+                '-ac 2'
+              ])
+            } else if (audioTrack1) {
+              // Only track 1 with volume
+              if (vol1 < 1.0) {
+                command.outputOptions([
+                  '-map 0:v:0',
+                  '-map 0:a:0',
+                  '-filter:a:0', `volume=${vol1}`
+                ])
+              } else {
+                command.outputOptions(['-map 0:v:0', '-map 0:a:0'])
+              }
+            } else if (audioTrack2) {
+              // Only track 2 with volume
+              if (vol2 < 1.0) {
+                command.outputOptions([
+                  '-map 0:v:0',
+                  '-map 0:a:1',
+                  '-filter:a:0', `volume=${vol2}`
+                ])
+              } else {
+                command.outputOptions(['-map 0:v:0', '-map 0:a:1'])
+              }
+            } else {
+              // No audio - video only
+              command.noAudio()
+            }
+
+            command
+              .on('progress', progress => {
+                if (mainWindow && progress.percent) {
+                  mainWindow.webContents.send('export:progress', { percent: progress.percent })
+                }
+              })
+              .on('end', () => {
+                resolve({ success: true, filePath: outputPath })
+              })
+              .on('error', err => {
+                console.error('Export error:', err)
+                reject(err)
+              })
+              .save(outputPath)
+          })
+        } catch (error) {
+          console.error('Failed to export clip:', error)
+          throw error
+        }
+      }
+    )
 
 // App lifecycle
 app.whenReady().then(async () => {
@@ -871,69 +1104,31 @@ app.whenReady().then(async () => {
     console.error('Failed to create window:', err)
   })
 
-  // Check if backend is running, start it if not
-  const inProduction = !isDev
-  const backendPath = inProduction
-    ? join(process.resourcesPath, 'bin', 'ClipVault.exe')
-    : join(appDir, '..', '..', '..', 'bin', 'ClipVault.exe')
-  const backendLogPath = inProduction
-    ? join(process.resourcesPath, 'bin', 'clipvault.log')
-    : join(appDir, '..', '..', '..', 'bin', 'clipvault.log')
-
-  // Always try to start the backend - it has single instance protection
-  // This avoids false positives from detecting the UI itself as the backend
+  // Start the backend
   console.log('Attempting to start backend...')
-    if (existsSync(backendPath)) {
-      try {
-        console.log('Spawning backend from:', backendPath)
-        console.log('process.resourcesPath:', process.resourcesPath)
-        const backendProc = spawn(backendPath, [], {
-          detached: true,
-          stdio: ['ignore', 'ignore', 'ignore'],
-        })
-        
-        backendProc.on('error', (error) => {
-          console.error('Backend spawn error:', error)
-        })
-        
-        backendProc.on('exit', (code, signal) => {
-          console.log(`Backend exited with code ${code} and signal ${signal}`)
-        })
-        
-        console.log('Backend spawned with PID:', backendProc.pid)
-        
-        // Properly detach the process so it continues running after parent exits
-        backendProc.unref()
-        
-        // Verify backend started after a short delay
-        setTimeout(() => {
-          try {
-            const checkOutput = execSync(
-              'tasklist /NH /FO CSV /FI "IMAGENAME eq ClipVault.exe"',
-              { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }
-            )
-            const isRunning = checkOutput.includes('ClipVault.exe')
-            console.log('Backend verification after spawn:', isRunning ? 'running' : 'not running')
-            
-            // Check if log file was created
-            const logPath = inProduction
-              ? join(process.resourcesPath, 'bin', 'clipvault.log')
-              : join(appDir, '..', '..', '..', 'bin', 'clipvault.log')
-            if (existsSync(logPath)) {
-              console.log('Backend log file exists:', logPath)
-            } else {
-              console.warn('Backend log file not found - spawn may have failed silently')
-            }
-          } catch (e) {
-            console.log('Could not verify backend status:', e)
-          }
-        }, 2000)
-      } catch (error) {
-        console.error('Failed to start backend:', error)
+  startBackend()
+
+  // Verify backend started after a short delay
+  setTimeout(() => {
+    try {
+      const { backendLogPath } = getBackendPaths()
+      const checkOutput = execSync(
+        'tasklist /NH /FO CSV /FI "IMAGENAME eq ClipVault.exe"',
+        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }
+      )
+      const isRunning = checkOutput.includes('ClipVault.exe')
+      console.log('Backend verification after spawn:', isRunning ? 'running' : 'not running')
+      
+      // Check if log file was created
+      if (existsSync(backendLogPath)) {
+        console.log('Backend log file exists:', backendLogPath)
+      } else {
+        console.warn('Backend log file not found - spawn may have failed silently')
       }
-    } else {
-      console.warn('Backend executable not found:', backendPath)
+    } catch (e) {
+      console.log('Could not verify backend status:', e)
     }
+  }, 2000)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

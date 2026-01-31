@@ -190,9 +190,29 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     LOG_INFO("Background mode: " + std::string(g_background_mode ? "yes" : "no"));
     LOG_INFO("No tray: " + std::string(g_no_tray ? "yes" : "no"));
 
-    // Load configuration
-    std::string config_path = exe_dir + "\\config\\settings.json";
-    clipvault::ConfigManager::instance().load(config_path);
+    // Load configuration from standard AppData location
+    // This ensures both backend and UI use the same config file
+    char appdata_path[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_APPDATA, nullptr, 0, appdata_path))) {
+        std::string config_dir = std::string(appdata_path) + "\\ClipVault";
+        std::string config_path = config_dir + "\\settings.json";
+        
+        // Create config directory if it doesn't exist
+        CreateDirectoryA(config_dir.c_str(), nullptr);
+        
+        bool config_loaded = clipvault::ConfigManager::instance().load(config_path);
+        
+        if (config_loaded) {
+            LOG_INFO("Configuration loaded from: " + config_path);
+        } else {
+            LOG_WARNING("No config found at: " + config_path + ", using defaults");
+            // Save default config for next time
+            clipvault::ConfigManager::instance().save(config_path);
+            LOG_INFO("Default config saved to: " + config_path);
+        }
+    } else {
+        LOG_ERROR("Failed to get AppData path, using default configuration");
+    }
 
     // Create output directory
     create_directory_recursive(clipvault::ConfigManager::instance().output_path());

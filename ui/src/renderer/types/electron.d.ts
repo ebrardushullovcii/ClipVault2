@@ -39,6 +39,38 @@ export interface AudioTrackUrls {
   error?: string
 }
 
+export interface AppSettings {
+  output_path: string
+  buffer_seconds: number
+  video: {
+    width: number
+    height: number
+    fps: number
+    encoder: 'auto' | 'nvenc' | 'x264'
+    quality: number
+    monitor: number
+  }
+  audio: {
+    sample_rate: number
+    bitrate: number
+    system_audio_enabled: boolean
+    microphone_enabled: boolean
+  }
+  hotkey: {
+    save_clip: string
+  }
+  ui?: {
+    show_notifications: boolean
+    minimize_to_tray: boolean
+    start_with_windows: boolean
+  }
+  launcher?: {
+    autostart_backend: boolean
+    backend_mode: string
+    single_instance: boolean
+  }
+}
+
 export interface ExportParams {
   clipPath: string
   exportFilename: string
@@ -48,6 +80,7 @@ export interface ExportParams {
   audioTrack2: boolean
   audioTrack1Volume?: number
   audioTrack2Volume?: number
+  targetSizeMB?: number | 'original'
 }
 
 export interface ExportResult {
@@ -64,7 +97,21 @@ export interface EditorAPI {
   exportClip: (params: ExportParams) => Promise<ExportResult>
 }
 
+export interface MonitorInfo {
+  id: number
+  name: string
+  width: number
+  height: number
+  x: number
+  y: number
+  primary: boolean
+}
+
 export interface ElectronAPI {
+  getSettings: () => Promise<AppSettings>
+  saveSettings: (settings: AppSettings) => Promise<{ success: boolean; restarted?: boolean }>
+  restartBackend: () => Promise<{ success: boolean; restarted?: boolean }>
+  getMonitors: () => Promise<MonitorInfo[]>
   getClipsList: () => Promise<ClipInfo[]>
   saveClipMetadata: (clipId: string, metadata: unknown) => Promise<boolean>
   getClipMetadata: (clipId: string) => Promise<unknown | null>

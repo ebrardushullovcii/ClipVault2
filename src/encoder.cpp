@@ -74,16 +74,16 @@ bool EncoderManager::create_video_encoder()
     const auto& video_cfg = ConfigManager::instance().video();
 
     LOG_INFO("  Creating video encoder...");
+    LOG_INFO("    Quality setting (CQP/CRF): " + std::to_string(video_cfg.quality));
 
     obs_data_t* settings = obs_api::data_create();
-
-    // Configure encoder settings
-    obs_api::data_set_string(settings, "rate_control", "CQP");
-    obs_api::data_set_int(settings, "cqp", video_cfg.quality);
 
     // Try NVENC first (NVIDIA hardware encoding)
     // Note: ffmpeg_nvenc is provided by obs-ffmpeg.dll (jim_nvenc requires obs-nvenc.dll)
     LOG_INFO("    Trying NVENC (ffmpeg_nvenc)...");
+    // Configure NVENC with CQP
+    obs_api::data_set_string(settings, "rate_control", "CQP");
+    obs_api::data_set_int(settings, "cqp", video_cfg.quality);
     // ffmpeg_nvenc uses "preset2" for new NVENC API, "preset" for old
     obs_api::data_set_string(settings, "preset2", "p5");  // p1 (fast) to p7 (slow)
     obs_api::data_set_string(settings, "tune", "hq");     // hq, ll, ull
@@ -92,10 +92,13 @@ bool EncoderManager::create_video_encoder()
 
     if (video_encoder_) {
         encoder_name_ = "NVENC (Hardware - ffmpeg)";
-        LOG_INFO("    NVENC encoder created successfully");
+        LOG_INFO("    NVENC encoder created with CQP=" + std::to_string(video_cfg.quality));
     } else {
         // Fallback to x264 (CPU encoding)
         LOG_INFO("    NVENC not available, trying x264...");
+        // x264 uses CRF instead of CQP
+        obs_api::data_set_string(settings, "rate_control", "CRF");
+        obs_api::data_set_int(settings, "crf", video_cfg.quality);
         obs_api::data_set_string(settings, "preset", "veryfast");
         video_encoder_ = obs_api::video_encoder_create("obs_x264", "video_encoder", settings, nullptr);
 
@@ -184,8 +187,9 @@ bool EncoderManager::fallback_to_x264()
     // Create x264 encoder
     const auto& video_cfg = ConfigManager::instance().video();
     obs_data_t* settings = obs_api::data_create();
-    obs_api::data_set_string(settings, "rate_control", "CQP");
-    obs_api::data_set_int(settings, "cqp", video_cfg.quality);
+    // x264 uses CRF instead of CQP
+    obs_api::data_set_string(settings, "rate_control", "CRF");
+    obs_api::data_set_int(settings, "crf", video_cfg.quality);
     obs_api::data_set_string(settings, "preset", "veryfast");
 
     video_encoder_ = obs_api::video_encoder_create("obs_x264", "video_encoder", settings, nullptr);
@@ -199,7 +203,7 @@ bool EncoderManager::fallback_to_x264()
 
     obs_api::encoder_set_video(video_encoder_, obs_api::get_video());
     encoder_name_ = "x264 (Software - Fallback)";
-    LOG_INFO("    Switched to x264 encoder successfully");
+    LOG_INFO("    Switched to x264 encoder with CRF=" + std::to_string(video_cfg.quality));
 
     return true;
 }

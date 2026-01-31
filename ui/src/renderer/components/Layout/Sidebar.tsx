@@ -1,6 +1,10 @@
-import { Library, Star, Clock } from 'lucide-react'
+import { Library, Star, Clock, Settings } from 'lucide-react'
 
-export const Sidebar: React.FC = () => {
+interface SidebarProps {
+  onOpenSettings?: () => void
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings }) => {
   const menuItems = [
     { icon: Library, label: 'All Clips', active: true },
     { icon: Star, label: 'Favorites', active: false },
@@ -25,8 +29,16 @@ export const Sidebar: React.FC = () => {
         ))}
       </nav>
 
-      <div className="mt-auto border-t border-border p-4">
-        <div className="text-xs text-text-muted">
+      <div className="mt-auto border-t border-border p-4 space-y-2">
+        <button
+          onClick={onOpenSettings}
+          className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium text-text-secondary transition-all duration-200 hover:bg-background-tertiary hover:text-text-primary"
+        >
+          <Settings className="h-5 w-5" />
+          Settings
+        </button>
+
+        <div className="text-xs text-text-muted pt-2">
           <p>Storage</p>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-background-tertiary">
             <div className="h-full w-1/3 rounded-full bg-accent-primary" />

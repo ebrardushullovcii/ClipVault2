@@ -157,6 +157,7 @@ bool ConfigManager::load(const std::string& filepath) {
         config_.video.height = extract_int(video_json, "height", config_.video.height);
         config_.video.fps = extract_int(video_json, "fps", config_.video.fps);
         config_.video.quality = extract_int(video_json, "quality", config_.video.quality);
+        config_.video.monitor = extract_int(video_json, "monitor", config_.video.monitor);
         std::string encoder = extract_string(video_json, "encoder");
         if (!encoder.empty()) config_.video.encoder = encoder;
     }
@@ -203,15 +204,28 @@ bool ConfigManager::save(const std::string& filepath) {
         return false;
     }
 
+    // Helper to escape strings for JSON
+    auto escape_json = [](const std::string& str) -> std::string {
+        std::string result;
+        for (char c : str) {
+            if (c == '\\' || c == '"') {
+                result += '\\';
+            }
+            result += c;
+        }
+        return result;
+    };
+
     file << "{\n";
-    file << "    \"output_path\": \"" << config_.output_path << "\",\n";
+    file << "    \"output_path\": \"" << escape_json(config_.output_path) << "\",\n";
     file << "    \"buffer_seconds\": " << config_.buffer_seconds << ",\n";
     file << "    \"video\": {\n";
     file << "        \"width\": " << config_.video.width << ",\n";
     file << "        \"height\": " << config_.video.height << ",\n";
     file << "        \"fps\": " << config_.video.fps << ",\n";
-    file << "        \"encoder\": \"" << config_.video.encoder << "\",\n";
-    file << "        \"quality\": " << config_.video.quality << "\n";
+    file << "        \"encoder\": \"" << escape_json(config_.video.encoder) << "\",\n";
+    file << "        \"quality\": " << config_.video.quality << ",\n";
+    file << "        \"monitor\": " << config_.video.monitor << "\n";
     file << "    },\n";
     file << "    \"audio\": {\n";
     file << "        \"sample_rate\": " << config_.audio.sample_rate << ",\n";
@@ -220,7 +234,7 @@ bool ConfigManager::save(const std::string& filepath) {
     file << "        \"microphone_enabled\": " << (config_.audio.microphone_enabled ? "true" : "false") << "\n";
     file << "    },\n";
     file << "    \"hotkey\": {\n";
-    file << "        \"save_clip\": \"" << config_.hotkey.save_clip << "\"\n";
+    file << "        \"save_clip\": \"" << escape_json(config_.hotkey.save_clip) << "\"\n";
     file << "    },\n";
     file << "    \"ui\": {\n";
     file << "        \"show_notifications\": " << (config_.ui.show_notifications ? "true" : "false") << ",\n";

@@ -7,11 +7,11 @@
 1. **Verify environment**: `.\scripts\verify-env.ps1`
 2. **Check current status**: Read `PROGRESS.md` (dynamic status, updated frequently)
 3. **Read workflow**: `AGENT_WORKFLOW.md` (how to implement)
-4. **Build C++ Backend**: `.\build.ps1`
-5. **Build UI**: `cd ui && npm run build:react`
-6. **Package App**: `cd ui && npx electron-builder --win --dir`
-7. **Test**: Run `ui\release\win-unpacked\ClipVault.exe`
-8. **Update PROGRESS.md**: Mark tasks complete, add notes
+4. **⚠️ Build FULL packaged app** (see "Build Commands" section below for complete steps)
+5. **Test with packaged version**: Run `ui\release\win-unpacked\ClipVault.exe`
+6. **Update PROGRESS.md**: Mark tasks complete, add notes
+
+**⚠️ WARNING**: Dev mode (`npm run dev`) is NOT sufficient for testing! Always use the packaged version.
 
 **Note**: PLAN.md is the static roadmap (don't modify). Use PROGRESS.md for day-to-day status updates.
 
@@ -43,15 +43,17 @@ cd ui
 npm run dev
 ```
 
-### Testing
+### Testing (ALWAYS TEST PACKAGED VERSION)
+
 ```powershell
-# Run packaged app
+# === TEST THE PACKAGED APP (THIS IS WHAT USERS RUN) ===
 .\ui\release\win-unpacked\ClipVault.exe
 
-# Check backend logs (packaged)
+# Check backend logs (packaged version)
 Get-Content .\ui\release\win-unpacked\resources\bin\clipvault.log -Wait -Tail 20
 
-# Check backend logs (dev)
+# === DEV MODE LOGS (for debugging only) ===
+# Check backend logs (dev mode - NOT for final testing)
 Get-Content .\bin\clipvault.log -Wait -Tail 20
 
 # Test F9 hotkey - press F9 while running
@@ -75,6 +77,61 @@ Get-Content .\bin\clipvault.log -Wait -Tail 20
 - **Features**: Recording, editing, export, drag-drop all working
 
 **Application is complete and functional!**
+
+---
+
+## ⚠️ CRITICAL: Always Test with Packaged Version
+
+**DO NOT consider a task complete until you build and test the PACKAGED version.**
+
+The packaged app has different file paths, process management, and behavior than dev mode:
+
+### Why This Matters
+- **File paths are different**: Backend runs from `resources\bin\` not `bin\`
+- **Config location**: Settings are at app root `config\settings.json`, not in `bin\config\`
+- **Process spawning**: Backend starts as child process of Electron in packaged mode
+- **IPC works differently**: Some IPC calls only work in packaged context
+
+### Build & Test Process (Required After ALL Changes)
+
+```powershell
+# Step 1: Build C++ Backend
+.\build.ps1
+
+# Step 2: Copy backend to UI resources (MANDATORY)
+copy bin\ClipVault.exe ui\resources\bin\
+copy bin\*.dll ui\resources\bin\
+xcopy bin\data ui\resources\bin\data /e /i
+xcopy bin\obs-plugins ui\resources\bin\obs-plugins /e /i
+copy bin\64x64-2.png ui\resources\bin\
+
+# Step 3: Build React UI
+cd ui
+npm run build:react
+
+# Step 4: Package the app
+npx electron-builder --win --dir
+
+# Step 5: TEST the packaged version (THIS IS WHAT USERS RUN)
+.\release\win-unpacked\ClipVault.exe
+
+# Step 6: Verify it works
+# - Check that backend started (tray icon visible)
+# - Check logs at .\release\win-unpacked\resources\bin\clipvault.log
+# - Test the feature you just implemented
+```
+
+### Verification Checklist
+Before marking a task complete:
+- [ ] Packaged app launches without errors
+- [ ] Backend starts (check tray icon appears)
+- [ ] Feature works in packaged version (not just dev mode)
+- [ ] No console errors or crashes
+- [ ] Settings persist after restart (if applicable)
+
+**Rule**: If you only tested in dev mode (`npm run dev`), the task is **NOT DONE**.
+
+---
 
 ## Agent Rules & Responsibilities
 
@@ -147,6 +204,37 @@ These are **living documents**. Update them when:
 
 ## Build Commands
 
+### Full Packaged App Build (REQUIRED FOR TESTING)
+
+**This is the only way to properly test changes. Dev mode (`npm run dev`) is NOT sufficient.**
+
+```powershell
+# Step 1: Build C++ Backend
+cd D:\Projects-Personal\ClipVault2
+.\build.ps1
+
+# Step 2: Copy backend files to UI resources (CRITICAL STEP)
+copy bin\ClipVault.exe ui\resources\bin\
+copy bin\*.dll ui\resources\bin\
+xcopy bin\data ui\resources\bin\data /e /i /y
+xcopy bin\obs-plugins ui\resources\bin\obs-plugins /e /i /y
+copy bin\64x64-2.png ui\resources\bin\
+
+# Step 3: Build React UI
+cd ui
+npm run build:react
+
+# Step 4: Package with Electron Builder
+npx electron-builder --win --dir
+
+# Step 5: TEST the packaged version
+.\release\win-unpacked\ClipVault.exe
+```
+
+**Final app location**: `ui\release\win-unpacked\ClipVault.exe` (this is what you test!)
+
+### Backend Development
+
 ```powershell
 # First-time setup (clone and build OBS dependencies)
 .\build.ps1 -Setup
@@ -160,11 +248,21 @@ These are **living documents**. Update them when:
 # Clean build
 .\build.ps1 -Clean
 
-# Build and run
+# Build and run (dev mode - not for final testing!)
 .\build.ps1 -Run
 
-# Run executable
+# Run backend only (tray mode)
 .\bin\ClipVault.exe
+```
+
+### UI Development (Hot Reload)
+
+```powershell
+# Dev mode with hot reload - USE ONLY FOR UI DEVELOPMENT
+cd ui
+npm run dev
+
+# Note: This does NOT include the backend! Use full packaged build for testing.
 ```
 
 ## Language Server (clangd)
