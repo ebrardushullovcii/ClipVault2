@@ -193,6 +193,28 @@ npm run dev
 
 ## Recent Changes
 
+### 2026-02-01 - Start with Windows & Tray Behavior
+
+- **Start with Windows Toggle**: New option in Settings > Startup & Behavior
+  - Adds/removes ClipVault from Windows registry Run key: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\ClipVault`
+  - Immediate effect when toggled (no restart needed)
+  - Uses `reg add` / `reg delete` commands via child_process
+
+- **Minimize to Tray Toggle**: Moved to Startup & Behavior section
+  - Keep the app running in background when closing window
+  - Tray icon remains visible for quick access
+  - Exit via tray menu "Exit" option
+
+- **Settings UI Updates**:
+  - New combined "Startup & Behavior" section in Settings
+  - Clean toggle switches with animations
+  - Separate Startup and Minimize to Tray options
+
+- **Technical Implementation**:
+  - `settings:setStartup` IPC handler manages Windows registry
+  - `window.electronAPI.setStartup(enabled)` exposed to renderer
+  - Settings saved to `ui.start_with_windows` and `ui.minimize_to_tray`
+
 ### 2026-02-01 - Editor State Persistence
 
 - **Editor State Auto-Save**: Automatically saves editor state when editing clips

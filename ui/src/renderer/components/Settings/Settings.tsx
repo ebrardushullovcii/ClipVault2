@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Save, RotateCcw, FolderOpen, Video, Mic, Keyboard, Info, Monitor, HardDrive } from 'lucide-react'
-import type { MonitorInfo } from '../../types/electron'
+import { Save, RotateCcw, FolderOpen, Video, Mic, Keyboard, Info, Monitor, HardDrive, Power, Minimize2 } from 'lucide-react'
 
 interface AppSettings {
   output_path: string
@@ -24,6 +23,11 @@ interface AppSettings {
   }
   editor: {
     skip_seconds: number
+  }
+  ui: {
+    show_notifications: boolean
+    minimize_to_tray: boolean
+    start_with_windows: boolean
   }
 }
 
@@ -665,9 +669,73 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 className="w-full rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
                 placeholder="F9"
               />
-              <p className="mt-1 text-xs text-text-muted">
-                Press this key to save the last {formatDuration(settings.buffer_seconds)} as a clip (~{estimatedSize})
-              </p>
+               <p className="mt-1 text-xs text-text-muted">
+                 Press this key to save the last {formatDuration(settings.buffer_seconds)} as a clip (~{estimatedSize})
+               </p>
+             </div>
+           </section>
+
+          {/* Startup & Behavior */}
+          <section className="rounded-xl border border-border bg-background-secondary p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <Power className="h-5 w-5 text-accent-primary" />
+              <h2 className="text-lg font-semibold text-text-primary">Startup & Behavior</h2>
+            </div>
+
+            <div className="space-y-4">
+              {/* Start with Windows */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-sm font-medium text-text-primary">Start with Windows</label>
+                  <p className="text-xs text-text-muted">Automatically run ClipVault when you log in</p>
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!settings) return
+                    const newValue = !settings.ui?.start_with_windows
+                    // Update local state
+                    setSettings(prev => prev ? { ...prev, ui: { ...prev.ui, start_with_windows: newValue } } : null)
+                    // Update registry
+                    try {
+                      await window.electronAPI.setStartup(newValue)
+                    } catch (error) {
+                      console.error('Failed to set startup:', error)
+                    }
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    settings.ui?.start_with_windows ? 'bg-accent-primary' : 'bg-background-tertiary'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      settings.ui?.start_with_windows ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Minimize to Tray */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Minimize2 className="h-4 w-4 text-text-muted" />
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary">Minimize to Tray</label>
+                    <p className="text-xs text-text-muted">Keep running in background when closing window</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSettings(prev => prev ? { ...prev, ui: { ...prev.ui, minimize_to_tray: !prev.ui.minimize_to_tray } } : null)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    settings.ui?.minimize_to_tray ? 'bg-accent-primary' : 'bg-background-tertiary'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      settings.ui?.minimize_to_tray ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
           </section>
 

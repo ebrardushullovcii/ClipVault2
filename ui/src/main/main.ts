@@ -497,6 +497,43 @@ ipcMain.handle('backend:restart', async () => {
   }
 })
 
+// Set start with Windows
+ipcMain.handle('settings:setStartup', async (_, enabled: boolean) => {
+  try {
+    const exePath = process.execPath
+    const keyName = 'ClipVault'
+    
+    if (enabled) {
+      // Add to registry Run key
+      const { exec } = require('child_process')
+      const regCmd = `reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "${keyName}" /t REG_SZ /d "${exePath}" /f`
+      exec(regCmd, (err: Error | null) => {
+        if (err) {
+          console.error('Failed to add startup registry:', err)
+        } else {
+          console.log('[Startup] Added ClipVault to Windows startup')
+        }
+      })
+    } else {
+      // Remove from registry Run key
+      const { exec } = require('child_process')
+      const regCmd = `reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "${keyName}" /f`
+      exec(regCmd, (err: Error | null) => {
+        if (err) {
+          console.error('Failed to remove startup registry:', err)
+        } else {
+          console.log('[Startup] Removed ClipVault from Windows startup')
+        }
+      })
+    }
+    
+    return { success: true }
+  } catch (error) {
+    console.error('Failed to set startup:', error)
+    return { success: false, error: String(error) }
+  }
+})
+
 // Get monitor information
 ipcMain.handle('system:getMonitors', async () => {
   try {

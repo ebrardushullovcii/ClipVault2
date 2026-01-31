@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: AppSettings) => ipcRenderer.invoke('settings:save', settings),
   restartBackend: () => ipcRenderer.invoke('backend:restart'),
+  setStartup: (enabled: boolean) => ipcRenderer.invoke('settings:setStartup', enabled),
 
   // System
   getMonitors: () => ipcRenderer.invoke('system:getMonitors'),
@@ -167,6 +168,7 @@ declare global {
     electronAPI: {
       getSettings: () => Promise<AppSettings>
       saveSettings: (settings: AppSettings) => Promise<{ success: boolean }>
+      setStartup: (enabled: boolean) => Promise<{ success: boolean }>
       getClipsList: () => Promise<ClipInfo[]>
       saveClipMetadata: (clipId: string, metadata: unknown) => Promise<boolean>
       getClipMetadata: (clipId: string) => Promise<unknown | null>
