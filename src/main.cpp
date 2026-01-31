@@ -11,6 +11,61 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <string>
+#include <cstring>
+
+// Command line flags
+static bool g_background_mode = false;
+static bool g_no_tray = false;
+static HANDLE g_shutdown_event = nullptr;
+static HANDLE g_single_instance_mutex = nullptr;
+
+// Check for single instance
+bool check_single_instance()
+{
+    // Try to create a named mutex
+    g_single_instance_mutex = CreateMutexA(nullptr, TRUE, "ClipVaultSingleInstance");
+    
+    if (g_single_instance_mutex == nullptr) {
+        // Failed to create mutex
+        return false;
+    }
+    
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        // Another instance is already running
+        CloseHandle(g_single_instance_mutex);
+        g_single_instance_mutex = nullptr;
+        return false;
+    }
+    
+    return true;
+}
+
+void release_single_instance()
+{
+    if (g_single_instance_mutex) {
+        ReleaseMutex(g_single_instance_mutex);
+        CloseHandle(g_single_instance_mutex);
+        g_single_instance_mutex = nullptr;
+    }
+}
+
+// Parse command line arguments
+void parse_arguments(LPSTR lpCmdLine)
+{
+    std::string cmdLine(lpCmdLine);
+    
+    if (cmdLine.find("--background") != std::string::npos ||
+        cmdLine.find("--service") != std::string::npos) {
+        g_background_mode = true;
+        g_no_tray = true;
+        LOG_INFO("Running in background/service mode");
+    }
+    
+    if (cmdLine.find("--no-tray") != std::string::npos) {
+        g_no_tray = true;
+        LOG_INFO("Tray icon disabled");
+    }
+}
 
 // Get the directory where the exe is located
 std::string get_exe_directory()
@@ -56,10 +111,50 @@ void on_menu_action(int menu_id)
     }
 }
 
+// Background mode message loop
+int run_background_mode()
+{
+    LOG_INFO("Running in background mode - no tray, hotkey active");
+    
+    // Create event for shutdown signaling
+    g_shutdown_event = CreateEventA(nullptr, TRUE, FALSE, "ClipVaultShutdown");
+    
+    MSG msg;
+    bool running = true;
+    
+    while (running) {
+        // Check for shutdown event (from parent process)
+        if (WaitForSingleObject(g_shutdown_event, 0) == WAIT_OBJECT_0) {
+            LOG_INFO("Shutdown event received");
+            running = false;
+            break;
+        }
+        
+        // Process Windows messages (needed for hotkey)
+        while (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT) {
+                running = false;
+                break;
+            }
+            TranslateMessage(&msg);
+            DispatchMessageA(&msg);
+        }
+        
+        // Sleep to prevent busy-waiting
+        Sleep(100);
+    }
+    
+    if (g_shutdown_event) {
+        CloseHandle(g_shutdown_event);
+        g_shutdown_event = nullptr;
+    }
+    
+    return 0;
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
     (void)hPrevInstance;
-    (void)lpCmdLine;
     (void)nCmdShow;
 
     // Get exe directory for relative paths
@@ -72,11 +167,28 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         return 1;
     }
 
+    // Parse command line arguments
+    parse_arguments(lpCmdLine);
+
+    // Check single instance (prevent multiple backends)
+    if (!check_single_instance()) {
+        LOG_INFO("Another instance of ClipVault is already running. Exiting.");
+        if (!g_background_mode) {
+            MessageBoxA(nullptr, "ClipVault is already running.\nCheck the system tray for the running instance.", 
+                        "ClipVault", MB_OK | MB_ICONINFORMATION);
+        }
+        clipvault::Logger::instance().shutdown();
+        return 0;
+    }
+    LOG_INFO("Single instance lock acquired");
+
     LOG_INFO("===========================================");
     LOG_INFO("ClipVault v0.1.0 Starting");
     LOG_INFO("===========================================");
     LOG_INFO("Executable directory: " + exe_dir);
     LOG_INFO("Log file: " + log_path);
+    LOG_INFO("Background mode: " + std::string(g_background_mode ? "yes" : "no"));
+    LOG_INFO("No tray: " + std::string(g_no_tray ? "yes" : "no"));
 
     // Load configuration
     std::string config_path = exe_dir + "\\config\\settings.json";
@@ -89,8 +201,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     auto& obs = clipvault::OBSCore::instance();
     if (!obs.initialize(exe_dir)) {
         LOG_ERROR("Failed to initialize OBS: " + obs.last_error());
-        MessageBoxA(nullptr, ("Failed to initialize OBS:\n" + obs.last_error()).c_str(),
-                    "ClipVault Error", MB_OK | MB_ICONERROR);
+        if (!g_background_mode) {
+            MessageBoxA(nullptr, ("Failed to initialize OBS:\n" + obs.last_error()).c_str(),
+                        "ClipVault Error", MB_OK | MB_ICONERROR);
+        }
         clipvault::Logger::instance().shutdown();
         return 1;
     }
@@ -99,8 +213,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     auto& capture = clipvault::CaptureManager::instance();
     if (!capture.initialize()) {
         LOG_ERROR("Failed to initialize capture: " + capture.last_error());
-        MessageBoxA(nullptr, ("Failed to initialize capture:\n" + capture.last_error()).c_str(),
-                    "ClipVault Error", MB_OK | MB_ICONERROR);
+        if (!g_background_mode) {
+            MessageBoxA(nullptr, ("Failed to initialize capture:\n" + capture.last_error()).c_str(),
+                        "ClipVault Error", MB_OK | MB_ICONERROR);
+        }
         obs.shutdown();
         clipvault::Logger::instance().shutdown();
         return 1;
@@ -110,8 +226,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     auto& encoder = clipvault::EncoderManager::instance();
     if (!encoder.initialize()) {
         LOG_ERROR("Failed to initialize encoders: " + encoder.last_error());
-        MessageBoxA(nullptr, ("Failed to initialize encoders:\n" + encoder.last_error()).c_str(),
-                    "ClipVault Error", MB_OK | MB_ICONERROR);
+        if (!g_background_mode) {
+            MessageBoxA(nullptr, ("Failed to initialize encoders:\n" + encoder.last_error()).c_str(),
+                        "ClipVault Error", MB_OK | MB_ICONERROR);
+        }
         capture.shutdown();
         obs.shutdown();
         clipvault::Logger::instance().shutdown();
@@ -122,8 +240,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     auto& replay = clipvault::ReplayManager::instance();
     if (!replay.initialize()) {
         LOG_ERROR("Failed to initialize replay buffer: " + replay.last_error());
-        MessageBoxA(nullptr, ("Failed to initialize replay buffer:\n" + replay.last_error()).c_str(),
-                    "ClipVault Error", MB_OK | MB_ICONERROR);
+        if (!g_background_mode) {
+            MessageBoxA(nullptr, ("Failed to initialize replay buffer:\n" + replay.last_error()).c_str(),
+                        "ClipVault Error", MB_OK | MB_ICONERROR);
+        }
         encoder.shutdown();
         capture.shutdown();
         obs.shutdown();
@@ -134,8 +254,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     // Start the replay buffer
     if (!replay.start()) {
         LOG_ERROR("Failed to start replay buffer: " + replay.last_error());
-        MessageBoxA(nullptr, ("Failed to start replay buffer:\n" + replay.last_error()).c_str(),
-                    "ClipVault Error", MB_OK | MB_ICONERROR);
+        if (!g_background_mode) {
+            MessageBoxA(nullptr, ("Failed to start replay buffer:\n" + replay.last_error()).c_str(),
+                        "ClipVault Error", MB_OK | MB_ICONERROR);
+        }
         replay.shutdown();
         encoder.shutdown();
         capture.shutdown();
@@ -144,49 +266,106 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         return 1;
     }
 
-    // Initialize system tray (also initializes hotkey manager with tray window handle)
-    auto& tray = clipvault::SystemTray::instance();
-    if (!tray.initialize(hInstance)) {
-        LOG_ERROR("Failed to initialize system tray");
-        MessageBoxA(nullptr, "Failed to initialize system tray", "ClipVault Error", MB_OK | MB_ICONERROR);
-        clipvault::Logger::instance().shutdown();
-        return 1;
-    }
+    int result = 0;
 
-    // Set menu callback
-    tray.set_menu_callback(on_menu_action);
-
-    // Setup hotkey callback to trigger save
-    auto& hotkey = clipvault::HotkeyManager::instance();
-    hotkey.set_callback([&replay]() {
-        LOG_INFO("Hotkey callback executing - triggering save...");
-        if (!replay.save_clip()) {
-            LOG_ERROR("Failed to save clip: " + replay.last_error());
+    if (!g_no_tray && !g_background_mode) {
+        // Initialize system tray (also initializes hotkey manager with tray window handle)
+        auto& tray = clipvault::SystemTray::instance();
+        if (!tray.initialize(hInstance)) {
+            LOG_ERROR("Failed to initialize system tray");
+            if (!g_background_mode) {
+                MessageBoxA(nullptr, "Failed to initialize system tray", "ClipVault Error", MB_OK | MB_ICONERROR);
+            }
+            clipvault::Logger::instance().shutdown();
+            return 1;
         }
-    });
-    LOG_INFO("Hotkey registered - ready to save clips");
 
-    // Set callback for when clip is saved
-    replay.set_save_callback([](const std::string& path, bool success) {
-        if (success) {
-            clipvault::SystemTray::instance().show_notification("Clip Saved", "Saved to: " + path);
+        // Set menu callback
+        tray.set_menu_callback(on_menu_action);
+
+        // Set callback to open UI when "Open" is clicked or tray icon is clicked
+        const auto& launcher_config = clipvault::ConfigManager::instance().launcher();
+        if (!launcher_config.ui_path.empty()) {
+            tray.set_open_ui_callback([ui_path = launcher_config.ui_path]() {
+                LOG_INFO("Opening UI: " + ui_path);
+                ShellExecuteA(nullptr, "open", ui_path.c_str(), nullptr, nullptr, SW_SHOW);
+            });
         } else {
-            clipvault::SystemTray::instance().show_notification("Save Failed", "Could not save clip");
+            // Try to find UI relative to backend
+            std::string ui_exe = exe_dir + "\\..\\..\\..\\ui\\release\\win-unpacked\\ClipVault.exe";
+            LOG_INFO("Looking for UI at: " + ui_exe);
+            tray.set_open_ui_callback([ui_exe]() {
+                LOG_INFO("Opening UI: " + ui_exe);
+                ShellExecuteA(nullptr, "open", ui_exe.c_str(), nullptr, nullptr, SW_SHOW);
+            });
         }
-    });
 
-    // Show startup notification
-    tray.show_notification("ClipVault", "Running in system tray. Right-click for options.");
+        // Setup hotkey callback to trigger save
+        auto& hotkey = clipvault::HotkeyManager::instance();
+        hotkey.set_callback([&replay]() {
+            LOG_INFO("Hotkey callback executing - triggering save...");
+            if (!replay.save_clip()) {
+                LOG_ERROR("Failed to save clip: " + replay.last_error());
+            }
+        });
+        LOG_INFO("Hotkey registered - ready to save clips");
 
-    LOG_INFO("ClipVault is now running in the system tray");
-    LOG_INFO("Right-click the tray icon for options");
+        // Set callback for when clip is saved
+        replay.set_save_callback([](const std::string& path, bool success) {
+            if (success) {
+                clipvault::SystemTray::instance().show_notification("Clip Saved", "Saved to: " + path);
+            } else {
+                clipvault::SystemTray::instance().show_notification("Save Failed", "Could not save clip");
+            }
+        });
 
-    // Run message loop (blocks until quit)
-    int result = tray.run();
+        // Show startup notification
+        tray.show_notification("ClipVault", "Running in system tray. Right-click for options.");
+
+        LOG_INFO("ClipVault is now running in the system tray");
+        LOG_INFO("Right-click the tray icon for options");
+
+        // Run message loop (blocks until quit)
+        result = tray.run();
+
+        // Cleanup tray
+        tray.shutdown();
+    } else {
+        // No-tray mode (background/service) - still need hotkeys
+        auto& hotkey = clipvault::HotkeyManager::instance();
+        const auto& hotkey_config = clipvault::ConfigManager::instance().hotkey();
+        if (!hotkey.initialize(hotkey_config.save_clip, nullptr)) {
+            LOG_ERROR("Failed to initialize hotkey manager in background mode");
+        } else {
+            hotkey.set_callback([&replay]() {
+                LOG_INFO("Hotkey callback executing - triggering save...");
+                if (!replay.save_clip()) {
+                    LOG_ERROR("Failed to save clip: " + replay.last_error());
+                }
+            });
+            LOG_INFO("Hotkey registered in background mode");
+        }
+
+        // Set callback for when clip is saved (log only, no UI)
+        replay.set_save_callback([](const std::string& path, bool success) {
+            if (success) {
+                LOG_INFO("Clip saved to: " + path);
+            } else {
+                LOG_ERROR("Failed to save clip");
+            }
+        });
+
+        LOG_INFO("ClipVault backend running in background mode");
+        
+        // Run background message loop
+        result = run_background_mode();
+        
+        // Cleanup hotkey
+        hotkey.shutdown();
+    }
 
     // Cleanup
     LOG_INFO("Shutting down...");
-    tray.shutdown();
     replay.shutdown();
     encoder.shutdown();
     capture.shutdown();
@@ -195,6 +374,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     LOG_INFO("===========================================");
     LOG_INFO("ClipVault shutdown complete");
     LOG_INFO("===========================================");
+
+    // Release single instance lock
+    release_single_instance();
 
     clipvault::Logger::instance().shutdown();
 

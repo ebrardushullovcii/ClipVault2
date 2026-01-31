@@ -153,29 +153,34 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
 
   // Extract audio tracks on mount
   useEffect(() => {
-    void (async () => {
-      if (!window.electronAPI?.extractAudioTracks || metadata.audioTracks < 1) {
-        return
-      }
+    // Small delay to ensure IPC is ready
+    const timer = setTimeout(() => {
+      void (async () => {
+        if (!window.electronAPI?.extractAudioTracks || metadata.audioTracks < 1) {
+          return
+        }
 
-      setIsLoadingAudio(true)
-      try {
-        const result: AudioTrackUrls = await window.electronAPI.extractAudioTracks(
-          clip.id,
-          clip.path
-        )
-        if (result.track1) {
-          setAudioTrack1Src(result.track1)
+        setIsLoadingAudio(true)
+        try {
+          const result: AudioTrackUrls = await window.electronAPI.extractAudioTracks(
+            clip.id,
+            clip.path
+          )
+          if (result.track1) {
+            setAudioTrack1Src(result.track1)
+          }
+          if (result.track2) {
+            setAudioTrack2Src(result.track2)
+          }
+        } catch (error) {
+          console.error('Failed to extract audio tracks:', error)
+        } finally {
+          setIsLoadingAudio(false)
         }
-        if (result.track2) {
-          setAudioTrack2Src(result.track2)
-        }
-      } catch (error) {
-        console.error('Failed to extract audio tracks:', error)
-      } finally {
-        setIsLoadingAudio(false)
-      }
-    })()
+      })()
+    }, 100)
+    
+    return () => clearTimeout(timer)
   }, [clip.id, clip.path, metadata.audioTracks])
 
   // Update gain node values when volume/mute changes

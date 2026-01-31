@@ -28,8 +28,13 @@ export const ClipCard: React.FC<ClipCardProps> = ({
 }) => {
   useEffect(() => {
     // Generate thumbnail and fetch metadata when component mounts
-    onGenerateThumbnail(clip.id, clip.path)
-    onFetchMetadata(clip.id, clip.path)
+    // Small delay to ensure IPC is ready
+    const timer = setTimeout(() => {
+      onGenerateThumbnail(clip.id, clip.path)
+      onFetchMetadata(clip.id, clip.path)
+    }, 100)
+    
+    return () => clearTimeout(timer)
   }, [clip.id, clip.path, onGenerateThumbnail, onFetchMetadata])
 
   const handleClick = () => {

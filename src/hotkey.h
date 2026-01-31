@@ -1,15 +1,8 @@
 #pragma once
 
+#include <windows.h>
 #include <string>
 #include <functional>
-
-// Forward declare Windows types
-#ifndef _WINDEF_
-typedef unsigned long long WPARAM;
-typedef long long LPARAM;
-struct HWND__;
-typedef HWND__* HWND;
-#endif
 
 namespace clipvault {
 

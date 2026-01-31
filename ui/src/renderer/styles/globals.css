@@ -10,6 +10,18 @@
   body {
     @apply bg-background-primary text-text-primary;
     font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  #root {
+    @apply h-screen w-screen overflow-hidden;
+  }
+
+  /* Loading state */
+  #root:empty::before {
+    content: 'Loading ClipVault...';
+    @apply flex h-full w-full items-center justify-center text-text-muted;
   }
 
   /* Custom scrollbar */

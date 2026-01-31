@@ -7,12 +7,55 @@
 1. **Verify environment**: `.\scripts\verify-env.ps1`
 2. **Check current status**: Read `PROGRESS.md` (dynamic status, updated frequently)
 3. **Read workflow**: `AGENT_WORKFLOW.md` (how to implement)
-4. **Build**: `.\build.ps1`
-5. **Implement next task** (see PROGRESS.md for current priority)
-6. **Update PROGRESS.md**: Mark tasks complete, add notes
-7. **Test**: Run `.\bin\ClipVault.exe` and check `.\bin\clipvault.log`
+4. **Build C++ Backend**: `.\build.ps1`
+5. **Build UI**: `cd ui && npm run build:react`
+6. **Package App**: `cd ui && npx electron-builder --win --dir`
+7. **Test**: Run `ui\release\win-unpacked\ClipVault.exe`
+8. **Update PROGRESS.md**: Mark tasks complete, add notes
 
 **Note**: PLAN.md is the static roadmap (don't modify). Use PROGRESS.md for day-to-day status updates.
+
+## Build Commands
+
+### Full Application Build
+```powershell
+# Build C++ Backend (creates bin\ClipVault.exe)
+cd D:\Projects-Personal\ClipVault2
+.\build.ps1
+
+# Build Electron UI (creates ui\release\win-unpacked\ClipVault.exe)
+cd ui
+npm run build:react
+npx electron-builder --win --dir
+
+# Final packaged app location:
+# ui\release\win-unpacked\ClipVault.exe (172 MB with backend bundled)
+```
+
+### Development Builds
+```powershell
+# Backend only (tray icon, no UI)
+.\build.ps1
+.\bin\ClipVault.exe
+
+# UI only in dev mode (hot reload)
+cd ui
+npm run dev
+```
+
+### Testing
+```powershell
+# Run packaged app
+.\ui\release\win-unpacked\ClipVault.exe
+
+# Check backend logs (packaged)
+Get-Content .\ui\release\win-unpacked\resources\bin\clipvault.log -Wait -Tail 20
+
+# Check backend logs (dev)
+Get-Content .\bin\clipvault.log -Wait -Tail 20
+
+# Test F9 hotkey - press F9 while running
+```
 
 ## Current Status
 
@@ -26,9 +69,12 @@
 
 **Quick Summary** (check PROGRESS.md for details):
 
-- **Phase**: 1.5 (Replay Buffer Implementation)
-- **Next Task**: Implement `src/replay.cpp` (see PROGRESS.md)
-- **Priority**: HIGH - this is the core feature that saves clips
+- **Status**: ✅ COMPLETE - Full Application Working
+- **Architecture**: Independent C++ Backend + Electron UI
+- **Packaging**: Single EXE with auto-starting backend
+- **Features**: Recording, editing, export, drag-drop all working
+
+**Application is complete and functional!**
 
 ## Agent Rules & Responsibilities
 

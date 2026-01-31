@@ -1,16 +1,25 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, protocol, Menu, nativeImage } from 'electron'
-import { fileURLToPath } from 'url'
+import { app, BrowserWindow, ipcMain, dialog, shell, protocol, Menu, nativeImage, Tray, Rectangle } from 'electron'
 import { dirname, join } from 'path'
 import { readFile, writeFile, readdir, stat, mkdir } from 'fs/promises'
 import { existsSync, createReadStream } from 'fs'
 import ffmpeg from 'fluent-ffmpeg'
 import { extname } from 'path'
+import { spawn, execSync } from 'child_process'
 
-const __filename = fileURLToPath(import.meta.url)
+// Get the directory containing the main script
+const appPath = process.argv[1] || process.cwd()
+const appDir = dirname(appPath)
 
-// Path to drag icon for file drag operations (64x64 PNG in project root)
-const dragIconPath = join(dirname(dirname(dirname(dirname(__filename)))), '64x64.png')
-const __dirname = dirname(__filename)
+// Path to drag icon for file drag operations (64x64 PNG)
+// Try multiple locations for dev vs production
+const dragIconPaths = [
+  join(appDir, '..', '..', '..', '64x64.png'), // Dev mode
+  join(process.resourcesPath, '64x64.png'),    // Production - resources folder
+  join(process.resourcesPath, 'app.asar', '64x64.png'), // Production - inside asar
+  join(app.getAppPath(), '64x64.png'),         // Alternative production path
+]
+
+const dragIconPath = dragIconPaths.find(p => existsSync(p)) || dragIconPaths[0]
 
 // Disable hardware acceleration to prevent GPU crashes
 app.disableHardwareAcceleration()
@@ -29,13 +38,66 @@ app.disableHardwareAcceleration()
 
 // Keep references to prevent garbage collection
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+let isQuitting = false
 
 // App configuration
 const isDev = process.env.NODE_ENV === 'development'
 const clipsPath = 'D:\\Clips\\ClipVault'
 const thumbnailsPath = join(app.getPath('userData'), 'thumbnails')
 
+// Configure FFmpeg path for bundled version
+const ffmpegPath = join(process.resourcesPath, 'ffmpeg', 'ffmpeg.exe')
+const ffprobePath = join(process.resourcesPath, 'ffmpeg', 'ffprobe.exe')
+if (existsSync(ffmpegPath)) {
+  process.env.PATH = `${dirname(ffmpegPath)}:${process.env.PATH}`
+  console.log('Using bundled FFmpeg:', ffmpegPath)
+}
+if (existsSync(ffprobePath)) {
+  console.log('Using bundled FFprobe:', ffprobePath)
+}
+
 console.log('Config:', { clipsPath, thumbnailsPath, userData: app.getPath('userData') })
+
+// Single instance lock - prevent multiple app instances
+const gotTheLock = app.requestSingleInstanceLock()
+
+if (!gotTheLock) {
+  console.log('Another instance is already running. Quitting.')
+  app.quit()
+} else {
+  // When a second instance tries to run, focus the existing window AND ensure backend is running
+  app.on('second-instance', () => {
+    console.log('Second instance detected, focusing existing window and checking backend')
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore()
+      }
+      mainWindow.show()
+      mainWindow.focus()
+    }
+    
+    // Try to start backend again (in case it was stopped)
+    const inProduction = !isDev
+    const backendPath = inProduction
+      ? join(process.resourcesPath, 'bin', 'ClipVault.exe')
+      : join(appDir, '..', '..', '..', 'bin', 'ClipVault.exe')
+    
+    if (existsSync(backendPath)) {
+      try {
+        console.log('Second instance: Spawning backend from:', backendPath)
+        const backendProc = spawn(backendPath, [], {
+          detached: true,
+          stdio: ['ignore', 'ignore', 'ignore'],
+        })
+        backendProc.unref()
+        console.log('Second instance: Backend spawn attempted with PID:', backendProc.pid)
+      } catch (error) {
+        console.error('Second instance: Failed to start backend:', error)
+      }
+    }
+  })
+}
 
 // Register custom protocol before app is ready
 protocol.registerSchemesAsPrivileged([
@@ -50,6 +112,80 @@ protocol.registerSchemesAsPrivileged([
   },
 ])
 
+// Backend configuration loader
+// Create system tray icon
+function createTray(): void {
+  console.log('Creating tray icon...')
+
+  // Try to load an icon
+  let icon: Electron.NativeImage | undefined
+  if (existsSync(dragIconPath)) {
+    icon = nativeImage.createFromPath(dragIconPath)
+    if (icon.isEmpty()) {
+      icon = undefined
+    }
+  }
+
+  // Use default icon if custom one not found
+  if (!icon) {
+    icon = nativeImage.createFromPath(join(appDir, '..', 'renderer', 'favicon.ico'))
+    if (icon?.isEmpty()) {
+      icon = undefined
+    }
+  }
+
+  tray = new Tray(icon || nativeImage.createEmpty())
+  tray.setToolTip('ClipVault Editor')
+  tray.setContextMenu(Menu.buildFromTemplate([
+    {
+      label: 'Open ClipVault',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show()
+          mainWindow.focus()
+        }
+      }
+    },
+    {
+      label: 'Open Clips Folder',
+      click: async () => {
+        const clipsFolder = clipsPath
+        if (!existsSync(clipsFolder)) {
+          await mkdir(clipsFolder, { recursive: true })
+        }
+        await shell.openPath(clipsFolder)
+      }
+    },
+    { type: 'separator' },
+    {
+      label: 'Exit',
+      click: () => {
+        app.quit()
+      }
+    }
+  ]))
+
+  tray.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide()
+      } else {
+        mainWindow.show()
+        mainWindow.focus()
+      }
+    }
+  })
+
+  tray.on('double-click', () => {
+    if (mainWindow) {
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+
+  console.log('Tray icon created')
+}
+
 async function createWindow() {
   console.log('Creating main window...')
   mainWindow = new BrowserWindow({
@@ -59,9 +195,11 @@ async function createWindow() {
     minHeight: 600,
     title: 'ClipVault Editor',
     backgroundColor: '#0f0f0f',
-    show: false, // Show when ready
+    show: true, // Show immediately with background color
     webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
+      preload: isDev
+        ? join(appDir, '..', 'preload', 'index.js')
+        : join(process.resourcesPath, 'app.asar', 'dist', 'preload', 'index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -86,7 +224,9 @@ async function createWindow() {
       console.log('Loaded dev URL, opening devtools...')
       mainWindow.webContents.openDevTools()
     } else {
-      await mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+      await mainWindow.loadFile(isDev
+        ? join(appDir, '..', 'renderer', 'index.html')
+        : join(process.resourcesPath, 'app.asar', 'dist', 'renderer', 'index.html'))
       console.log('Loaded production HTML file')
     }
   } catch (error) {
@@ -124,8 +264,29 @@ async function createWindow() {
     }
   }, 2000)
 
+  // Minimize to tray instead of closing
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault()
+      console.log('Minimizing to tray instead of closing')
+      mainWindow?.hide()
+    }
+  })
+
+  mainWindow.on('page-title-updated', (event) => {
+    event.preventDefault()
+  })
+
   mainWindow.on('closed', () => {
     mainWindow = null
+  })
+
+  // F12 to toggle devtools
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12') {
+      mainWindow?.webContents.toggleDevTools()
+      event.preventDefault()
+    }
   })
 }
 
@@ -639,14 +800,11 @@ ipcMain.handle('export:showPreview', async (_, filePath: string) => {
    )
 
 // App lifecycle
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   console.log('App is ready, creating window...')
-  createWindow().catch(err => {
-    console.error('Failed to create window:', err)
-  })
 
-  // Register protocol handler for clipvault:// URLs using registerFileProtocol
-  // This is more stable for video streaming with proper byte-range support
+  // Register protocol handler FIRST, before creating window
+  // This ensures clipvault:// URLs can be loaded immediately when the window opens
   protocol.registerFileProtocol('clipvault', (request, callback) => {
     try {
       console.log('Protocol handler called:', request.url)
@@ -705,6 +863,78 @@ app.whenReady().then(() => {
     }
   })
 
+  // Create tray icon
+  createTray()
+
+  // Create the main window
+  await createWindow().catch(err => {
+    console.error('Failed to create window:', err)
+  })
+
+  // Check if backend is running, start it if not
+  const inProduction = !isDev
+  const backendPath = inProduction
+    ? join(process.resourcesPath, 'bin', 'ClipVault.exe')
+    : join(appDir, '..', '..', '..', 'bin', 'ClipVault.exe')
+  const backendLogPath = inProduction
+    ? join(process.resourcesPath, 'bin', 'clipvault.log')
+    : join(appDir, '..', '..', '..', 'bin', 'clipvault.log')
+
+  // Always try to start the backend - it has single instance protection
+  // This avoids false positives from detecting the UI itself as the backend
+  console.log('Attempting to start backend...')
+    if (existsSync(backendPath)) {
+      try {
+        console.log('Spawning backend from:', backendPath)
+        console.log('process.resourcesPath:', process.resourcesPath)
+        const backendProc = spawn(backendPath, [], {
+          detached: true,
+          stdio: ['ignore', 'ignore', 'ignore'],
+        })
+        
+        backendProc.on('error', (error) => {
+          console.error('Backend spawn error:', error)
+        })
+        
+        backendProc.on('exit', (code, signal) => {
+          console.log(`Backend exited with code ${code} and signal ${signal}`)
+        })
+        
+        console.log('Backend spawned with PID:', backendProc.pid)
+        
+        // Properly detach the process so it continues running after parent exits
+        backendProc.unref()
+        
+        // Verify backend started after a short delay
+        setTimeout(() => {
+          try {
+            const checkOutput = execSync(
+              'tasklist /NH /FO CSV /FI "IMAGENAME eq ClipVault.exe"',
+              { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }
+            )
+            const isRunning = checkOutput.includes('ClipVault.exe')
+            console.log('Backend verification after spawn:', isRunning ? 'running' : 'not running')
+            
+            // Check if log file was created
+            const logPath = inProduction
+              ? join(process.resourcesPath, 'bin', 'clipvault.log')
+              : join(appDir, '..', '..', '..', 'bin', 'clipvault.log')
+            if (existsSync(logPath)) {
+              console.log('Backend log file exists:', logPath)
+            } else {
+              console.warn('Backend log file not found - spawn may have failed silently')
+            }
+          } catch (e) {
+            console.log('Could not verify backend status:', e)
+          }
+        }, 2000)
+      } catch (error) {
+        console.error('Failed to start backend:', error)
+      }
+    } else {
+      console.warn('Backend executable not found:', backendPath)
+    }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow()
@@ -713,7 +943,26 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  // Don't quit on macOS when all windows are closed
   if (process.platform !== 'darwin') {
-    app.quit()
+    // Only quit if there's no tray
+    if (!tray) {
+      app.quit()
+    }
   }
+})
+
+// Handle app quit
+app.on('before-quit', (event) => {
+  console.log('App is quitting...')
+  isQuitting = true
+  if (tray) {
+    tray.destroy()
+    tray = null
+  }
+})
+
+// Set app as quitting when user chooses Exit from tray
+app.on('will-quit', () => {
+  isQuitting = true
 })

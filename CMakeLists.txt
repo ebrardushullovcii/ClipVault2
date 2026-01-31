@@ -49,6 +49,7 @@ target_link_libraries(ClipVault PRIVATE
     shlwapi
     shell32
     user32
+    gdiplus
 )
 
 # Static linking to avoid C++ runtime mismatch
@@ -69,3 +70,13 @@ add_custom_command(TARGET ClipVault POST_BUILD
         ${CMAKE_SOURCE_DIR}/bin/config/settings.json
     COMMENT "Copying config files"
 )
+
+# Copy OBS DLLs if they exist (from OBS build output)
+if(EXISTS ${CMAKE_SOURCE_DIR}/third_party/obs-studio-src/build/rundir/release/64bit)
+    add_custom_command(TARGET ClipVault POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_SOURCE_DIR}/third_party/obs-studio-src/build/rundir/release/64bit
+            ${CMAKE_SOURCE_DIR}/bin
+        COMMENT "Copying OBS DLLs from build"
+    )
+endif()

@@ -57,7 +57,7 @@
   },
   "build": {
     "appId": "com.clipvault.editor",
-    "productName": "ClipVault Editor",
+    "productName": "ClipVault",
     "directories": {
       "output": "release"
     },
@@ -72,6 +72,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "../64x64.png",
+        "to": "64x64.png"
       }
     ],
     "win": {
@@ -89,13 +93,29 @@
           ]
         }
       ],
-      "icon": "public/icons/icon.ico"
+      "icon": "public/icons/icon.ico",
+      "extraFiles": [
+        {
+          "from": "../third_party/obs-studio-src/build/rundir/release/64bit",
+          "to": "",
+          "filter": [
+            "obs.dll",
+            "*.dll"
+          ]
+        }
+      ],
+      "verifyUpdateCodeSignature": false,
+      "signAndEditExecutable": false,
+      "forceCodeSigning": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
+    },
+    "portable": {
+      "artifactName": "ClipVault-Portable.exe"
     }
   }
 }

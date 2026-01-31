@@ -29,6 +29,13 @@ struct UIConfig {
     bool start_with_windows = false;
 };
 
+struct LauncherConfig {
+    bool autostart_backend = true;
+    std::string backend_mode = "tray";
+    bool single_instance = true;
+    std::string ui_path = "";
+};
+
 struct Config {
     std::string output_path = "D:\\Clips\\ClipVault";
     int buffer_seconds = 120;
@@ -36,6 +43,7 @@ struct Config {
     AudioConfig audio;
     HotkeyConfig hotkey;
     UIConfig ui;
+    LauncherConfig launcher;
 };
 
 class ConfigManager {
@@ -55,6 +63,7 @@ public:
     const AudioConfig& audio() const { return config_.audio; }
     const HotkeyConfig& hotkey() const { return config_.hotkey; }
     const UIConfig& ui() const { return config_.ui; }
+    const LauncherConfig& launcher() const { return config_.launcher; }
 
 private:
     ConfigManager() = default;

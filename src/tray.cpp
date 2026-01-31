@@ -1,11 +1,43 @@
+#include <windows.h>
+#include <objidl.h>
+#include <gdiplus.h>
+#pragma comment(lib, "gdiplus.lib")
+
 #include "tray.h"
 #include "logger.h"
 #include "hotkey.h"
 #include "config.h"
 
 #include <shellapi.h>
+#include <shlwapi.h>
+
+// Helper to get executable directory
+static std::string get_exe_directory()
+{
+    char path[MAX_PATH];
+    if (GetModuleFileNameA(nullptr, path, MAX_PATH) > 0) {
+        PathRemoveFileSpecA(path);
+        return std::string(path);
+    }
+    return ".";
+}
 
 namespace clipvault {
+
+// Helper function to load PNG as icon
+static HICON LoadPngIcon(const std::string& path)
+{
+    // Load PNG file using GDI+
+    Gdiplus::Bitmap* bitmap = Gdiplus::Bitmap::FromFile(std::wstring(path.begin(), path.end()).c_str());
+    if (!bitmap) {
+        return nullptr;
+    }
+
+    HICON hIcon = nullptr;
+    bitmap->GetHICON(&hIcon);
+    delete bitmap;
+    return hIcon;
+}
 
 SystemTray& SystemTray::instance()
 {
@@ -25,6 +57,11 @@ bool SystemTray::initialize(HINSTANCE hInstance)
     }
 
     LOG_INFO("Initializing system tray...");
+
+    // Initialize GDI+
+    Gdiplus::GdiplusStartupInput input;
+    Gdiplus::GdiplusStartupOutput output;
+    Gdiplus::GdiplusStartup(&gdiplus_token_, &input, &output);
 
     // Register window class
     WNDCLASSEXA wc = {};
@@ -74,7 +111,21 @@ bool SystemTray::initialize(HINSTANCE hInstance)
     nid_.uID = 1;
     nid_.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid_.uCallbackMessage = WM_TRAYICON;
-    nid_.hIcon = LoadIcon(nullptr, IDI_APPLICATION);  // Default icon for now
+
+    // Load custom icon from PNG file
+    std::string exe_dir = get_exe_directory();
+    std::string icon_path = exe_dir + "\\64x64-2.png";
+    LOG_INFO("Loading tray icon from: " + icon_path);
+    hIcon_ = LoadPngIcon(icon_path);
+    if (!hIcon_) {
+        LOG_WARNING("Failed to load custom icon from: " + icon_path);
+        hIcon_ = LoadIcon(nullptr, IDI_APPLICATION);
+        LOG_INFO("Using default Windows icon");
+    } else {
+        LOG_INFO("Custom tray icon loaded successfully");
+    }
+    nid_.hIcon = hIcon_;
+
     strcpy_s(nid_.szTip, "ClipVault - Ready");
 
     if (!Shell_NotifyIconA(NIM_ADD, &nid_)) {
@@ -88,6 +139,7 @@ bool SystemTray::initialize(HINSTANCE hInstance)
     menu_ = CreatePopupMenu();
     AppendMenuA(menu_, MF_STRING | MF_GRAYED, MENU_STATUS, "ClipVault - Ready");
     AppendMenuA(menu_, MF_SEPARATOR, 0, nullptr);
+    AppendMenuA(menu_, MF_STRING, MENU_OPEN, "Open");
     AppendMenuA(menu_, MF_STRING, MENU_OPEN_FOLDER, "Open Clips Folder");
     AppendMenuA(menu_, MF_SEPARATOR, 0, nullptr);
     AppendMenuA(menu_, MF_STRING, MENU_EXIT, "Exit");
@@ -116,9 +168,20 @@ void SystemTray::shutdown()
 
     Shell_NotifyIconA(NIM_DELETE, &nid_);
 
+    if (hIcon_) {
+        DestroyIcon(hIcon_);
+        hIcon_ = nullptr;
+    }
+
     if (hwnd_) {
         DestroyWindow(hwnd_);
         hwnd_ = nullptr;
+    }
+
+    // Shutdown GDI+
+    if (gdiplus_token_) {
+        Gdiplus::GdiplusShutdown(gdiplus_token_);
+        gdiplus_token_ = 0;
     }
 
     initialized_ = false;
@@ -184,8 +247,13 @@ LRESULT CALLBACK SystemTray::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             return 0;
 
         case WM_COMMAND:
-            if (self && self->menu_callback_) {
-                self->menu_callback_(LOWORD(wParam));
+            if (self) {
+                int command = LOWORD(wParam);
+                if (command == MENU_OPEN && self->open_ui_callback_) {
+                    self->open_ui_callback_();
+                } else if (self->menu_callback_) {
+                    self->menu_callback_(command);
+                }
             }
             return 0;
 
@@ -212,8 +280,16 @@ void SystemTray::handle_tray_message(WPARAM wParam, LPARAM lParam)
             show_context_menu();
             break;
 
+        case WM_LBUTTONUP:
+            // Single-click - show window if callback is set
+            LOG_INFO("Tray icon single-clicked");
+            if (tray_click_callback_) {
+                tray_click_callback_();
+            }
+            break;
+
         case WM_LBUTTONDBLCLK:
-            // Double-click - could open settings or clips folder
+            // Double-click - open clips folder
             LOG_INFO("Tray icon double-clicked");
             if (menu_callback_) {
                 menu_callback_(MENU_OPEN_FOLDER);
