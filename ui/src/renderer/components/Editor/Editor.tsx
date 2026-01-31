@@ -99,6 +99,46 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
     loadSettings()
   }, [])
 
+  // Load editor state from disk (trim, playhead, audio settings)
+  useEffect(() => {
+    const loadEditorState = async () => {
+      try {
+        const state = await window.electronAPI.editor.loadState(clip.id)
+        if (state) {
+          console.log('[Editor] Loading saved state for clip:', clip.id)
+          
+          // Apply trim markers
+          if (state.trim) {
+            setTrimStart(state.trim.start)
+            setTrimEnd(state.trim.end)
+          }
+          
+          // Apply playhead position
+          if (state.playheadPosition !== undefined) {
+            setCurrentTime(state.playheadPosition)
+            if (videoRef.current) {
+              videoRef.current.currentTime = state.playheadPosition
+            }
+          }
+          
+          // Apply audio settings
+          if (state.audio) {
+            setAudioTrack1(state.audio.track1.enabled)
+            setAudioTrack1Muted(state.audio.track1.muted)
+            setAudioTrack1Volume(state.audio.track1.volume)
+            
+            setAudioTrack2(state.audio.track2.enabled)
+            setAudioTrack2Muted(state.audio.track2.muted)
+            setAudioTrack2Volume(state.audio.track2.volume)
+          }
+        }
+      } catch (error) {
+        console.error('[Editor] Failed to load editor state:', error)
+      }
+    }
+    loadEditorState()
+  }, [clip.id])
+
   // Update duration when metadata changes
   useEffect(() => {
     if (metadata.duration) {
@@ -108,6 +148,56 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
       }
     }
   }, [metadata])
+
+  // Save editor state when trim, playhead, or audio settings change
+  useEffect(() => {
+    const saveEditorState = async () => {
+      try {
+        // Only save if we have a valid clip loaded
+        if (!clip.id) return
+        
+        const state = {
+          trim: {
+            start: trimStart,
+            end: trimEnd,
+          },
+          playheadPosition: currentTime,
+          audio: {
+            track1: {
+              enabled: audioTrack1,
+              muted: audioTrack1Muted,
+              volume: audioTrack1Volume,
+            },
+            track2: {
+              enabled: audioTrack2,
+              muted: audioTrack2Muted,
+              volume: audioTrack2Volume,
+            },
+          },
+          lastModified: new Date().toISOString(),
+        }
+        
+        await window.electronAPI.editor.saveState(clip.id, state)
+      } catch (error) {
+        console.error('[Editor] Failed to save editor state:', error)
+      }
+    }
+    
+    // Debounce the save by 500ms to avoid excessive writes
+    const timeoutId = setTimeout(saveEditorState, 500)
+    return () => clearTimeout(timeoutId)
+  }, [
+    clip.id,
+    trimStart,
+    trimEnd,
+    currentTime,
+    audioTrack1,
+    audioTrack1Muted,
+    audioTrack1Volume,
+    audioTrack2,
+    audioTrack2Muted,
+    audioTrack2Volume,
+  ])
 
   // Close dropdown when clicking outside
   useEffect(() => {

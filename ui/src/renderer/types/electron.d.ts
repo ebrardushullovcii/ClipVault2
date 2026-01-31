@@ -39,6 +39,28 @@ export interface AudioTrackUrls {
   error?: string
 }
 
+// Editor state for persistence (saved in clips-metadata folder)
+export interface EditorState {
+  trim: {
+    start: number
+    end: number
+  }
+  playheadPosition: number
+  audio: {
+    track1: {
+      enabled: boolean
+      muted: boolean
+      volume: number
+    }
+    track2: {
+      enabled: boolean
+      muted: boolean
+      volume: number
+    }
+  }
+  lastModified: string // ISO timestamp
+}
+
 export interface AppSettings {
   output_path: string
   buffer_seconds: number
@@ -95,6 +117,8 @@ export interface DialogAPI {
 
 export interface EditorAPI {
   exportClip: (params: ExportParams) => Promise<ExportResult>
+  saveState: (clipId: string, state: EditorState) => Promise<boolean>
+  loadState: (clipId: string) => Promise<EditorState | null>
 }
 
 export interface MonitorInfo {

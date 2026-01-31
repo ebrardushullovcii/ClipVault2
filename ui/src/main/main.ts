@@ -589,6 +589,45 @@ ipcMain.handle('clips:getMetadata', async (_, clipId: string) => {
   }
 })
 
+// Save editor state (trim markers, playhead, audio settings)
+ipcMain.handle('editor:saveState', async (_, clipId: string, state: unknown) => {
+  try {
+    const metadataDir = join(getClipsPath(), 'clips-metadata')
+    
+    // Ensure metadata directory exists
+    if (!existsSync(metadataDir)) {
+      await mkdir(metadataDir, { recursive: true })
+    }
+    
+    const statePath = join(metadataDir, `${clipId}.editor.json`)
+    await writeFile(statePath, JSON.stringify(state, null, 2), 'utf-8')
+    console.log(`[Editor] Saved state for clip ${clipId}`)
+    return true
+  } catch (error) {
+    console.error('Failed to save editor state:', error)
+    throw error
+  }
+})
+
+// Load editor state
+ipcMain.handle('editor:loadState', async (_, clipId: string) => {
+  try {
+    const metadataDir = join(getClipsPath(), 'clips-metadata')
+    const statePath = join(metadataDir, `${clipId}.editor.json`)
+    
+    if (!existsSync(statePath)) {
+      return null
+    }
+    
+    const content = await readFile(statePath, 'utf-8')
+    console.log(`[Editor] Loaded state for clip ${clipId}`)
+    return JSON.parse(content)
+  } catch (error) {
+    console.error('Failed to load editor state:', error)
+    return null
+  }
+})
+
 // Open clips folder in file explorer
 ipcMain.handle('system:openFolder', async () => {
   await shell.openPath(getClipsPath())

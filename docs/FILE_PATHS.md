@@ -14,6 +14,7 @@ Complete reference of all file paths used by ClipVault (Backend + UI).
 | **Config** | `%APPDATA%\ClipVault\settings.json` | App settings | Backend & UI |
 | **Backend Log** | `{backend_exe_dir}\clipvault.log` | Backend logs | Backend (C++) |
 | **Backend Log Backups** | `{backend_exe_dir}\clipvault.log.1-3` | Rotated log files | Backend (C++) |
+| **Editor State** | `{settings.output_path}\clips-metadata\*.editor.json` | Editor state (trim, playhead, audio) | UI |
 
 ---
 
@@ -59,6 +60,44 @@ function getClipsPath(): string {
 
 // Backend: src/config.cpp (default value, overridden by settings)
 config_.output_path = "D:\\Clips\\ClipVault"; // Default only
+```
+
+---
+
+### 1b. CLIPS METADATA DIRECTORY (Editor State)
+
+**Base Path:** `{settings.output_path}\clips-metadata\`
+
+**Files:**
+- `*.editor.json` - Editor state for each clip
+  - **Created by:** UI when user edits a clip (`ui/src/main/main.ts:editor:saveState`)
+  - **Format:** `{clipId}.editor.json`
+  - **Contains:** Trim positions, playhead position, audio settings
+  - **Example:**
+    ```json
+    {
+      "trim": { "start": 5.2, "end": 42.8 },
+      "playheadPosition": 12.5,
+      "audio": {
+        "track1": { "enabled": true, "muted": false, "volume": 0.7 },
+        "track2": { "enabled": true, "muted": true, "volume": 0.5 }
+      },
+      "lastModified": "2026-02-01T10:30:00.000Z"
+    }
+    ```
+  - **Purpose:** Restore editor session when reopening a clip
+  - **Auto-save:** Debounced 500ms after any change
+  - **Auto-load:** Applied when clip is opened in editor
+
+**Code Locations:**
+```typescript
+// UI: ui/src/main/main.ts
+const metadataDir = join(getClipsPath(), 'clips-metadata')
+const statePath = join(metadataDir, `${clipId}.editor.json`)
+
+// Editor component: ui/src/renderer/components/Editor/Editor.tsx
+// Load on mount: useEffect with window.electronAPI.editor.loadState()
+// Save on change: useEffect with debounce via window.electronAPI.editor.saveState()
 ```
 
 ---

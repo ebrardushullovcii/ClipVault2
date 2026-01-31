@@ -79,6 +79,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   editor: {
     exportClip: (params: ExportParams) => ipcRenderer.invoke('editor:exportClip', params),
+    saveState: (clipId: string, state: unknown) => ipcRenderer.invoke('editor:saveState', clipId, state),
+    loadState: (clipId: string) => ipcRenderer.invoke('editor:loadState', clipId),
   },
 
   // Event listener
@@ -137,6 +139,28 @@ interface AudioTrackUrls {
   error?: string
 }
 
+// Editor state for persistence
+interface EditorState {
+  trim: {
+    start: number
+    end: number
+  }
+  playheadPosition: number
+  audio: {
+    track1: {
+      enabled: boolean
+      muted: boolean
+      volume: number
+    }
+    track2: {
+      enabled: boolean
+      muted: boolean
+      volume: number
+    }
+  }
+  lastModified: string
+}
+
 // Type declarations for TypeScript
 declare global {
   interface Window {
@@ -170,6 +194,8 @@ declare global {
       }
       editor: {
         exportClip: (params: ExportParams) => Promise<ExportResult>
+        saveState: (clipId: string, state: EditorState) => Promise<boolean>
+        loadState: (clipId: string) => Promise<EditorState | null>
       }
       on: (channel: string, callback: (data: unknown) => void) => (() => void) | undefined
     }

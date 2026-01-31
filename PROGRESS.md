@@ -193,6 +193,32 @@ npm run dev
 
 ## Recent Changes
 
+### 2026-02-01 - Editor State Persistence
+
+- **Editor State Auto-Save**: Automatically saves editor state when editing clips
+  - Saves trim marker positions (start/end)
+  - Saves playhead position
+  - Saves audio track settings (enabled, muted, volume for both tracks)
+  - Debounced saves (500ms delay) to avoid excessive disk writes
+  - Saves to `{clipsPath}/clips-metadata/{clipId}.editor.json`
+
+- **Editor State Auto-Load**: Restores editor state when reopening a clip
+  - Loads saved trim positions and restores them in the UI
+  - Restores playhead to last position
+  - Applies audio settings (track enablement, mute status, volume levels)
+  - Only applies if editor state file exists for the clip
+
+- **Storage Format**: JSON with EditorState interface
+  - `trim: { start, end }` - Trim marker positions
+  - `playheadPosition` - Last playhead position
+  - `audio.track1/track2: { enabled, muted, volume }` - Audio settings
+  - `lastModified` - ISO timestamp for tracking
+
+- **API Additions**:
+  - `editor:saveState` IPC handler - saves state to disk
+  - `editor:loadState` IPC handler - loads state from disk
+  - `window.electronAPI.editor.saveState/loadState` - Renderer API
+
 ### 2026-01-31 - Auto-Refresh Library & Manual Refresh Button
 
 - **File Watching**: Automatically detects new clips without manual refresh
@@ -200,12 +226,12 @@ npm run dev
   - Watches for `.mp4` file additions and removals
   - Waits 500ms after file write completes before triggering (prevents partial file issues)
   - Sends `clips:new` and `clips:removed` IPC events to UI
-  
+
 - **Library Auto-Update**: Library component listens for clip changes
   - Automatically refreshes clips list when new clip is saved
   - Automatically removes clips from UI when deleted
   - Uses `window.electronAPI.on()` to listen for events
-  
+
 - **Manual Refresh Button**: Added to Library toolbar
   - Located next to view toggle (grid/list)
   - Shows spinning animation while loading
@@ -227,13 +253,13 @@ npm run dev
   - `deleteClipCache()`: Deletes thumbnails and audio cache for a specific clip
   - `cleanupOrphanedCache()`: Automatically cleans up thumbnails/audio cache for clips that no longer exist
   - `getCacheStats()`: Reports storage usage of thumbnail/audio cache
-  
-- **Automatic Cleanup**: 
+
+- **Automatic Cleanup**:
   - Runs orphaned cache cleanup 5 seconds after app startup
   - Only deletes cache files (thumbnails, audio) - never touches main clips or exports
   - Deletes thumbnails from `%APPDATA%\ClipVault\thumbnails\`
   - Deletes audio cache from `%APPDATA%\ClipVault\thumbnails\audio\`
-  
+
 - **Backend Log Rotation**:
   - Max log size: 10 MB per file
   - Keeps 3 backup files: `clipvault.log.1`, `clipvault.log.2`, `clipvault.log.3`
@@ -304,11 +330,11 @@ None - all features working as expected.
 - [x] **7. Polish Sharing Popup** - Add share buttons (Discord, Twitter, etc.) with proper timeout
 - [x] **8. File Size Target** - Export by target MB instead of quality CRF
 - [x] **9. Timeline Improvements** - Better drag handles, audio waveforms, trim precision
+- [ ] **10. Open Backend on start up option** - Option to have the backend run and the tray icon always be open on startup.
 
 ### Game Integration
 
-- [ ] **10. Game Detection & Tagging** - Auto-detect game, tag clips, filter by game in UI
-- [ ] **11. Game-Only Capture Mode** - Option to only record when game is running (not desktop)
+- [ ] **11. Game Detection & Tagging** - Auto-detect game, tag clips, filter by game in UI
 - [ ] **12. Game Capture Mode** - Add dedicated game capture (not just monitor) with game detection
 
 ### Advanced Features
@@ -317,8 +343,7 @@ None - all features working as expected.
 
 ### Distribution & Installation
 
-- [ ] **14. Make sure logs are removed** -
-- [ ] **15. Easy Installation** - Create NSIS installer for easy distribution
+- [ ] **14. Easy Installation** - Create NSIS installer for easy distribution
   - Use `electron-builder --win` (not `--win --dir`) to generate .exe installer
   - Features: start menu shortcuts, desktop icon option, add to PATH, proper Windows Add/Remove Programs registration
   - Test installer on clean Windows VM
