@@ -122,6 +122,37 @@ try {
 Write-Host "`n[Success] Build complete!" -ForegroundColor Green
 Write-Host "Output: bin\ClipVault.exe"
 
+# Copy MinGW runtime DLLs (required for the backend to run on other PCs)
+Write-Host "`n[Copy] Copying MinGW runtime DLLs..."
+$MinGWPath = (Get-Command g++).Source | Split-Path
+$MinGWDLLs = @("libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll")
+$DestDir = Join-Path $ProjectRoot "bin"
+
+foreach ($dll in $MinGWDLLs) {
+    $Src = Join-Path $MinGWPath $dll
+    if (Test-Path $Src) {
+        Copy-Item $Src $DestDir -Force
+        Write-Host "  Copied: $dll" -ForegroundColor Gray
+    } else {
+        Write-Host "  WARNING: $dll not found in MinGW directory" -ForegroundColor Yellow
+    }
+}
+
+# Copy FFmpeg tools (required for video metadata and thumbnails)
+Write-Host "`n[Copy] Copying FFmpeg tools..."
+$FFmpegPath = (Get-Command ffprobe).Source | Split-Path
+$FFmpegTools = @("ffprobe.exe", "ffmpeg.exe")
+
+foreach ($tool in $FFmpegTools) {
+    $Src = Join-Path $FFmpegPath $tool
+    if (Test-Path $Src) {
+        Copy-Item $Src $DestDir -Force
+        Write-Host "  Copied: $tool" -ForegroundColor Gray
+    } else {
+        Write-Host "  WARNING: $tool not found" -ForegroundColor Yellow
+    }
+}
+
 # Run
 if ($Run) {
     Write-Host "`n[Run] Starting ClipVault..."

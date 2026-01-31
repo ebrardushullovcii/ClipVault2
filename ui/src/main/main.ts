@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol, Menu, nativeImage, Tray, Rectangle, screen } from 'electron'
 import { dirname, join, basename } from 'path'
 import { readFile, writeFile, readdir, stat, mkdir } from 'fs/promises'
-import { existsSync, createReadStream, readFileSync } from 'fs'
+import { existsSync, createReadStream, readFileSync, createWriteStream } from 'fs'
 import ffmpeg from 'fluent-ffmpeg'
 import { spawn, execSync } from 'child_process'
 import { cleanupOrphanedCache, getCacheStats, formatBytes } from './cleanup'
@@ -58,26 +58,56 @@ const getBackendPaths = () => {
 
 // Start backend process
 function startBackend(): boolean {
-  const { backendPath } = getBackendPaths()
-  
+  const { backendPath, backendLogPath } = getBackendPaths()
+
   if (!existsSync(backendPath)) {
     console.warn('Backend executable not found:', backendPath)
+    dialog.showMessageBoxSync({
+      type: 'error',
+      title: 'ClipVault Error',
+      message: 'Backend executable not found',
+      detail: `Path: ${backendPath}\n\nPlease reinstall ClipVault.`,
+    })
     return false
   }
 
   try {
     console.log('Spawning backend from:', backendPath)
+    console.log('Backend log path:', backendLogPath)
+
+    const logStream = createWriteStream(backendLogPath, { flags: 'a' })
+    logStream.write(`\n--- Backend started at ${new Date().toISOString()} ---\n`)
+
     const backendProc = spawn(backendPath, [], {
       detached: true,
-      stdio: ['ignore', 'ignore', 'ignore'],
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+
+    backendProc.stdout.on('data', (data) => {
+      const text = data.toString().trim()
+      if (text) {
+        logStream.write(`[STDOUT] ${text}\n`)
+      }
+    })
+
+    backendProc.stderr.on('data', (data) => {
+      const text = data.toString().trim()
+      if (text) {
+        logStream.write(`[STDERR] ${text}\n`)
+        console.error('[Backend stderr]', text)
+      }
     })
 
     backendProc.on('error', (error) => {
       console.error('Backend spawn error:', error)
+      logStream.write(`[ERROR] Spawn error: ${error}\n`)
+      logStream.end()
     })
 
     backendProc.on('exit', (code, signal) => {
       console.log(`Backend exited with code ${code} and signal ${signal}`)
+      logStream.write(`--- Backend exited: code=${code}, signal=${signal} ---\n`)
+      logStream.end()
       if (backendProcess === backendProc) {
         backendProcess = null
       }
@@ -86,11 +116,16 @@ function startBackend(): boolean {
     console.log('Backend spawned with PID:', backendProc.pid)
     backendProcess = backendProc
 
-    // Properly detach the process so it continues running after parent exits
     backendProc.unref()
     return true
   } catch (error) {
     console.error('Failed to start backend:', error)
+    dialog.showMessageBoxSync({
+      type: 'error',
+      title: 'ClipVault Error',
+      message: 'Failed to start backend',
+      detail: String(error),
+    })
     return false
   }
 }
@@ -160,14 +195,30 @@ function getClipsPath(): string {
 
 
 // Configure FFmpeg path for bundled version
-const ffmpegPath = join(process.resourcesPath, 'ffmpeg', 'ffmpeg.exe')
-const ffprobePath = join(process.resourcesPath, 'ffmpeg', 'ffprobe.exe')
+// In dev mode, look in project root bin folder
+// In production, look in resources/bin
+const ffmpegPath = isDev 
+  ? join(appDir, '..', '..', '..', 'bin', 'ffmpeg.exe')
+  : join(process.resourcesPath, 'bin', 'ffmpeg.exe')
+const ffprobePath = isDev
+  ? join(appDir, '..', '..', '..', 'bin', 'ffprobe.exe')
+  : join(process.resourcesPath, 'bin', 'ffprobe.exe')
+
+console.log('FFmpeg paths:', { isDev, ffmpegPath, ffprobePath })
+
 if (existsSync(ffmpegPath)) {
-  process.env.PATH = `${dirname(ffmpegPath)}:${process.env.PATH}`
+  ffmpeg.setFfmpegPath(ffmpegPath)
+  process.env.PATH = `${dirname(ffmpegPath)};${process.env.PATH}`
   console.log('Using bundled FFmpeg:', ffmpegPath)
+} else {
+  console.warn('FFmpeg not found at:', ffmpegPath)
 }
+
 if (existsSync(ffprobePath)) {
+  ffmpeg.setFfprobePath(ffprobePath)
   console.log('Using bundled FFprobe:', ffprobePath)
+} else {
+  console.warn('FFprobe not found at:', ffprobePath)
 }
 
 console.log('Config:', { clipsPath: getClipsPath(), thumbnailsPath, userData: app.getPath('userData') })
