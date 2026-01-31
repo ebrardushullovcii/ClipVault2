@@ -433,6 +433,11 @@ const defaultSettings = {
   hotkey: {
     save_clip: 'F9',
   },
+  ui: {
+    show_notifications: true,
+    minimize_to_tray: true,
+    start_with_windows: false,
+  },
 }
 
 // Get settings
