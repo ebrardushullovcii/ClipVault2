@@ -1,40 +1,34 @@
 # ClipVault - Project Overview
 
-Game clip recorder for Windows. Press F9, instantly save the last 2 minutes as a high-quality MP4 with two separate audio tracks (game audio + microphone).
+> **This file is deprecated.** Please see [PROGRESS.md](PROGRESS.md) for current status.
 
 ## Quick Links
 
-- **README.md** - Full project description, features, usage guide
-- **AGENTS.md** - Build commands, code style, OBS patterns (agents start here)
-- **AGENT_WORKFLOW.md** - Step-by-step development process
-- **PROGRESS.md** - Current status and active tasks (check this frequently!)
-- **PLAN.md** - Static development roadmap (don't modify - use PROGRESS.md for updates)
-
-## Documentation
-
-| File | Purpose | Frequency |
-|------|---------|-----------|
-| `README.md` | Project overview, features, quick start | Once |
-| `AGENTS.md` | **Agent guidelines** - build, style, patterns, rules | Every session |
-| `AGENT_WORKFLOW.md` | Step-by-step workflow for agents | Before starting work |
-| `PROGRESS.md` | Current status, blockers, recent changes | **Check every time!** |
-| `PLAN.md` | Static roadmap (don't modify) | Reference only |
-| `docs/` | Technical references (LIBOBS, IMPLEMENTATION, etc.) | As needed |
-
-**Important**: PLAN.md is static - don't modify it. Use PROGRESS.md to track actual progress.
-
-See README.md for full project details.
-
-## Current Status
-
-**Phase 1**: Core Clipping Engine (command-line/tray app)
-- Next task: Implement `src/replay.cpp` (see PROGRESS.md)
+| File | Description |
+|------|-------------|
+| [README.md](README.md) | Project overview, features, quick start |
+| [PROGRESS.md](PROGRESS.md) | **Current status** - always check this first |
+| [PLAN.md](PLAN.md) | Static development roadmap |
+| [AGENTS.md](AGENTS.md) | Build commands, code style, agent rules |
+| [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md) | Step-by-step development process |
 
 ## Tech Stack
 
-- **Language**: C++17
-- **Platform**: Windows 10/11
-- **Capture**: libobs
-- **Video**: NVENC / x264
-- **Audio**: AAC
-- **Build**: CMake + MinGW
+| Layer | Technology |
+|-------|------------|
+| Backend | C++17 with libobs (OBS Studio) |
+| UI | Electron + React + TypeScript |
+| Video | NVENC (hardware) / x264 (CPU fallback) |
+| Audio | AAC (2 separate tracks) |
+| Build | CMake + MinGW |
+| Packaging | Electron Builder |
+
+## Application Status
+
+**Complete** - Full application working
+
+- Core recording engine (C++ backend)
+- Clip library browser (Electron UI)
+- Video editor (trim, audio controls)
+- Export system (FFmpeg-based)
+- Single EXE packaging

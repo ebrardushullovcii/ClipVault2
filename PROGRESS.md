@@ -185,7 +185,15 @@ None - all features working as expected.
 
 ## Next Steps (Optional Enhancements)
 
-- [ ] NSIS installer for easy distribution
+### Distribution & Installation
+- [ ] **Easy Installation** - NSIS installer with start menu shortcuts, desktop icon option, add to PATH option, proper Windows Add/Remove Programs registration
+  - See `docs/PACKAGING.md` for implementation details
+  - Use `electron-builder --win` (not `--win --dir`)
+  - Test installer on clean Windows VM
+  - Scan with antivirus for false positives
+  - Test uninstall cleanly removes all files
+
+### Other Enhancements
 - [ ] Auto-updater
 - [ ] Cloud sync for clips
 - [ ] Mobile app for viewing clips
@@ -212,6 +220,15 @@ None - all features working as expected.
 ### Game Integration
 - [ ] **12. Game Detection & Tagging** - Auto-detect game, tag clips, filter by game in UI
 - [ ] **13. Game-Only Capture Mode** - Option to only record when game is running (not desktop)
+
+### Distribution & Installation
+- [ ] **14. Easy Installation** - Create NSIS installer for easy distribution
+  - Use `electron-builder --win` (not `--win --dir`) to generate .exe installer
+  - Features: start menu shortcuts, desktop icon option, add to PATH, proper Windows Add/Remove Programs registration
+  - Test installer on clean Windows VM
+  - Scan with antivirus for false positives
+  - Test uninstall cleanly removes all files
+  - See `docs/PACKAGING.md` for implementation details
 
 ## Documentation
 
