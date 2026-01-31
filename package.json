@@ -1,0 +1,16 @@
+{
+  "type": "module",
+  "devDependencies": {
+    "prettier-plugin-tailwindcss": "^0.7.2"
+  },
+  "scripts": {
+    "ui:dev": "cd ui && npm run dev",
+    "ui:build": "cd ui && npm run build",
+    "ui:lint": "cd ui && npm run lint",
+    "ui:lint:fix": "cd ui && npm run lint:fix",
+    "ui:typecheck": "cd ui && npm run typecheck",
+    "ui:format": "cd ui && npm run format",
+    "ui:format:check": "cd ui && npm run format:check",
+    "ui:test": "cd ui && npm run test:ui"
+  }
+}

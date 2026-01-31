@@ -1,5 +1,4 @@
-import React from 'react'
-import { Library, Star, Clock, Settings } from 'lucide-react'
+import { Library, Star, Clock } from 'lucide-react'
 
 export const Sidebar: React.FC = () => {
   const menuItems = [
@@ -9,28 +8,28 @@ export const Sidebar: React.FC = () => {
   ]
 
   return (
-    <aside className="w-64 bg-background-secondary border-r border-border flex flex-col shrink-0">
-      <nav className="p-4 space-y-1">
-        {menuItems.map((item) => (
+    <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-background-secondary">
+      <nav className="space-y-1 p-4">
+        {menuItems.map(item => (
           <button
             key={item.label}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
+            className={`flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all duration-200 ${
               item.active
                 ? 'bg-accent-primary/10 text-accent-primary'
                 : 'text-text-secondary hover:bg-background-tertiary hover:text-text-primary'
             }`}
           >
-            <item.icon className="w-5 h-5" />
+            <item.icon className="h-5 w-5" />
             {item.label}
           </button>
         ))}
       </nav>
-      
-      <div className="mt-auto p-4 border-t border-border">
+
+      <div className="mt-auto border-t border-border p-4">
         <div className="text-xs text-text-muted">
           <p>Storage</p>
-          <div className="mt-2 h-2 bg-background-tertiary rounded-full overflow-hidden">
-            <div className="h-full w-1/3 bg-accent-primary rounded-full" />
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-background-tertiary">
+            <div className="h-full w-1/3 rounded-full bg-accent-primary" />
           </div>
           <p className="mt-1">Clips folder ready</p>
         </div>

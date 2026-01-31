@@ -162,6 +162,63 @@ scoop install llvm
    - Error squiggles for invalid code
    - "Go to definition" on OBS functions (F12 in VS Code)
 
+## UI Language Tools (TypeScript/React)
+
+The UI project uses **TypeScript**, **ESLint**, and **Prettier** with VS Code's built-in TypeScript language server.
+
+### VS Code Extensions
+
+Install these extensions:
+
+- `dbaeumer.vscode-eslint` - ESLint integration
+- `esbenp.prettier-vscode` - Prettier formatting
+- `bradlc.vscode-tailwindcss` - Tailwind CSS support
+
+### Commands (run from root)
+
+**Note:** If `npm` is not recognized, Node.js might not be in your PATH. Add `C:\Program Files\nodejs\` to PATH or use full path:
+
+```powershell
+# If npm is not in PATH, use full path:
+& "C:\Program Files\nodejs\npm" run ui:dev
+
+# Or add to PATH permanently:
+$env:Path += ";C:\Program Files\nodejs"
+
+# Run UI dev server
+npm run ui:dev
+
+# Build UI
+npm run ui:build
+
+# Lint UI code
+npm run ui:lint
+npm run ui:lint:fix  # Auto-fix issues
+
+# TypeScript typecheck
+npm run ui:typecheck
+
+# Check/fix formatting
+npm run ui:format:check
+npm run ui:format     # Auto-format
+
+# Full UI verification
+npm run ui:test
+```
+
+### Script Verification
+
+```powershell
+# Quick lint + typecheck from scripts folder
+.\scripts\verify-ui.ps1
+```
+
+### Configuration Files
+
+- `tsconfig.json` - TypeScript config (references `ui/tsconfig.json`)
+- `eslint.config.js` - ESLint config (extends `ui/eslint.config.js`)
+- `.prettierrc` - Prettier config (matches UI config)
+
 ## Testing
 
 **No automated test suite.** Tests are manual verification per TESTING.md:

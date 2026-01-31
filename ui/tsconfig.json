@@ -28,6 +28,6 @@
       "@styles/*": ["src/renderer/styles/*"]
     }
   },
-  "include": ["src/renderer/**/*"],
+  "include": ["src/renderer/**/*", "src/renderer/types/**/*.d.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
