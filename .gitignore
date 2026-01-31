@@ -51,3 +51,7 @@ config/settings.local.json
 third_party/obs-studio-src/
 third_party/obs-download/
 third_party/*.zip
+
+# Node modules (UI dependencies)
+ui/node_modules/
+node_modules/
