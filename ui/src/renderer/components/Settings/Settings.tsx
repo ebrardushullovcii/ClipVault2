@@ -1,0 +1,691 @@
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Save, RotateCcw, FolderOpen, Video, Mic, Keyboard, Info, Monitor, HardDrive } from 'lucide-react'
+import type { MonitorInfo } from '../../types/electron'
+
+interface AppSettings {
+  output_path: string
+  buffer_seconds: number
+  video: {
+    width: number
+    height: number
+    fps: number
+    encoder: 'auto' | 'nvenc' | 'x264'
+    quality: number
+    monitor: number
+  }
+  audio: {
+    sample_rate: number
+    bitrate: number
+    system_audio_enabled: boolean
+    microphone_enabled: boolean
+  }
+  hotkey: {
+    save_clip: string
+  }
+  editor: {
+    skip_seconds: number
+  }
+}
+
+interface SettingsProps {
+  onClose: () => void
+}
+
+// Quality presets with realistic bitrates for file size calculation
+// Based on real-world x264 CQP encoding (measured from actual clips)
+const qualityPresets = {
+  low: { 
+    quality: 30, 
+    label: 'Low', 
+    description: 'Smaller files, good for sharing',
+    videoBitrateMbps: 1.5, // ~1.5 Mbps (heavily compressed)
+  },
+  medium: { 
+    quality: 23, 
+    label: 'Medium', 
+    description: 'Best balance of quality and size',
+    videoBitrateMbps: 2.5, // ~2.5 Mbps (typical for CQP 20-23)
+  },
+  high: { 
+    quality: 18, 
+    label: 'High', 
+    description: 'High quality, larger files',
+    videoBitrateMbps: 5, // ~5 Mbps
+  },
+  ultra: { 
+    quality: 15, 
+    label: 'Ultra', 
+    description: 'Maximum quality, very large files',
+    videoBitrateMbps: 12, // ~12 Mbps (visually lossless)
+  },
+}
+
+// All resolution presets (will be filtered by monitor resolution)
+const allResolutionPresets = [
+  { label: '720p', width: 1280, height: 720, fps: 30 },
+  { label: '1080p', width: 1920, height: 1080, fps: 60 },
+  { label: '1440p', width: 2560, height: 1440, fps: 60 },
+  { label: '4K', width: 3840, height: 2160, fps: 30 },
+]
+
+// FPS options
+const fpsOptions = [30, 60, 120, 144]
+
+// Calculate estimated file size
+const calculateEstimatedSize = (
+  durationSeconds: number,
+  width: number,
+  height: number,
+  fps: number,
+  qualityPreset: keyof typeof qualityPresets,
+  audioBitrateKbps: number
+): string => {
+  const preset = qualityPresets[qualityPreset]
+  
+  // Base bitrate for 1080p60
+  let videoBitrateMbps = preset.videoBitrateMbps
+  
+  // Adjust for resolution (pixel count ratio vs 1080p)
+  const pixelCount = width * height
+  const pixelRatio = pixelCount / (1920 * 1080)
+  videoBitrateMbps *= pixelRatio
+  
+  // Adjust for frame rate (linear scaling roughly)
+  const fpsRatio = fps / 60
+  videoBitrateMbps *= fpsRatio
+  
+  // Audio bitrate in Mbps
+  const audioBitrateMbps = audioBitrateKbps / 1000
+  
+  // Total bitrate
+  const totalBitrateMbps = videoBitrateMbps + audioBitrateMbps
+  
+  // Calculate size in MB
+  const sizeMB = (totalBitrateMbps * durationSeconds) / 8
+  
+  // Format nicely
+  if (sizeMB >= 1024) {
+    return `${(sizeMB / 1024).toFixed(2)} GB`
+  } else if (sizeMB >= 1) {
+    return `${sizeMB.toFixed(1)} MB`
+  } else {
+    return `${(sizeMB * 1024).toFixed(0)} KB`
+  }
+}
+
+// Format duration
+const formatDuration = (seconds: number): string => {
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  if (remainingSeconds === 0) {
+    return `${minutes} min`
+  }
+  return `${minutes}m ${remainingSeconds}s`
+}
+
+export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
+  const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [originalSettings, setOriginalSettings] = useState<AppSettings | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+  const [monitors, setMonitors] = useState<MonitorInfo[]>([])
+
+  // Load settings and monitors on mount
+  useEffect(() => {
+    loadSettings()
+    loadMonitors()
+  }, [])
+
+  const loadSettings = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const data = await window.electronAPI.getSettings()
+      setSettings(data)
+      setOriginalSettings(JSON.parse(JSON.stringify(data)))
+    } catch (err) {
+      setError('Failed to load settings')
+      console.error('Error loading settings:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadMonitors = async () => {
+    try {
+      const monitorList = await window.electronAPI.getMonitors()
+      setMonitors(monitorList)
+    } catch (err) {
+      console.error('Error loading monitors:', err)
+    }
+  }
+
+  const handleSave = async () => {
+    if (!settings) return
+    
+    try {
+      setSaving(true)
+      setError(null)
+      const result = await window.electronAPI.saveSettings(settings)
+      setSaveSuccess(true)
+      setOriginalSettings(JSON.parse(JSON.stringify(settings)))
+      
+      // Show restart message
+      if (result.restarted) {
+        setTimeout(() => {
+          setError(null)
+        }, 3000)
+      }
+      
+      setTimeout(() => setSaveSuccess(false), 3000)
+    } catch (err) {
+      setError('Failed to save settings')
+      console.error('Error saving settings:', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleReset = () => {
+    if (originalSettings) {
+      setSettings(JSON.parse(JSON.stringify(originalSettings)))
+    }
+  }
+
+  const updateVideoSetting = useCallback((key: keyof AppSettings['video'], value: unknown) => {
+    setSettings(prev => {
+      if (!prev) return null
+      return {
+        ...prev,
+        video: {
+          ...prev.video,
+          [key]: value,
+        },
+      }
+    })
+  }, [])
+
+  const updateAudioSetting = useCallback((key: keyof AppSettings['audio'], value: unknown) => {
+    setSettings(prev => {
+      if (!prev) return null
+      return {
+        ...prev,
+        audio: {
+          ...prev.audio,
+          [key]: value,
+        },
+      }
+    })
+  }, [])
+
+  const applyQualityPreset = (preset: keyof typeof qualityPresets) => {
+    const { quality } = qualityPresets[preset]
+    updateVideoSetting('quality', quality)
+  }
+
+  const applyResolutionPreset = (preset: typeof allResolutionPresets[0]) => {
+    updateVideoSetting('width', preset.width)
+    updateVideoSetting('height', preset.height)
+    updateVideoSetting('fps', preset.fps)
+  }
+
+  // Get available resolution presets based on selected monitor
+  const getAvailableResolutionPresets = () => {
+    if (!settings || monitors.length === 0) return allResolutionPresets
+    
+    const selectedMonitor = monitors.find(m => m.id === settings.video.monitor) || monitors[0]
+    if (!selectedMonitor) return allResolutionPresets
+    
+    // Filter presets that fit within the monitor's resolution
+    return allResolutionPresets.filter(preset => 
+      preset.width <= selectedMonitor.width && preset.height <= selectedMonitor.height
+    )
+  }
+
+  // Get current quality preset name
+  const getCurrentQualityPreset = (): keyof typeof qualityPresets => {
+    if (!settings) return 'medium'
+    const currentQuality = settings.video.quality
+    const preset = (Object.keys(qualityPresets) as Array<keyof typeof qualityPresets>)
+      .find(key => qualityPresets[key].quality === currentQuality)
+    return preset || 'medium'
+  }
+
+  // Calculate estimated file size
+  const estimatedSize = useMemo(() => {
+    if (!settings) return '0 MB'
+    return calculateEstimatedSize(
+      settings.buffer_seconds,
+      settings.video.width,
+      settings.video.height,
+      settings.video.fps,
+      getCurrentQualityPreset(),
+      settings.audio.bitrate
+    )
+  }, [settings])
+
+  const hasChanges = JSON.stringify(settings) !== JSON.stringify(originalSettings)
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-text-secondary">Loading settings...</div>
+      </div>
+    )
+  }
+
+  if (!settings) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-error">Failed to load settings</div>
+      </div>
+    )
+  }
+
+  const availablePresets = getAvailableResolutionPresets()
+  const currentPreset = getCurrentQualityPreset()
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-border px-6 py-4">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-semibold text-text-primary">Settings</h1>
+          <span className="text-sm text-text-muted">
+            Backend will automatically restart when you save
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          {saveSuccess && (
+            <span className="text-sm text-success">Saved & restarted!</span>
+          )}
+          {hasChanges && (
+            <span className="text-sm text-warning">Unsaved changes</span>
+          )}
+          <button
+            onClick={handleReset}
+            disabled={!hasChanges || saving}
+            className="flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-background-tertiary disabled:opacity-50"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Reset
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!hasChanges || saving}
+            className="flex items-center gap-2 rounded-lg bg-accent-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-primary/90 disabled:opacity-50"
+          >
+            <Save className="h-4 w-4" />
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+          <button
+            onClick={onClose}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-background-tertiary"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="mx-6 mt-4 rounded-lg bg-error/10 px-4 py-3 text-sm text-error">
+          {error}
+        </div>
+      )}
+
+      {/* Settings Content */}
+      <div className="flex-1 overflow-y-auto p-6">
+        <div className="mx-auto max-w-4xl space-y-8">
+          
+          {/* Video & Capture Settings */}
+          <section className="rounded-xl border border-border bg-background-secondary p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <Video className="h-5 w-5 text-accent-primary" />
+              <h2 className="text-lg font-semibold text-text-primary">Video & Capture</h2>
+            </div>
+            
+            <div className="space-y-6">
+              {/* Monitor Selection */}
+              {monitors.length > 0 && (
+                <div>
+                  <label className="mb-3 block text-sm font-medium text-text-secondary">
+                    Capture Monitor
+                  </label>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {monitors.map(monitor => (
+                      <button
+                        key={monitor.id}
+                        onClick={() => updateVideoSetting('monitor', monitor.id)}
+                        className={`flex items-center gap-3 rounded-lg border p-4 text-left transition-all ${
+                          settings.video.monitor === monitor.id
+                            ? 'border-accent-primary bg-accent-primary/10'
+                            : 'border-border bg-background-tertiary hover:border-accent-primary/50'
+                        }`}
+                      >
+                        <Monitor className={`h-5 w-5 ${settings.video.monitor === monitor.id ? 'text-accent-primary' : 'text-text-muted'}`} />
+                        <div>
+                          <div className={`text-sm font-medium ${settings.video.monitor === monitor.id ? 'text-accent-primary' : 'text-text-primary'}`}>
+                            {monitor.name} {monitor.primary && '(Primary)'}
+                          </div>
+                          <div className="text-xs text-text-muted">
+                            {monitor.width}x{monitor.height}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Resolution & FPS */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {/* Resolution Presets */}
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-text-secondary">
+                    Resolution
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {availablePresets.map(preset => {
+                      const isActive = settings.video.width === preset.width && settings.video.height === preset.height
+                      return (
+                        <button
+                          key={preset.label}
+                          onClick={() => applyResolutionPreset(preset)}
+                          className={`rounded-lg border px-3 py-2 text-sm font-medium transition-all ${
+                            isActive
+                              ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                              : 'border-border bg-background-tertiary text-text-secondary hover:border-accent-primary/50'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {monitors.length > 0 && availablePresets.length < allResolutionPresets.length && (
+                    <p className="mt-2 text-xs text-text-warning">
+                      Some options hidden - exceed monitor resolution
+                    </p>
+                  )}
+                </div>
+
+                {/* FPS Selection */}
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-text-secondary">
+                    Frame Rate (FPS)
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {fpsOptions.map(fps => (
+                      <button
+                        key={fps}
+                        onClick={() => updateVideoSetting('fps', fps)}
+                        className={`rounded-lg border px-3 py-2 text-sm font-medium transition-all ${
+                          settings.video.fps === fps
+                            ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                            : 'border-border bg-background-tertiary text-text-secondary hover:border-accent-primary/50'
+                        }`}
+                      >
+                        {fps}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Quality Presets */}
+              <div>
+                <label className="mb-3 block text-sm font-medium text-text-secondary">
+                  Quality Preset
+                </label>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {(Object.keys(qualityPresets) as Array<keyof typeof qualityPresets>).map(preset => {
+                    const isActive = settings.video.quality === qualityPresets[preset].quality
+                    return (
+                      <button
+                        key={preset}
+                        onClick={() => applyQualityPreset(preset)}
+                        className={`rounded-lg border p-3 text-left transition-all ${
+                          isActive
+                            ? 'border-accent-primary bg-accent-primary/10'
+                            : 'border-border bg-background-tertiary hover:border-accent-primary/50'
+                        }`}
+                      >
+                        <div className={`text-sm font-medium ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}>
+                          {qualityPresets[preset].label}
+                        </div>
+                        <div className="mt-1 text-xs text-text-muted leading-tight">
+                          {qualityPresets[preset].description}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Buffer Duration - Moved to Video section */}
+              <div className="rounded-lg border border-border bg-background-tertiary p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-sm font-medium text-text-secondary">
+                      Buffer Duration
+                    </label>
+                    <p className="text-xs text-text-muted mt-1">
+                      How much gameplay is kept in memory
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min="30"
+                      max="300"
+                      step="30"
+                      value={settings.buffer_seconds}
+                      onChange={e => setSettings(prev => prev ? { ...prev, buffer_seconds: parseInt(e.target.value) || 120 } : null)}
+                      className="w-20 rounded-lg border border-border bg-background-secondary px-3 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none text-center"
+                    />
+                    <span className="text-sm text-text-muted w-16">
+                      {formatDuration(settings.buffer_seconds)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Encoder Selection */}
+              <div>
+                <label className="mb-2 block text-sm font-medium text-text-secondary">Encoder</label>
+                <div className="flex gap-3">
+                  {(['auto', 'nvenc', 'x264'] as const).map(encoder => (
+                    <button
+                      key={encoder}
+                      onClick={() => updateVideoSetting('encoder', encoder)}
+                      className={`rounded-lg border px-4 py-2 text-sm font-medium transition-all ${
+                        settings.video.encoder === encoder
+                          ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                          : 'border-border bg-background-tertiary text-text-secondary hover:border-accent-primary/50'
+                      }`}
+                    >
+                      {encoder === 'auto' && 'Auto (NVENC if available)'}
+                      {encoder === 'nvenc' && 'NVENC (GPU)'}
+                      {encoder === 'x264' && 'x264 (CPU)'}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-text-muted">
+                  NVENC uses your NVIDIA GPU for minimal performance impact
+                </p>
+              </div>
+
+              {/* File Size Estimation */}
+              <div className="rounded-lg border border-accent-primary/30 bg-accent-primary/5 p-4">
+                <div className="flex items-center gap-3">
+                  <HardDrive className="h-5 w-5 text-accent-primary" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-text-primary">
+                      Estimated File Size per Clip
+                    </div>
+                    <div className="text-xs text-text-muted mt-1">
+                      Based on {formatDuration(settings.buffer_seconds)} @ {settings.video.width}x{settings.video.height} with {qualityPresets[currentPreset].label} quality
+                    </div>
+                  </div>
+                  <div className="text-lg font-semibold text-accent-primary">
+                    {estimatedSize}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Output Settings */}
+          <section className="rounded-xl border border-border bg-background-secondary p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <FolderOpen className="h-5 w-5 text-accent-primary" />
+              <h2 className="text-lg font-semibold text-text-primary">Output</h2>
+            </div>
+            
+            <div>
+              <label className="mb-2 block text-sm font-medium text-text-secondary">
+                Clips Folder
+              </label>
+              <input
+                type="text"
+                value={settings.output_path}
+                onChange={e => setSettings(prev => prev ? { ...prev, output_path: e.target.value } : null)}
+                className="w-full rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-text-muted">
+                Where clips are saved when you press {settings.hotkey.save_clip}
+              </p>
+            </div>
+          </section>
+
+          {/* Audio Settings */}
+          <section className="rounded-xl border border-border bg-background-secondary p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <Mic className="h-5 w-5 text-accent-primary" />
+              <h2 className="text-lg font-semibold text-text-primary">Audio</h2>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-lg border border-border bg-background-tertiary p-4">
+                <div>
+                  <div className="font-medium text-text-primary">System Audio</div>
+                  <div className="text-sm text-text-muted">Record desktop/game audio</div>
+                </div>
+                <label className="relative inline-flex cursor-pointer items-center">
+                  <input
+                    type="checkbox"
+                    checked={settings.audio.system_audio_enabled}
+                    onChange={e => updateAudioSetting('system_audio_enabled', e.target.checked)}
+                    className="peer sr-only"
+                  />
+                  <div className="h-6 w-11 rounded-full bg-background-primary peer-checked:bg-accent-primary peer-focus:outline-none after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:after:left-5.5" />
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border border-border bg-background-tertiary p-4">
+                <div>
+                  <div className="font-medium text-text-primary">Microphone</div>
+                  <div className="text-sm text-text-muted">Record microphone input</div>
+                </div>
+                <label className="relative inline-flex cursor-pointer items-center">
+                  <input
+                    type="checkbox"
+                    checked={settings.audio.microphone_enabled}
+                    onChange={e => updateAudioSetting('microphone_enabled', e.target.checked)}
+                    className="peer sr-only"
+                  />
+                  <div className="h-6 w-11 rounded-full bg-background-primary peer-checked:bg-accent-primary peer-focus:outline-none after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:after:left-5.5" />
+                </label>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-text-secondary">
+                  Audio Bitrate: {settings.audio.bitrate} kbps
+                </label>
+                <input
+                  type="range"
+                  min="96"
+                  max="320"
+                  step="32"
+                  value={settings.audio.bitrate}
+                  onChange={e => updateAudioSetting('bitrate', parseInt(e.target.value))}
+                  className="w-full accent-accent-primary"
+                />
+                <div className="mt-1 flex justify-between text-xs text-text-muted">
+                  <span>96 kbps (compact)</span>
+                  <span>320 kbps (high quality)</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Editor Settings */}
+          <section className="rounded-xl border border-border bg-background-secondary p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <Video className="h-5 w-5 text-accent-primary" />
+              <h2 className="text-lg font-semibold text-text-primary">Editor</h2>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-text-secondary">
+                Skip Duration (seconds)
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="60"
+                value={settings.editor?.skip_seconds ?? 5}
+                onChange={e => setSettings(prev => prev ? { ...prev, editor: { ...(prev.editor || {}), skip_seconds: parseInt(e.target.value) || 5 } } : null)}
+                className="w-full rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-text-muted">
+                How many seconds to skip when using the skip buttons in the editor
+              </p>
+            </div>
+          </section>
+
+          {/* Hotkey Settings */}
+          <section className="rounded-xl border border-border bg-background-secondary p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <Keyboard className="h-5 w-5 text-accent-primary" />
+              <h2 className="text-lg font-semibold text-text-primary">Hotkey</h2>
+            </div>
+            
+            <div>
+              <label className="mb-2 block text-sm font-medium text-text-secondary">
+                Save Clip Hotkey
+              </label>
+              <input
+                type="text"
+                value={settings.hotkey.save_clip}
+                onChange={e => setSettings(prev => prev ? { ...prev, hotkey: { ...prev.hotkey, save_clip: e.target.value } } : null)}
+                className="w-full rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+                placeholder="F9"
+              />
+              <p className="mt-1 text-xs text-text-muted">
+                Press this key to save the last {formatDuration(settings.buffer_seconds)} as a clip (~{estimatedSize})
+              </p>
+            </div>
+          </section>
+
+          {/* Info */}
+          <section className="rounded-xl border border-border bg-background-secondary p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <Info className="h-5 w-5 text-accent-primary" />
+              <h2 className="text-lg font-semibold text-text-primary">About</h2>
+            </div>
+            
+            <div className="space-y-2 text-sm text-text-secondary">
+              <p>ClipVault - Lightweight game clipping tool</p>
+              <p>Settings are saved to <code className="rounded bg-background-tertiary px-2 py-1 text-text-primary">%APPDATA%\ClipVault\settings.json</code></p>
+              <p className="text-text-muted">Changes require restarting the backend to take full effect.</p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -1,6 +1,12 @@
-import { Video, Settings, FolderOpen } from 'lucide-react'
+import { Video, Settings, FolderOpen, Library } from 'lucide-react'
 
-export const Header: React.FC = () => {
+interface HeaderProps {
+  currentView: 'library' | 'editor' | 'settings'
+  onNavigateToLibrary?: () => void
+  onOpenSettings?: () => void
+}
+
+export const Header: React.FC<HeaderProps> = ({ currentView, onNavigateToLibrary, onOpenSettings }) => {
   const handleOpenFolder = async () => {
     try {
       await window.electronAPI.openClipsFolder()
@@ -20,6 +26,15 @@ export const Header: React.FC = () => {
       </div>
 
       <div className="flex items-center gap-2">
+        {currentView !== 'library' && onNavigateToLibrary && (
+          <button
+            onClick={onNavigateToLibrary}
+            className="btn-secondary flex items-center gap-2 text-sm"
+          >
+            <Library className="h-4 w-4" />
+            Library
+          </button>
+        )}
         <button
           onClick={handleOpenFolder}
           className="btn-secondary flex items-center gap-2 text-sm"
@@ -27,7 +42,10 @@ export const Header: React.FC = () => {
           <FolderOpen className="h-4 w-4" />
           Open Folder
         </button>
-        <button className="btn-secondary p-2">
+        <button
+          onClick={onOpenSettings}
+          className="btn-secondary p-2"
+        >
           <Settings className="h-4 w-4" />
         </button>
       </div>

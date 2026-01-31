@@ -17,6 +17,10 @@ import {
   Loader2,
   CheckCircle,
   AlertCircle,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Star,
 } from 'lucide-react'
 import type { VideoMetadata } from '../../hooks/useVideoMetadata'
 import type { ClipInfo, ClipMetadata, AudioTrackUrls } from '../../types/electron'
@@ -73,7 +77,27 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
   const [isExporting, setIsExporting] = useState(false)
   const [exportProgress, setExportProgress] = useState(0)
   const [exportStatus, setExportStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [targetSizeMB, setTargetSizeMB] = useState<number | 'original'>('original')
+  const [showSizeDropdown, setShowSizeDropdown] = useState(false)
   const [videoSrc, setVideoSrc] = useState(`clipvault://clip/${encodeURIComponent(clip.filename)}`)
+
+  // Editor settings
+  const [skipSeconds, setSkipSeconds] = useState(5)
+
+  // Load settings
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const data = await window.electronAPI.getSettings()
+        if (data && data.editor) {
+          setSkipSeconds(data.editor.skip_seconds || 5)
+        }
+      } catch (error) {
+        console.error('Failed to load settings:', error)
+      }
+    }
+    loadSettings()
+  }, [])
 
   // Update duration when metadata changes
   useEffect(() => {
@@ -84,6 +108,17 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
       }
     }
   }, [metadata])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showSizeDropdown) {
+        setShowSizeDropdown(false)
+      }
+    }
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [showSizeDropdown])
 
   // Initialize AudioContext
   useEffect(() => {
@@ -381,6 +416,23 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
     [currentTime, duration, isPlaying, startAudioPlayback]
   )
 
+  const skipFrame = useCallback(
+    (direction: 'back' | 'forward') => {
+      if (videoRef.current && metadata.fps > 0) {
+        const frameTime = 1 / metadata.fps
+        const adjustment = direction === 'forward' ? frameTime : -frameTime
+        const newTime = Math.max(0, Math.min(duration, currentTime + adjustment))
+        videoRef.current.currentTime = newTime
+        setCurrentTime(newTime)
+
+        if (isPlaying) {
+          startAudioPlayback(newTime)
+        }
+      }
+    },
+    [currentTime, duration, metadata.fps, isPlaying, startAudioPlayback]
+  )
+
   const seek = useCallback(
     (time: number) => {
       if (videoRef.current) {
@@ -570,6 +622,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
         audioTrack2,
         audioTrack1Volume,
         audioTrack2Volume,
+        targetSizeMB,
       })
 
       if (exportResult.success) {
@@ -604,7 +657,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
         setExportStatus('idle')
       }, 3000)
     }
-  }, [clip.path, clip.filename, trimStart, trimEnd, audioTrack1, audioTrack2])
+  }, [clip.path, clip.filename, trimStart, trimEnd, audioTrack1, audioTrack2, audioTrack1Volume, audioTrack2Volume, targetSizeMB])
 
   return (
     <div className="flex h-full flex-col bg-background-primary">
@@ -626,7 +679,47 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Tags */}
+          <div className="flex items-center gap-1 mr-2">
+            {tags.map(tag => (
+              <span
+                key={tag}
+                className="flex items-center gap-1 rounded bg-accent-primary/10 px-2 py-1 text-xs text-accent-primary"
+              >
+                {tag}
+                <button onClick={() => handleRemoveTag(tag)} className="hover:text-red-400">
+                  ×
+                </button>
+              </span>
+            ))}
+            <div className="relative">
+              <input
+                type="text"
+                value={newTag}
+                onChange={e => setNewTag(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAddTag()}
+                placeholder="+ tag"
+                className="input w-20 text-xs py-1"
+              />
+            </div>
+          </div>
+
+          {/* Favorite */}
+          <button
+            onClick={() => setIsFavorite(!isFavorite)}
+            className={`rounded-lg p-2 transition-colors ${
+              isFavorite
+                ? 'text-yellow-500 hover:bg-yellow-500/10'
+                : 'text-text-muted hover:bg-background-tertiary hover:text-text-primary'
+            }`}
+            title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <Star className="h-4 w-4" fill={isFavorite ? 'currentColor' : 'none'} />
+          </button>
+
+          <div className="h-6 w-px bg-border mx-2" />
+
           <button onClick={handleReset} className="btn-secondary flex items-center gap-2">
             <RotateCcw className="h-4 w-4" />
             Reset
@@ -647,24 +740,12 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
             <video
               ref={videoRef}
               src={videoSrc}
-              className="max-h-full max-w-full"
+              className="max-h-full max-w-full cursor-pointer"
               onClick={togglePlay}
               onError={handleVideoError}
               playsInline
               muted // Video is muted, audio comes from Web Audio API
             />
-
-            {/* Play overlay when paused */}
-            {!isPlaying && (
-              <div
-                className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/30"
-                onClick={togglePlay}
-              >
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-accent-primary">
-                  <Play className="ml-1 h-8 w-8 text-background-primary" />
-                </div>
-              </div>
-            )}
 
             {/* Audio loading indicator */}
             {isLoadingAudio && (
@@ -676,7 +757,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
           </div>
 
           {/* Timeline */}
-          <div className="flex h-24 flex-col gap-2 rounded-xl bg-background-secondary p-4">
+          <div className="flex flex-col gap-6 rounded-xl bg-background-secondary p-5">
             {/* Time display */}
             <div className="flex items-center justify-between text-sm">
               <span className="font-mono text-text-primary">{formatTime(currentTime)}</span>
@@ -686,11 +767,23 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
             {/* Timeline bar */}
             <div
               ref={timelineRef}
-              className="relative flex-1 cursor-pointer"
+              className="relative flex-1 cursor-pointer px-2 py-2"
               onClick={handleTimelineClick}
             >
               {/* Background track */}
               <div className="absolute inset-y-0 left-0 right-0 rounded-full bg-background-tertiary" />
+
+              {/* Cut region - before trim start (grayed out) */}
+              <div
+                className="absolute top-0 bottom-0 rounded-l-full bg-text-muted/20"
+                style={{ left: '0%', width: `${(trimStart / duration) * 100}%` }}
+              />
+
+              {/* Cut region - after trim end (grayed out) */}
+              <div
+                className="absolute top-0 bottom-0 rounded-r-full bg-text-muted/20"
+                style={{ left: `${(trimEnd / duration) * 100}%`, right: '0%' }}
+              />
 
               {/* Trim region */}
               <div
@@ -701,46 +794,40 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                 }}
               />
 
-              {/* Played progress */}
+              {/* Playhead - full height, vertically centered */}
               <div
-                className="absolute inset-y-0 left-0 rounded-full bg-accent-primary/40"
-                style={{ width: `${(currentTime / duration) * 100}%` }}
-              />
-
-              {/* Start trim marker */}
-              <div
-                className="absolute bottom-0 top-0 w-1 cursor-ew-resize bg-accent-primary transition-all hover:w-1.5"
-                style={{ left: `${(trimStart / duration) * 100}%` }}
-                onMouseDown={e => {
-                  e.stopPropagation()
-                  handleMarkerDragStart('start')
-                }}
-              >
-                <div className="absolute -left-1 -top-1 h-3 w-3 rounded-full bg-accent-primary" />
-              </div>
-
-              {/* End trim marker */}
-              <div
-                className="absolute bottom-0 top-0 w-1 cursor-ew-resize bg-accent-primary transition-all hover:w-1.5"
-                style={{ left: `${(trimEnd / duration) * 100}%` }}
-                onMouseDown={e => {
-                  e.stopPropagation()
-                  handleMarkerDragStart('end')
-                }}
-              >
-                <div className="absolute -left-1 -top-1 h-3 w-3 rounded-full bg-accent-primary" />
-              </div>
-
-              {/* Playhead */}
-              <div
-                className="absolute bottom-0 top-0 w-0.5 cursor-ew-resize bg-white"
+                className="absolute inset-y-0 w-0.5 cursor-ew-resize bg-white"
                 style={{ left: `${(currentTime / duration) * 100}%` }}
                 onMouseDown={e => {
                   e.stopPropagation()
                   handlePlayheadDragStart()
                 }}
               >
-                <div className="absolute -left-1.5 -top-1.5 h-4 w-4 rounded-full bg-white shadow-lg" />
+                <div className="absolute -left-1.5 top-1/2 -translate-y-1/2 h-3 w-3 rounded-full bg-white shadow-md" />
+              </div>
+
+              {/* Start trim marker - pin style extending above */}
+              <div
+                className="absolute bottom-0 w-1 cursor-ew-resize bg-accent-primary transition-all hover:w-1.5"
+                style={{ left: `${(trimStart / duration) * 100}%`, height: '200%', top: '-100%' }}
+                onMouseDown={e => {
+                  e.stopPropagation()
+                  handleMarkerDragStart('start')
+                }}
+              >
+                <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 h-4 w-4 rounded-full bg-accent-primary shadow-md" />
+              </div>
+
+              {/* End trim marker - pin style extending above */}
+              <div
+                className="absolute bottom-0 w-1 cursor-ew-resize bg-accent-primary transition-all hover:w-1.5"
+                style={{ left: `${(trimEnd / duration) * 100}%`, height: '200%', top: '-100%' }}
+                onMouseDown={e => {
+                  e.stopPropagation()
+                  handleMarkerDragStart('end')
+                }}
+              >
+                <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 h-4 w-4 rounded-full bg-accent-primary shadow-md" />
               </div>
             </div>
 
@@ -755,11 +842,19 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
           </div>
 
           {/* Playback Controls */}
-          <div className="flex h-14 items-center justify-between rounded-xl bg-background-secondary px-4">
+          <div className="flex h-14 items-center justify-center rounded-xl bg-background-secondary px-4">
             <div className="flex items-center gap-2">
               <button
-                onClick={() => skip(-5)}
+                onClick={() => skipFrame('back')}
                 className="rounded-lg p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
+                title="Back 1 Frame"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                onClick={() => skip(-skipSeconds)}
+                className="rounded-lg p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
+                title={`Back ${skipSeconds} Seconds`}
               >
                 <SkipBack className="h-5 w-5" />
               </button>
@@ -774,67 +869,24 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                 )}
               </button>
               <button
-                onClick={() => skip(5)}
+                onClick={() => skip(skipSeconds)}
                 className="rounded-lg p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
+                title={`Forward ${skipSeconds} Seconds`}
               >
                 <SkipForward className="h-5 w-5" />
               </button>
-            </div>
-
-            <div className="flex items-center gap-4">
-              {/* Track 1 Volume */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={toggleAudioTrack1Mute}
-                  className="rounded-lg p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
-                  title="Desktop Audio"
-                >
-                  {audioTrack1Muted || audioTrack1Volume === 0 ? (
-                    <VolumeX className="h-4 w-4" />
-                  ) : (
-                    <Volume2 className="h-4 w-4" />
-                  )}
-                </button>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={audioTrack1Muted ? 0 : audioTrack1Volume}
-                  onChange={handleAudioTrack1VolumeChange}
-                  className="w-16 accent-accent-primary"
-                  title="Desktop Audio Volume"
-                />
-              </div>
-
-              {/* Track 2 Volume */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={toggleAudioTrack2Mute}
-                  className="rounded-lg p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
-                  title="Microphone"
-                >
-                  {audioTrack2Muted || audioTrack2Volume === 0 ? (
-                    <VolumeX className="h-4 w-4" />
-                  ) : (
-                    <Volume2 className="h-4 w-4" />
-                  )}
-                </button>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={audioTrack2Muted ? 0 : audioTrack2Volume}
-                  onChange={handleAudioTrack2VolumeChange}
-                  className="w-16 accent-accent-primary"
-                  title="Microphone Volume"
-                />
-              </div>
-
+              <button
+                onClick={() => skipFrame('forward')}
+                className="rounded-lg p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
+                title="Forward 1 Frame"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+              <div className="w-px h-6 bg-border mx-2" />
               <button
                 onClick={toggleFullscreen}
                 className="rounded-lg p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
+                title="Fullscreen"
               >
                 <Maximize className="h-5 w-5" />
               </button>
@@ -863,7 +915,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                   <span className="text-sm text-text-secondary">Desktop Audio</span>
                 </label>
                 {audioTrack1Src && (
-                  <div className="mt-2 flex items-center gap-2 pl-7">
+                  <div className="mt-2 flex items-center gap-2">
                     <button
                       onClick={toggleAudioTrack1Mute}
                       className="rounded p-1 text-text-muted transition-colors hover:bg-background-primary"
@@ -881,7 +933,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                       step="0.1"
                       value={audioTrack1Muted ? 0 : audioTrack1Volume}
                       onChange={handleAudioTrack1VolumeChange}
-                      className="w-20 accent-accent-primary"
+                      className="flex-1 accent-accent-primary"
                     />
                   </div>
                 )}
@@ -899,7 +951,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                   <span className="text-sm text-text-secondary">Microphone</span>
                 </label>
                 {audioTrack2Src && (
-                  <div className="mt-2 flex items-center gap-2 pl-7">
+                  <div className="mt-2 flex items-center gap-2">
                     <button
                       onClick={toggleAudioTrack2Mute}
                       className="rounded p-1 text-text-muted transition-colors hover:bg-background-primary"
@@ -917,7 +969,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                       step="0.1"
                       value={audioTrack2Muted ? 0 : audioTrack2Volume}
                       onChange={handleAudioTrack2VolumeChange}
-                      className="w-20 accent-accent-primary"
+                      className="flex-1 accent-accent-primary"
                     />
                   </div>
                 )}
@@ -928,55 +980,6 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                 Disabled tracks will be muted in export
               </p>
             )}
-          </div>
-
-          {/* Favorite */}
-          <div>
-            <h3 className="mb-3 text-sm font-medium text-text-primary">Favorite</h3>
-            <button
-              onClick={() => setIsFavorite(!isFavorite)}
-              className={`flex w-full items-center justify-center gap-2 rounded-lg p-3 transition-colors ${
-                isFavorite
-                  ? 'bg-yellow-500/20 text-yellow-500 hover:bg-yellow-500/30'
-                  : 'bg-background-tertiary text-text-muted hover:bg-background-primary hover:text-text-primary'
-              }`}
-            >
-              <span className="text-lg">{isFavorite ? '★' : '☆'}</span>
-              <span className="text-sm font-medium">
-                {isFavorite ? 'Favorited' : 'Add to Favorites'}
-              </span>
-            </button>
-          </div>
-
-          {/* Tags */}
-          <div>
-            <h3 className="mb-3 text-sm font-medium text-text-primary">Tags</h3>
-            <div className="mb-3 flex flex-wrap gap-2">
-              {tags.map(tag => (
-                <span
-                  key={tag}
-                  className="flex items-center gap-1 rounded bg-accent-primary/10 px-2 py-1 text-xs text-accent-primary"
-                >
-                  {tag}
-                  <button onClick={() => handleRemoveTag(tag)} className="hover:text-red-400">
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newTag}
-                onChange={e => setNewTag(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleAddTag()}
-                placeholder="Add tag..."
-                className="input flex-1 text-sm"
-              />
-              <button onClick={handleAddTag} className="btn-secondary px-3">
-                Add
-              </button>
-            </div>
           </div>
 
           {/* Export Preview */}
@@ -1001,39 +1004,108 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                 </span>
               </div>
             </div>
-            <button
-              onClick={handleExport}
-              disabled={isExporting}
-              className={`btn-primary mt-4 flex w-full items-center justify-center gap-2 ${
-                isExporting ? 'cursor-not-allowed opacity-80' : ''
-              } ${exportStatus === 'success' ? 'bg-green-600 hover:bg-green-700' : ''} ${
-                exportStatus === 'error' ? 'bg-red-600 hover:bg-red-700' : ''
-              }`}
-            >
-              {isExporting ? (
-                <>
-                  {exportStatus === 'idle' ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : exportStatus === 'success' ? (
-                    <CheckCircle className="h-4 w-4" />
-                  ) : (
-                    <AlertCircle className="h-4 w-4" />
-                  )}
-                  {exportStatus === 'idle' && exportProgress > 0
-                    ? `Exporting... ${Math.round(exportProgress)}%`
-                    : exportStatus === 'idle'
-                      ? 'Exporting...'
-                      : exportStatus === 'success'
-                        ? 'Export Complete!'
-                        : 'Export Failed'}
-                </>
-              ) : (
-                <>
-                  <Download className="h-4 w-4" />
-                  Export Clip
-                </>
-              )}
-            </button>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={handleExport}
+                disabled={isExporting}
+                className={`btn-primary flex flex-1 items-center justify-center gap-2 ${
+                  isExporting ? 'cursor-not-allowed opacity-80' : ''
+                } ${exportStatus === 'success' ? 'bg-green-600 hover:bg-green-700' : ''} ${
+                  exportStatus === 'error' ? 'bg-red-600 hover:bg-red-700' : ''
+                }`}
+              >
+                {isExporting ? (
+                  <>
+                    {exportStatus === 'idle' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : exportStatus === 'success' ? (
+                      <CheckCircle className="h-4 w-4" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4" />
+                    )}
+                    {exportStatus === 'idle' && exportProgress > 0
+                      ? `Exporting... ${Math.round(exportProgress)}%`
+                      : exportStatus === 'idle'
+                        ? 'Exporting...'
+                        : exportStatus === 'success'
+                          ? 'Export Complete!'
+                          : 'Export Failed'}
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4" />
+                    Export
+                    {targetSizeMB !== 'original' && (
+                      <span className="ml-1 text-xs opacity-80">({targetSizeMB}MB)</span>
+                    )}
+                  </>
+                )}
+              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowSizeDropdown(!showSizeDropdown)}
+                  disabled={isExporting}
+                  className={`btn-secondary flex items-center gap-1 px-3 ${
+                    isExporting ? 'cursor-not-allowed opacity-80' : ''
+                  }`}
+                  title="Select export size target"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                </button>
+                {showSizeDropdown && (
+                  <div className="absolute bottom-full right-0 z-50 mb-1 w-40 rounded-lg border border-border bg-background-secondary py-1 shadow-lg">
+                    <button
+                      onClick={() => {
+                        setTargetSizeMB('original')
+                        setShowSizeDropdown(false)
+                      }}
+                      className={`flex w-full items-center justify-between px-4 py-2 text-left text-sm transition-colors hover:bg-background-tertiary ${
+                        targetSizeMB === 'original' ? 'text-accent-primary' : 'text-text-secondary'
+                      }`}
+                    >
+                      <span>Original</span>
+                      {targetSizeMB === 'original' && <Check className="h-4 w-4" />}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setTargetSizeMB(10)
+                        setShowSizeDropdown(false)
+                      }}
+                      className={`flex w-full items-center justify-between px-4 py-2 text-left text-sm transition-colors hover:bg-background-tertiary ${
+                        targetSizeMB === 10 ? 'text-accent-primary' : 'text-text-secondary'
+                      }`}
+                    >
+                      <span>10 MB</span>
+                      {targetSizeMB === 10 && <Check className="h-4 w-4" />}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setTargetSizeMB(50)
+                        setShowSizeDropdown(false)
+                      }}
+                      className={`flex w-full items-center justify-between px-4 py-2 text-left text-sm transition-colors hover:bg-background-tertiary ${
+                        targetSizeMB === 50 ? 'text-accent-primary' : 'text-text-secondary'
+                      }`}
+                    >
+                      <span>50 MB</span>
+                      {targetSizeMB === 50 && <Check className="h-4 w-4" />}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setTargetSizeMB(100)
+                        setShowSizeDropdown(false)
+                      }}
+                      className={`flex w-full items-center justify-between px-4 py-2 text-left text-sm transition-colors hover:bg-background-tertiary ${
+                        targetSizeMB === 100 ? 'text-accent-primary' : 'text-text-secondary'
+                      }`}
+                    >
+                      <span>100 MB</span>
+                      {targetSizeMB === 100 && <Check className="h-4 w-4" />}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
             {isExporting && exportProgress > 0 && (
               <div className="mt-2 h-1 overflow-hidden rounded-full bg-background-tertiary">
                 <div
