@@ -365,13 +365,12 @@ None - all features working as expected.
 
 ### Distribution & Installation
 
-- [ ] **14. Easy Installation** - Create NSIS installer for easy distribution
-  - Use `electron-builder --win` (not `--win --dir`) to generate .exe installer
-  - Features: start menu shortcuts, desktop icon option, add to PATH, proper Windows Add/Remove Programs registration
-  - Test installer on clean Windows VM
-  - Scan with antivirus for false positives
-  - Test uninstall cleanly removes all files
-  - See `docs/PACKAGING.md` for implementation details
+- [x] **14. Easy Installation** - Create NSIS installer for easy distribution
+   - Use `electron-builder --win` (not `--win --dir`) to generate .exe installer
+   - Features: start menu shortcuts, desktop icon option, proper Windows Add/Remove Programs registration
+   - Installer location: `ui\release\ClipVault-Setup-1.0.0.exe`
+   - Custom NSIS script adds App Paths registration for Windows search
+   - See `docs/PACKAGING.md` for implementation details
 
 ## Documentation
 

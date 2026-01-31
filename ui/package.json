@@ -81,22 +81,27 @@
     "win": {
       "target": [
         {
-          "target": "dir",
+          "target": "nsis",
           "arch": [
             "x64"
           ]
         }
       ],
-      "icon": "public/icons/icon.ico",
+      "icon": "public/icons/icon_256.png",
       "verifyUpdateCodeSignature": false,
       "signAndEditExecutable": false,
-      "forceCodeSigning": false
+      "forceCodeSigning": false,
+      "publisherName": "ClipVault"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "shortcutName": "ClipVault",
+      "menuCategory": "ClipVault",
+      "include": "build/installer.nsh",
+      "artifactName": "ClipVault-Setup-${version}.exe"
     },
     "portable": {
       "artifactName": "ClipVault-Portable.exe"

@@ -109,8 +109,12 @@ copy bin\64x64-2.png ui\resources\bin\
 cd ui
 npm run build:react
 
-# Step 4: Package the app
+# Step 4: Package the app (portable version)
 npx electron-builder --win --dir
+
+# Step 4b: Build NSIS installer (for distribution to friends)
+npx electron-builder --win
+# Output: release/ClipVault-Setup-1.0.0.exe
 
 # Step 5: TEST the packaged version (THIS IS WHAT USERS RUN)
 .\release\win-unpacked\ClipVault.exe
