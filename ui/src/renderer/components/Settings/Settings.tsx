@@ -694,7 +694,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     if (!settings) return
                     const newValue = !settings.ui?.start_with_windows
                     // Update local state
-                    setSettings(prev => prev ? { ...prev, ui: { ...prev.ui, start_with_windows: newValue } } : null)
+                    setSettings(prev => prev ? { ...prev, ui: { ...(prev.ui || {}), start_with_windows: newValue } } : null)
                     // Update registry
                     try {
                       await window.electronAPI.setStartup(newValue)
@@ -724,7 +724,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   </div>
                 </div>
                 <button
-                  onClick={() => setSettings(prev => prev ? { ...prev, ui: { ...prev.ui, minimize_to_tray: !prev.ui.minimize_to_tray } } : null)}
+                  onClick={() => setSettings(prev => prev ? { ...prev, ui: { ...(prev.ui || {}), minimize_to_tray: !(prev.ui?.minimize_to_tray) } } : null)}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                     settings.ui?.minimize_to_tray ? 'bg-accent-primary' : 'bg-background-tertiary'
                   }`}

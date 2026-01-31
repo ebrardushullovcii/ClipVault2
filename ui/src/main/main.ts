@@ -172,6 +172,10 @@ if (existsSync(ffprobePath)) {
 
 console.log('Config:', { clipsPath: getClipsPath(), thumbnailsPath, userData: app.getPath('userData') })
 
+// Check if running in startup mode (no window, just backend)
+const isStartupMode = process.argv.includes('--startup')
+console.log('[Main] Startup mode:', isStartupMode)
+
 // Single instance lock - prevent multiple app instances
 const gotTheLock = app.requestSingleInstanceLock()
 
@@ -180,9 +184,14 @@ if (!gotTheLock) {
   app.quit()
 } else {
   // When a second instance tries to run, focus the existing window AND ensure backend is running
-  app.on('second-instance', () => {
+  app.on('second-instance', (_, commandLine) => {
     console.log('Second instance detected, focusing existing window and checking backend')
-    if (mainWindow) {
+    
+    // If no window exists (startup mode), create one
+    if (!mainWindow && !commandLine.includes('--startup')) {
+      console.log('Second instance: Creating window (was in startup mode)')
+      createWindow()
+    } else if (mainWindow) {
       if (mainWindow.isMinimized()) {
         mainWindow.restore()
       }
@@ -286,6 +295,9 @@ function createTray(): void {
         mainWindow.show()
         mainWindow.focus()
       }
+    } else {
+      // Window doesn't exist (startup mode), create it
+      createWindow()
     }
   })
 
@@ -509,14 +521,16 @@ ipcMain.handle('settings:setStartup', async (_, enabled: boolean) => {
     const keyName = 'ClipVault'
     
     if (enabled) {
-      // Add to registry Run key
+      // Add to registry Run key with --startup flag (no window, backend only)
       const { exec } = require('child_process')
-      const regCmd = `reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "${keyName}" /t REG_SZ /d "${exePath}" /f`
+      // Escape quotes for registry
+      const quotedPath = `"${exePath}"`
+      const regCmd = `reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "${keyName}" /t REG_SZ /d "${quotedPath} --startup" /f`
       exec(regCmd, (err: Error | null) => {
         if (err) {
           console.error('Failed to add startup registry:', err)
         } else {
-          console.log('[Startup] Added ClipVault to Windows startup')
+          console.log('[Startup] Added ClipVault to Windows startup (background mode)')
         }
       })
     } else {
@@ -1227,13 +1241,22 @@ app.whenReady().then(async () => {
     }
   })
 
-  // Create tray icon
-  createTray()
+  // Create tray icon (only if not in startup mode)
+  if (!isStartupMode) {
+    createTray()
+  } else {
+    console.log('[Main] Startup mode: Creating minimal tray icon only')
+    createTray()
+  }
 
-  // Create the main window
-  await createWindow().catch(err => {
-    console.error('Failed to create window:', err)
-  })
+  // Create the main window (skip in startup mode)
+  if (isStartupMode) {
+    console.log('[Main] Startup mode: Skipping UI window, running in background')
+  } else {
+    await createWindow().catch(err => {
+      console.error('Failed to create window:', err)
+    })
+  }
 
   // Start the backend
   console.log('Attempting to start backend...')
