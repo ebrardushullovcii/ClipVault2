@@ -62,6 +62,7 @@ third_party/*.zip
 # Node modules (UI dependencies)
 ui/node_modules/
 ui/node_modules/.package-lock.json
+ui/package-lock.json
 node_modules/
 
 # UI build output
