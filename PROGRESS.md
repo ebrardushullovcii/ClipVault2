@@ -352,7 +352,7 @@ None - all features working as expected.
 - [x] **7. Polish Sharing Popup** - Add share buttons (Discord, Twitter, etc.) with proper timeout
 - [x] **8. File Size Target** - Export by target MB instead of quality CRF
 - [x] **9. Timeline Improvements** - Better drag handles, audio waveforms, trim precision
-- [ ] **10. Open Backend on start up option** - Option to have the backend run and the tray icon always be open on startup.
+- [x] **10. Open Backend on start up option** - Option to have the backend run and the tray icon always be open on startup.
 
 ### Audio & Notifications
 
