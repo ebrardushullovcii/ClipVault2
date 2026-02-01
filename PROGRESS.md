@@ -5,7 +5,7 @@
 
 ## Current Status Overview
 
-**Last Updated**: 2026-01-31
+**Last Updated**: 2026-02-01
 **Status**: ✅ COMPLETE - Full Application Working
 **Architecture**: Independent Backend (C++) + Electron UI (React/TypeScript)
 **Packaging**: Single EXE with auto-starting backend
@@ -354,23 +354,87 @@ None - all features working as expected.
 - [x] **9. Timeline Improvements** - Better drag handles, audio waveforms, trim precision
 - [ ] **10. Open Backend on start up option** - Option to have the backend run and the tray icon always be open on startup.
 
+### Audio & Notifications
+
+- [ ] **11. Audio Source Selection** - Allow user to select which microphone and system audio device to capture
+  - Add device selector dropdowns in Settings > Audio
+  - Use Windows WASAPI to enumerate available audio input/output devices
+  - Allow separate selection for desktop audio and microphone
+  - Store device IDs in config for persistence
+
+- [ ] **12. Clip Notification & Sound** - Visual and audio feedback when clip is saved
+  - Slide-in notification panel in top-right corner (non-intrusive)
+  - Configurable notification duration (3-10 seconds)
+  - Optional "clip saved" sound effect
+  - Separate toggles in Settings > Notifications for:
+    - Show notification on clip save
+    - Play sound on clip save
+    - Notification sound type (subtle/chime/click)
+
+### Onboarding & Setup
+
+- [ ] **13. First Run Setup Wizard** - Guide users through initial configuration
+  - Step 1: Select clips save folder (create if doesn't exist)
+  - Step 2: Configure audio sources (optional, defaults work)
+  - Step 3: Quality/buffer settings (sensible defaults with customization)
+  - Step 4: Start with Windows option
+  - Skip option for users who prefer manual configuration
+  - Settings saved to standard location, backend auto-restarted
+
+### Library Management
+
+- [ ] **14. Bulk Clip Operations** - Select and act on multiple clips at once
+  - Multi-select via Ctrl+click or Shift+click
+  - Checkbox mode for touch/tablet users
+  - Bulk actions:
+    - Delete selected clips (with confirmation)
+    - Add/remove tags from selected clips
+    - Export selected clips (queued, not parallel)
+    - Favorite/Unfavorite selected clips
+  - Select all / Deselect all buttons
+  - Selection count indicator
+  - Context menu for right-click actions
+
 ### Game Integration
 
-- [ ] **11. Game Detection & Tagging** - Auto-detect game, tag clips, filter by game in UI
-- [ ] **12. Game Capture Mode** - Add dedicated game capture (not just monitor) with game detection
+- [ ] **15. Game Detection & Tagging** - Auto-detect running game using process enumeration
+  - Identify game executable names and window titles
+  - Auto-tag clips with detected game name
+  - Filter clips by game in Library sidebar
+  - Display game icons alongside clip metadata
+
+- [ ] **16. Game Capture Mode** - Add dedicated game capture source with anti-cheat compatibility
+  - Use Windows Graphics Capture API (Windows 10 1803+) instead of legacy game capture
+  - Allow selecting specific game windows or full-screen capture
+  - Bypass anti-cheat restrictions that block global hooks
+  - Fallback to monitor capture if game capture unavailable
 
 ### Advanced Features
 
-- [ ] **13. GPU Decoding** - Enable hardware-accelerated video decoding for smoother playback
+- [ ] **17. GPU Decoding** - Enable hardware-accelerated video decoding for smoother playback
+  - Use D3D11 Video Decoder for GPU-accelerated video decoding
+  - Reduce CPU usage during playback in editor
+  - Support hardware decode for H.264, HEVC formats
+  - Automatic fallback to software decoding if GPU unavailable
+
+### Performance Optimization
+
+- [ ] **19. Windows Thumbnail Cache Integration** - Use native Windows thumbnail extraction
+  - Investigate Windows Shell thumbnail extraction APIs (IExtractImage, IThumbnailProvider)
+  - Potential 50-80% faster thumbnail generation on first load
+  - Cache in standard Windows thumbnail cache location
+  - Fallback to FFmpeg for formats Windows doesn't support
+  - Consider performance impact vs implementation complexity
+  - May reduce initial library load time significantly
 
 ### Distribution & Installation
 
-- [x] **14. Easy Installation** - Create NSIS installer for easy distribution
-   - Use `electron-builder --win` (not `--win --dir`) to generate .exe installer
-   - Features: start menu shortcuts, desktop icon option, proper Windows Add/Remove Programs registration
-   - Installer location: `ui\release\ClipVault-Setup-1.0.0.exe`
-   - Custom NSIS script adds App Paths registration for Windows search
-   - See `docs/PACKAGING.md` for implementation details
+- [x] **18. Easy Installation** - Create NSIS installer for easy distribution
+  - Use `electron-builder --win` (not `--win --dir`) to generate .exe installer
+  - Features: start menu shortcuts, desktop icon option, proper Windows Add/Remove Programs registration
+  - Installer location: `ui\release\ClipVault-Setup-1.0.0.exe`
+  - Custom NSIS script adds App Paths registration for Windows search
+  - See `docs/PACKAGING.md` for implementation details
 
 ## Documentation
 

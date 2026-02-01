@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveClipMetadata: (clipId: string, metadata: unknown) =>
     ipcRenderer.invoke('clips:saveMetadata', clipId, metadata),
   getClipMetadata: (clipId: string) => ipcRenderer.invoke('clips:getMetadata', clipId),
+  deleteClip: (clipId: string) => ipcRenderer.invoke('clips:delete', clipId),
   generateThumbnail: (clipId: string, videoPath: string) =>
     ipcRenderer.invoke('clips:generateThumbnail', clipId, videoPath),
   getVideoMetadata: (videoPath: string) => ipcRenderer.invoke('clips:getVideoMetadata', videoPath),
@@ -69,13 +70,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // System
   openClipsFolder: () => ipcRenderer.invoke('system:openFolder'),
 
-  // Dialogs (legacy - keep for backwards compatibility)
+  // Dialogs
   showSaveDialog: (options: Electron.SaveDialogOptions) =>
     ipcRenderer.invoke('dialog:save', options),
 
-  // New API structure
+  // Dialog API
   dialog: {
     save: (options: Electron.SaveDialogOptions) => ipcRenderer.invoke('dialog:save', options),
+    openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   },
 
   editor: {
@@ -193,6 +195,7 @@ declare global {
       ) => Promise<Electron.SaveDialogReturnValue>
       dialog: {
         save: (options: Electron.SaveDialogOptions) => Promise<Electron.SaveDialogReturnValue>
+        openFolder: () => Promise<Electron.OpenDialogReturnValue>
       }
       editor: {
         exportClip: (params: ExportParams) => Promise<ExportResult>

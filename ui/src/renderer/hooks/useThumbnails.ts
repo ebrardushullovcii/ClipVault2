@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useRef, useCallback } from 'react'
 
 interface ThumbnailCache {
   [clipId: string]: string
@@ -6,72 +6,55 @@ interface ThumbnailCache {
 
 interface UseThumbnailsReturn {
   thumbnails: ThumbnailCache
-  loading: Set<string>
-  error: Map<string, string>
-  generateThumbnail: (clipId: string, videoPath: string) => Promise<void>
-  getThumbnail: (clipId: string) => string | undefined
+  generateThumbnail: (clipId: string, videoPath: string) => Promise<string | undefined>
 }
 
+// Module-level cache that persists across component re-renders and sessions
+const globalThumbnailCache: ThumbnailCache = {}
+const globalLoadingSet = new Set<string>()
+
 export const useThumbnails = (): UseThumbnailsReturn => {
-  const [thumbnails, setThumbnails] = useState<ThumbnailCache>({})
-  const [loading, setLoading] = useState<Set<string>>(new Set())
-  const [error, setError] = useState<Map<string, string>>(new Map())
+  const [thumbnails, setThumbnails] = useState<ThumbnailCache>(globalThumbnailCache)
+  // Keep track of rendered thumbnails to force updates
+  const [, setForceUpdate] = useState(0)
 
-  const generateThumbnail = useCallback(
-    async (clipId: string, videoPath: string) => {
-      // Skip if already loaded or loading
-      if (thumbnails[clipId] || loading.has(clipId)) {
-        return
-      }
+  const generateThumbnail = useCallback(async (clipId: string, videoPath: string): Promise<string | undefined> => {
+    // Return cached thumbnail immediately if available - NO IPC CALL
+    if (globalThumbnailCache[clipId]) {
+      return globalThumbnailCache[clipId]
+    }
 
-      // Mark as loading
-      setLoading(prev => new Set(prev).add(clipId))
+    // Skip if already loading
+    if (globalLoadingSet.has(clipId)) {
+      return undefined
+    }
 
-      try {
-        const thumbnailUrl = await window.electronAPI.generateThumbnail(clipId, videoPath)
+    // Mark as loading
+    globalLoadingSet.add(clipId)
 
-        // Backend now returns clipvault:// URLs
-        setThumbnails(prev => ({
-          ...prev,
-          [clipId]: thumbnailUrl,
-        }))
-
-        // Clear any previous error
-        setError(prev => {
-          const newMap = new Map(prev)
-          newMap.delete(clipId)
-          return newMap
-        })
-      } catch (err) {
-        console.error(`Failed to generate thumbnail for ${clipId}:`, err)
-        setError(prev => {
-          const newMap = new Map(prev)
-          newMap.set(clipId, err instanceof Error ? err.message : 'Unknown error')
-          return newMap
-        })
-      } finally {
-        setLoading(prev => {
-          const newSet = new Set(prev)
-          newSet.delete(clipId)
-          return newSet
-        })
-      }
-    },
-    [thumbnails, loading]
-  )
-
-  const getThumbnail = useCallback(
-    (clipId: string) => {
-      return thumbnails[clipId]
-    },
-    [thumbnails]
-  )
+    try {
+      // Only make IPC call if not cached
+      const thumbnailUrl = await window.electronAPI.generateThumbnail(clipId, videoPath)
+      
+      // Store in global cache
+      globalThumbnailCache[clipId] = thumbnailUrl
+      
+      // Update React state (this will trigger re-render for all cards using this hook)
+      setThumbnails({ ...globalThumbnailCache })
+      // Force update for components that already have this hook
+      setForceUpdate(prev => prev + 1)
+      
+      return thumbnailUrl
+    } catch (err) {
+      console.error(`[Thumbnails] Failed to generate for ${clipId}:`, err)
+      return undefined
+    } finally {
+      globalLoadingSet.delete(clipId)
+    }
+  }, [])
 
   return {
     thumbnails,
-    loading,
-    error,
     generateThumbnail,
-    getThumbnail,
   }
 }

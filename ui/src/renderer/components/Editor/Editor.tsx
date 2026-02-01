@@ -7,8 +7,6 @@ import {
   Volume2,
   VolumeX,
   Scissors,
-  RotateCcw,
-  Check,
   X,
   Download,
   Maximize,
@@ -21,6 +19,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Star,
+  Trash2,
+  Trash,
 } from 'lucide-react'
 import type { VideoMetadata } from '../../hooks/useVideoMetadata'
 import type { ClipInfo, ClipMetadata, AudioTrackUrls } from '../../types/electron'
@@ -29,7 +29,7 @@ interface EditorProps {
   clip: ClipInfo
   metadata: VideoMetadata
   onClose: () => void
-  onSave: (clipId: string, metadata: ClipMetadata) => void
+  onSave?: (clipId: string, metadata: ClipMetadata) => void
 }
 
 export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => {
@@ -81,6 +81,9 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
   const [showSizeDropdown, setShowSizeDropdown] = useState(false)
   const [videoSrc, setVideoSrc] = useState(`clipvault://clip/${encodeURIComponent(clip.filename)}`)
 
+  // Delete state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
   // Editor settings
   const [skipSeconds, setSkipSeconds] = useState(5)
 
@@ -99,37 +102,45 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
     loadSettings()
   }, [])
 
-  // Load editor state from disk (trim, playhead, audio settings)
+  // Load editor state from disk
   useEffect(() => {
     const loadEditorState = async () => {
       try {
-        const state = await window.electronAPI.editor.loadState(clip.id)
-        if (state) {
-          console.log('[Editor] Loading saved state for clip:', clip.id)
-          
+        // Load from clips-metadata folder (single source of truth)
+        const clipMetadata = await window.electronAPI.editor.loadState(clip.id)
+        if (clipMetadata) {
+          console.log('[Editor] Loading metadata for clip:', clip.id)
+
           // Apply trim markers
-          if (state.trim) {
-            setTrimStart(state.trim.start)
-            setTrimEnd(state.trim.end)
+          if (clipMetadata.trim) {
+            setTrimStart(clipMetadata.trim.start)
+            setTrimEnd(clipMetadata.trim.end)
           }
-          
-          // Apply playhead position
-          if (state.playheadPosition !== undefined) {
-            setCurrentTime(state.playheadPosition)
-            if (videoRef.current) {
-              videoRef.current.currentTime = state.playheadPosition
-            }
-          }
-          
+
           // Apply audio settings
-          if (state.audio) {
-            setAudioTrack1(state.audio.track1.enabled)
-            setAudioTrack1Muted(state.audio.track1.muted)
-            setAudioTrack1Volume(state.audio.track1.volume)
-            
-            setAudioTrack2(state.audio.track2.enabled)
-            setAudioTrack2Muted(state.audio.track2.muted)
-            setAudioTrack2Volume(state.audio.track2.volume)
+          if (clipMetadata.audio) {
+            setAudioTrack1(clipMetadata.audio.track1 !== false)
+            setAudioTrack2(clipMetadata.audio.track2 !== false)
+            setAudioTrack1Muted(clipMetadata.audio.track1?.muted || false)
+            setAudioTrack2Muted(clipMetadata.audio.track2?.muted || false)
+            setAudioTrack1Volume(clipMetadata.audio.track1?.volume ?? 0.7)
+            setAudioTrack2Volume(clipMetadata.audio.track2?.volume ?? 0.7)
+          }
+
+          // Apply favorite and tags
+          if (clipMetadata.favorite !== undefined) {
+            setIsFavorite(clipMetadata.favorite)
+          }
+          if (clipMetadata.tags) {
+            setTags(clipMetadata.tags)
+          }
+
+          // Apply playhead position
+          if (clipMetadata.playheadPosition !== undefined) {
+            setCurrentTime(clipMetadata.playheadPosition)
+            if (videoRef.current) {
+              videoRef.current.currentTime = clipMetadata.playheadPosition
+            }
           }
         }
       } catch (error) {
@@ -151,52 +162,54 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
 
   // Save editor state when trim, playhead, or audio settings change
   useEffect(() => {
+    let mounted = true
+
     const saveEditorState = async () => {
       try {
-        // Only save if we have a valid clip loaded
         if (!clip.id) return
-        
-        const state = {
+
+        const newMetadata: ClipMetadata = {
+          favorite: isFavorite,
+          tags,
           trim: {
             start: trimStart,
             end: trimEnd,
           },
-          playheadPosition: currentTime,
           audio: {
-            track1: {
-              enabled: audioTrack1,
-              muted: audioTrack1Muted,
-              volume: audioTrack1Volume,
-            },
-            track2: {
-              enabled: audioTrack2,
-              muted: audioTrack2Muted,
-              volume: audioTrack2Volume,
-            },
+            track1: audioTrack1,
+            track2: audioTrack2,
           },
+          playheadPosition: currentTime,
           lastModified: new Date().toISOString(),
         }
-        
-        await window.electronAPI.editor.saveState(clip.id, state)
+
+        // Save everything to clips-metadata folder (single file)
+        await window.electronAPI.saveClipMetadata(clip.id, newMetadata)
+
+        // Trigger Library update (for real-time UI reflection)
+        if (mounted && onSave) {
+          onSave(clip.id, newMetadata)
+        }
       } catch (error) {
         console.error('[Editor] Failed to save editor state:', error)
       }
     }
-    
-    // Debounce the save by 500ms to avoid excessive writes
+
     const timeoutId = setTimeout(saveEditorState, 500)
-    return () => clearTimeout(timeoutId)
+    return () => {
+      mounted = false
+      clearTimeout(timeoutId)
+    }
   }, [
     clip.id,
     trimStart,
     trimEnd,
     currentTime,
     audioTrack1,
-    audioTrack1Muted,
-    audioTrack1Volume,
     audioTrack2,
-    audioTrack2Muted,
-    audioTrack2Volume,
+    isFavorite,
+    tags,
+    onSave,
   ])
 
   // Close dropdown when clicking outside
@@ -308,18 +321,20 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
     return () => clearTimeout(timer)
   }, [clip.id, clip.path, metadata.audioTracks])
 
-  // Update gain node values when volume/mute changes
+  // Update gain node values when volume/mute/track enabled changes
   useEffect(() => {
     if (gainNode1Ref.current) {
-      gainNode1Ref.current.gain.value = audioTrack1Muted ? 0 : audioTrack1Volume
+      // If track is disabled, mute it completely (volume = 0)
+      gainNode1Ref.current.gain.value = (audioTrack1Muted || !audioTrack1) ? 0 : audioTrack1Volume
     }
-  }, [audioTrack1Volume, audioTrack1Muted])
+  }, [audioTrack1Volume, audioTrack1Muted, audioTrack1])
 
   useEffect(() => {
     if (gainNode2Ref.current) {
-      gainNode2Ref.current.gain.value = audioTrack2Muted ? 0 : audioTrack2Volume
+      // If track is disabled, mute it completely (volume = 0)
+      gainNode2Ref.current.gain.value = (audioTrack2Muted || !audioTrack2) ? 0 : audioTrack2Volume
     }
-  }, [audioTrack2Volume, audioTrack2Muted])
+  }, [audioTrack2Volume, audioTrack2Muted, audioTrack2])
 
   // Start audio playback from a specific time
   const startAudioPlayback = useCallback((fromTime: number) => {
@@ -347,12 +362,14 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
     if (!gainNode1Ref.current) {
       gainNode1Ref.current = audioContextRef.current.createGain()
       gainNode1Ref.current.connect(audioContextRef.current.destination)
-      gainNode1Ref.current.gain.value = audioTrack1Muted ? 0 : audioTrack1Volume
+      // Set gain to 0 if track is disabled or muted
+      gainNode1Ref.current.gain.value = (audioTrack1Muted || !audioTrack1) ? 0 : audioTrack1Volume
     }
     if (!gainNode2Ref.current) {
       gainNode2Ref.current = audioContextRef.current.createGain()
       gainNode2Ref.current.connect(audioContextRef.current.destination)
-      gainNode2Ref.current.gain.value = audioTrack2Muted ? 0 : audioTrack2Volume
+      // Set gain to 0 if track is disabled or muted
+      gainNode2Ref.current.gain.value = (audioTrack2Muted || !audioTrack2) ? 0 : audioTrack2Volume
     }
 
     // Create and start source nodes for each track
@@ -643,31 +660,6 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
     return `${mins}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`
   }
 
-  // Save metadata
-  const handleSave = useCallback(() => {
-    const newMetadata: ClipMetadata = {
-      favorite: isFavorite,
-      tags,
-      trim: {
-        start: trimStart,
-        end: trimEnd,
-      },
-      audio: {
-        track1: audioTrack1,
-        track2: audioTrack2,
-      },
-    }
-    onSave(clip.id, newMetadata)
-  }, [clip.id, isFavorite, tags, trimStart, trimEnd, audioTrack1, audioTrack2, onSave])
-
-  // Reset trim
-  const handleReset = useCallback(() => {
-    setTrimStart(0)
-    setTrimEnd(duration)
-    setAudioTrack1(true)
-    setAudioTrack2(true)
-  }, [duration])
-
   // Add tag
   const handleAddTag = useCallback(() => {
     if (newTag.trim() && !tags.includes(newTag.trim())) {
@@ -683,6 +675,16 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
     },
     [tags]
   )
+
+  // Delete clip
+  const handleDeleteClip = useCallback(async () => {
+    try {
+      await window.electronAPI.deleteClip(clip.id)
+      onClose()
+    } catch (error) {
+      console.error('Failed to delete clip:', error)
+    }
+  }, [clip.id, onClose])
 
   // Handle export
   const handleExport = useCallback(async () => {
@@ -808,16 +810,15 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
             <Star className="h-4 w-4" fill={isFavorite ? 'currentColor' : 'none'} />
           </button>
 
-          <div className="h-6 w-px bg-border mx-2" />
+          {/* Delete */}
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="rounded-lg p-2 text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-500"
+            title="Delete clip"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
 
-          <button onClick={handleReset} className="btn-secondary flex items-center gap-2">
-            <RotateCcw className="h-4 w-4" />
-            Reset
-          </button>
-          <button onClick={handleSave} className="btn-primary flex items-center gap-2">
-            <Check className="h-4 w-4" />
-            Save Changes
-          </button>
         </div>
       </div>
 
@@ -994,7 +995,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
             </h3>
             <div className="space-y-2">
               {/* Track 1 - Desktop */}
-              <div className="rounded-lg bg-background-tertiary p-3">
+              <div className={`rounded-lg p-3 ${audioTrack1 ? 'bg-background-tertiary' : 'bg-background-tertiary/50'}`}>
                 <label className="flex cursor-pointer items-center gap-3">
                   <input
                     type="checkbox"
@@ -1002,15 +1003,18 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                     onChange={e => setAudioTrack1(e.target.checked)}
                     className="h-4 w-4 accent-accent-primary"
                   />
-                  <span className="text-sm text-text-secondary">Desktop Audio</span>
+                  <span className={`text-sm ${audioTrack1 ? 'text-text-secondary' : 'text-text-muted'}`}>Desktop Audio</span>
                 </label>
                 {audioTrack1Src && (
                   <div className="mt-2 flex items-center gap-2">
                     <button
                       onClick={toggleAudioTrack1Mute}
-                      className="rounded p-1 text-text-muted transition-colors hover:bg-background-primary"
+                      disabled={!audioTrack1}
+                      className={`rounded p-1 transition-colors hover:bg-background-primary ${
+                        audioTrack1 ? 'text-text-muted' : 'text-text-muted/50 cursor-not-allowed'
+                      }`}
                     >
-                      {audioTrack1Muted || audioTrack1Volume === 0 ? (
+                      {!audioTrack1 || audioTrack1Muted || audioTrack1Volume === 0 ? (
                         <VolumeX className="h-3 w-3" />
                       ) : (
                         <Volume2 className="h-3 w-3" />
@@ -1023,14 +1027,15 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                       step="0.1"
                       value={audioTrack1Muted ? 0 : audioTrack1Volume}
                       onChange={handleAudioTrack1VolumeChange}
-                      className="flex-1 accent-accent-primary"
+                      disabled={!audioTrack1}
+                      className="flex-1 accent-accent-primary disabled:opacity-50"
                     />
                   </div>
                 )}
               </div>
 
               {/* Track 2 - Microphone */}
-              <div className="rounded-lg bg-background-tertiary p-3">
+              <div className={`rounded-lg p-3 ${audioTrack2 ? 'bg-background-tertiary' : 'bg-background-tertiary/50'}`}>
                 <label className="flex cursor-pointer items-center gap-3">
                   <input
                     type="checkbox"
@@ -1038,15 +1043,18 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                     onChange={e => setAudioTrack2(e.target.checked)}
                     className="h-4 w-4 accent-accent-primary"
                   />
-                  <span className="text-sm text-text-secondary">Microphone</span>
+                  <span className={`text-sm ${audioTrack2 ? 'text-text-secondary' : 'text-text-muted'}`}>Microphone</span>
                 </label>
                 {audioTrack2Src && (
                   <div className="mt-2 flex items-center gap-2">
                     <button
                       onClick={toggleAudioTrack2Mute}
-                      className="rounded p-1 text-text-muted transition-colors hover:bg-background-primary"
+                      disabled={!audioTrack2}
+                      className={`rounded p-1 transition-colors hover:bg-background-primary ${
+                        audioTrack2 ? 'text-text-muted' : 'text-text-muted/50 cursor-not-allowed'
+                      }`}
                     >
-                      {audioTrack2Muted || audioTrack2Volume === 0 ? (
+                      {!audioTrack2 || audioTrack2Muted || audioTrack2Volume === 0 ? (
                         <VolumeX className="h-3 w-3" />
                       ) : (
                         <Volume2 className="h-3 w-3" />
@@ -1059,15 +1067,16 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                       step="0.1"
                       value={audioTrack2Muted ? 0 : audioTrack2Volume}
                       onChange={handleAudioTrack2VolumeChange}
-                      className="flex-1 accent-accent-primary"
+                      disabled={!audioTrack2}
+                      className="flex-1 accent-accent-primary disabled:opacity-50"
                     />
                   </div>
                 )}
               </div>
             </div>
             {(!audioTrack1 || !audioTrack2) && (
-              <p className="mt-2 text-xs text-text-muted">
-                Disabled tracks will be muted in export
+              <p className="mt-2 text-xs text-text-warning">
+                Disabled tracks are muted during editing and excluded from export
               </p>
             )}
           </div>
@@ -1213,6 +1222,32 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="w-80 rounded-xl border border-border bg-background-secondary p-6 shadow-2xl">
+            <h3 className="mb-2 text-lg font-semibold text-text-primary">Delete Clip?</h3>
+            <p className="mb-4 text-sm text-text-muted">
+              Are you sure you want to delete "{clip.filename}"? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteClip}
+                className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

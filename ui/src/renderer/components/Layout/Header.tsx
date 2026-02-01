@@ -1,17 +1,40 @@
-import { Video, Settings, FolderOpen, Library } from 'lucide-react'
+import { Video, Settings, FolderOpen, Library, RotateCcw, ArrowLeft, ArrowRight } from 'lucide-react'
+import { APP_VERSION } from '../../constants/version'
 
 interface HeaderProps {
   currentView: 'library' | 'editor' | 'settings'
   onNavigateToLibrary?: () => void
   onOpenSettings?: () => void
+  onGoBack?: () => void
+  onGoForward?: () => void
+  onRefresh?: () => void
+  canGoBack?: boolean
+  canGoForward?: boolean
 }
 
-export const Header: React.FC<HeaderProps> = ({ currentView, onNavigateToLibrary, onOpenSettings }) => {
+export const Header: React.FC<HeaderProps> = ({
+  currentView,
+  onNavigateToLibrary,
+  onOpenSettings,
+  onGoBack,
+  onGoForward,
+  onRefresh,
+  canGoBack,
+  canGoForward
+}) => {
   const handleOpenFolder = async () => {
     try {
       await window.electronAPI.openClipsFolder()
     } catch (error) {
       console.error('Failed to open folder:', error)
+    }
+  }
+
+  const handleRefresh = () => {
+    if (onRefresh) {
+      onRefresh()
+    } else {
+      window.location.reload()
     }
   }
 
@@ -21,11 +44,40 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigateToLibrary
         <Video className="h-6 w-6 text-accent-primary" />
         <h1 className="text-lg font-semibold text-text-primary">ClipVault Editor</h1>
         <span className="rounded bg-background-tertiary px-2 py-1 text-xs text-text-muted">
-          v1.0.0
+          v{APP_VERSION}
         </span>
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Navigation buttons */}
+        <div className="flex items-center gap-1 mr-2">
+          <button
+            onClick={onGoBack}
+            disabled={!canGoBack}
+            className="btn-secondary p-2 disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Go Back (Alt+Left or Mouse Back)"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <button
+            onClick={onGoForward}
+            disabled={!canGoForward}
+            className="btn-secondary p-2 disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Go Forward (Alt+Right or Mouse Forward)"
+          >
+            <ArrowRight className="h-4 w-4" />
+          </button>
+          <button
+            onClick={handleRefresh}
+            className="btn-secondary p-2"
+            title="Refresh (F5 or Ctrl+R)"
+          >
+            <RotateCcw className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="w-px h-6 bg-border mx-2" />
+
         {currentView !== 'library' && onNavigateToLibrary && (
           <button
             onClick={onNavigateToLibrary}

@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain, dialog, shell, protocol, Menu, nativeImage, Tray, Rectangle, screen } from 'electron'
 import { dirname, join, basename } from 'path'
-import { readFile, writeFile, readdir, stat, mkdir } from 'fs/promises'
+import { readFile, writeFile, readdir, stat, mkdir, unlink as fsUnlinkAsync } from 'fs/promises'
+import { unlink } from 'fs'
+import { unlink as fsUnlink } from 'fs'
 import { existsSync, createReadStream, readFileSync, createWriteStream } from 'fs'
 import ffmpeg from 'fluent-ffmpeg'
 import { spawn, execSync } from 'child_process'
@@ -631,6 +633,12 @@ ipcMain.handle('clips:getList', async () => {
       return []
     }
 
+    // Ensure clips-metadata directory exists
+    const metadataDir = join(getClipsPath(), 'clips-metadata')
+    if (!existsSync(metadataDir)) {
+      await mkdir(metadataDir, { recursive: true })
+    }
+
     const files = await readdir(getClipsPath())
     const clips = await Promise.all(
       files
@@ -638,7 +646,7 @@ ipcMain.handle('clips:getList', async () => {
         .map(async filename => {
           const filePath = join(getClipsPath(), filename)
           const stats = await stat(filePath)
-          const metadataPath = filePath.replace('.mp4', '.clipvault.json')
+          const metadataPath = join(metadataDir, `${filename.replace('.mp4', '')}.json`)
 
           let metadata = null
           try {
@@ -672,7 +680,11 @@ ipcMain.handle('clips:getList', async () => {
 // Save clip metadata
 ipcMain.handle('clips:saveMetadata', async (_, clipId: string, metadata: unknown) => {
   try {
-    const metadataPath = join(getClipsPath(), `${clipId}.clipvault.json`)
+    const metadataDir = join(getClipsPath(), 'clips-metadata')
+    if (!existsSync(metadataDir)) {
+      await mkdir(metadataDir, { recursive: true })
+    }
+    const metadataPath = join(metadataDir, `${clipId}.json`)
     await writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8')
     return true
   } catch (error) {
@@ -684,7 +696,8 @@ ipcMain.handle('clips:saveMetadata', async (_, clipId: string, metadata: unknown
 // Get clip metadata
 ipcMain.handle('clips:getMetadata', async (_, clipId: string) => {
   try {
-    const metadataPath = join(getClipsPath(), `${clipId}.clipvault.json`)
+    const metadataDir = join(getClipsPath(), 'clips-metadata')
+    const metadataPath = join(metadataDir, `${clipId}.json`)
     if (!existsSync(metadataPath)) {
       return null
     }
@@ -696,18 +709,64 @@ ipcMain.handle('clips:getMetadata', async (_, clipId: string) => {
   }
 })
 
-// Save editor state (trim markers, playhead, audio settings)
+// Delete clip
+ipcMain.handle('clips:delete', async (_, clipId: string) => {
+  try {
+    const clipsPath = getClipsPath()
+
+    // Delete video file
+    const videoPath = join(clipsPath, `${clipId}.mp4`)
+    if (existsSync(videoPath)) {
+      await fsUnlinkAsync(videoPath)
+      console.log('[Main] Deleted video file:', videoPath)
+    }
+
+    // Delete metadata file
+    const metadataDir = join(clipsPath, 'clips-metadata')
+    const metadataPath = join(metadataDir, `${clipId}.json`)
+    if (existsSync(metadataPath)) {
+      await fsUnlinkAsync(metadataPath)
+      console.log('[Main] Deleted metadata file:', metadataPath)
+    }
+
+    // Delete thumbnail if exists
+    const thumbnailsPath = join(app.getPath('userData'), 'thumbnails')
+    const thumbnailPath = join(thumbnailsPath, `${clipId}.jpg`)
+    if (existsSync(thumbnailPath)) {
+      await fsUnlinkAsync(thumbnailPath)
+      console.log('[Main] Deleted thumbnail:', thumbnailPath)
+    }
+
+    // Delete audio cache if exists
+    const audioCachePath = join(thumbnailsPath, 'audio')
+    const track1Path = join(audioCachePath, `${clipId}_track1.m4a`)
+    const track2Path = join(audioCachePath, `${clipId}_track2.m4a`)
+    if (existsSync(track1Path)) {
+      await fsUnlinkAsync(track1Path)
+    }
+    if (existsSync(track2Path)) {
+      await fsUnlinkAsync(track2Path)
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('Failed to delete clip:', error)
+    throw error
+  }
+})
+
+// Save editor state (playhead only, since trim/audio are in main metadata)
 ipcMain.handle('editor:saveState', async (_, clipId: string, state: unknown) => {
   try {
     const metadataDir = join(getClipsPath(), 'clips-metadata')
-    
-    // Ensure metadata directory exists
     if (!existsSync(metadataDir)) {
       await mkdir(metadataDir, { recursive: true })
     }
-    
-    const statePath = join(metadataDir, `${clipId}.editor.json`)
-    await writeFile(statePath, JSON.stringify(state, null, 2), 'utf-8')
+    const statePath = join(metadataDir, `${clipId}.json`)
+    // Merge with existing metadata if any
+    const existingContent = existsSync(statePath) ? JSON.parse(await readFile(statePath, 'utf-8')) : {}
+    const mergedState = { ...existingContent, ...state }
+    await writeFile(statePath, JSON.stringify(mergedState, null, 2), 'utf-8')
     console.log(`[Editor] Saved state for clip ${clipId}`)
     return true
   } catch (error) {
@@ -720,12 +779,12 @@ ipcMain.handle('editor:saveState', async (_, clipId: string, state: unknown) => 
 ipcMain.handle('editor:loadState', async (_, clipId: string) => {
   try {
     const metadataDir = join(getClipsPath(), 'clips-metadata')
-    const statePath = join(metadataDir, `${clipId}.editor.json`)
-    
+    const statePath = join(metadataDir, `${clipId}.json`)
+
     if (!existsSync(statePath)) {
       return null
     }
-    
+
     const content = await readFile(statePath, 'utf-8')
     console.log(`[Editor] Loaded state for clip ${clipId}`)
     return JSON.parse(content)
@@ -737,7 +796,28 @@ ipcMain.handle('editor:loadState', async (_, clipId: string) => {
 
 // Open clips folder in file explorer
 ipcMain.handle('system:openFolder', async () => {
-  await shell.openPath(getClipsPath())
+  const clipsPath = getClipsPath()
+  try {
+    // Create the folder if it doesn't exist
+    if (!existsSync(clipsPath)) {
+      await mkdir(clipsPath, { recursive: true })
+      console.log('[Main] Created clips folder:', clipsPath)
+    }
+    await shell.openPath(clipsPath)
+  } catch (error) {
+    console.error('[Main] Failed to open clips folder:', error)
+    throw error
+  }
+})
+
+// Show folder picker dialog
+ipcMain.handle('dialog:openFolder', async () => {
+  if (!mainWindow) return { canceled: true }
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: 'Select Clips Folder'
+  })
+  return result
 })
 
 // Show save dialog
@@ -1324,6 +1404,55 @@ app.whenReady().then(async () => {
       if (result.errors.length > 0) {
         console.warn('[Main] Cleanup errors:', result.errors)
       }
+
+      // Clean up old .clipvault.json files from clips folder (move to clips-metadata)
+      console.log('[Main] Migrating old metadata files to clips-metadata folder...')
+      try {
+        const clipsDir = getClipsPath()
+        if (existsSync(clipsDir)) {
+          const files = await readdir(clipsDir)
+          const oldMetadataFiles = files.filter(f => f.endsWith('.clipvault.json'))
+
+          for (const oldFile of oldMetadataFiles) {
+            const oldPath = join(clipsDir, oldFile)
+            const clipId = oldFile.replace('.clipvault.json', '')
+
+            // Read old content
+            try {
+              const content = await readFile(oldPath, 'utf-8')
+              const metadata = JSON.parse(content)
+
+              // Check if new location already has data
+              const newPath = join(clipsDir, 'clips-metadata', `${clipId}.json`)
+              let existingData = null
+              if (existsSync(newPath)) {
+                existingData = JSON.parse(await readFile(newPath, 'utf-8'))
+              }
+
+              // Merge: old data takes precedence
+              const mergedData = { ...existingData, ...metadata }
+
+              // Write to new location
+              const metadataDir = join(clipsDir, 'clips-metadata')
+              if (!existsSync(metadataDir)) {
+                await mkdir(metadataDir, { recursive: true })
+              }
+              await writeFile(newPath, JSON.stringify(mergedData, null, 2), 'utf-8')
+
+              // Delete old file
+              await unlink(oldPath)
+              console.log(`[Main] Migrated ${oldFile} -> clips-metadata/${clipId}.json`)
+            } catch (e) {
+              console.error(`[Main] Failed to migrate ${oldFile}:`, e)
+            }
+          }
+          if (oldMetadataFiles.length > 0) {
+            console.log(`[Main] Migrated ${oldMetadataFiles.length} metadata files`)
+          }
+        }
+      } catch (e) {
+        console.error('[Main] Failed to migrate old metadata files:', e)
+      }
     } catch (error) {
       console.error('[Main] Failed to run startup cleanup:', error)
     }
@@ -1356,6 +1485,7 @@ app.whenReady().then(async () => {
     ignored: /(^|[\/\\])\../, // ignore dotfiles
     persistent: true,
     depth: 0, // Only watch immediate directory, not subdirectories
+    ignoreInitial: true, // Don't fire events for existing files on startup
     awaitWriteFinish: {
       stabilityThreshold: 500, // Wait 500ms after file size stops changing
       pollInterval: 100

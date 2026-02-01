@@ -139,6 +139,7 @@ export interface ElectronAPI {
   getClipsList: () => Promise<ClipInfo[]>
   saveClipMetadata: (clipId: string, metadata: unknown) => Promise<boolean>
   getClipMetadata: (clipId: string) => Promise<unknown | null>
+  deleteClip: (clipId: string) => Promise<{ success: boolean }>
   generateThumbnail: (clipId: string, videoPath: string) => Promise<string>
   getVideoMetadata: (videoPath: string) => Promise<VideoMetadata>
   extractAudioTracks: (clipId: string, videoPath: string) => Promise<AudioTrackUrls>

@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Save, RotateCcw, FolderOpen, Video, Mic, Keyboard, Info, Monitor, HardDrive, Power, Minimize2 } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { Save, RotateCcw, FolderOpen, Video, Mic, Keyboard, Info, Monitor, HardDrive, Power } from 'lucide-react'
 
 interface AppSettings {
   output_path: string
@@ -125,6 +125,144 @@ const formatDuration = (seconds: number): string => {
     return `${minutes} min`
   }
   return `${minutes}m ${remainingSeconds}s`
+}
+
+// Hotkey Input Component
+interface HotkeyInputProps {
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+}
+
+const HotkeyInput: React.FC<HotkeyInputProps> = ({ value, onChange, placeholder = "Click to set hotkey" }) => {
+  const [isRecording, setIsRecording] = useState(false)
+  const inputRef = useRef<HTMLDivElement>(null)
+
+  const formatHotkey = (hotkey: string): string => {
+    if (!hotkey) return ""
+    return hotkey
+      .replace(/Control/g, "Ctrl")
+      .replace(/Command/g, "Cmd")
+      .replace(/Option/g, "Alt")
+      .replace(/Shift/g, "⇧")
+      .replace(/Ctrl/g, "Ctrl")
+      .replace(/Alt/g, "Alt")
+      .replace(/Meta/g, "Win")
+      .replace(/\+/g, " + ")
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!isRecording) return
+
+    e.preventDefault()
+    e.stopPropagation()
+
+    // Ignore standalone modifier keys
+    if (["Control", "Alt", "Shift", "Meta", "Command", "Option"].includes(e.key)) {
+      return
+    }
+
+    // Build the hotkey string
+    const modifiers: string[] = []
+    if (e.ctrlKey) modifiers.push("Ctrl")
+    if (e.altKey) modifiers.push("Alt")
+    if (e.shiftKey) modifiers.push("Shift")
+    if (e.metaKey) modifiers.push("Win")
+
+    // Get the main key
+    let key = e.key
+    if (key.length === 1) {
+      key = key.toUpperCase()
+    } else if (key.startsWith("F") && /^F\d+$/.test(key)) {
+      // Keep F1-F24 as-is
+    } else if (key === "Escape") {
+      key = "Esc"
+    } else if (key === "Delete") {
+      key = "Del"
+    } else if (key === "Insert") {
+      key = "Ins"
+    } else if (key === "PageUp") {
+      key = "PgUp"
+    } else if (key === "PageDown") {
+      key = "PgDown"
+    } else if (key === "ArrowUp") {
+      key = "Up"
+    } else if (key === "ArrowDown") {
+      key = "Down"
+    } else if (key === "ArrowLeft") {
+      key = "Left"
+    } else if (key === "ArrowRight") {
+      key = "Right"
+    } else if (key === "Backspace") {
+      key = "Backspace"
+    } else if (key === "Tab") {
+      key = "Tab"
+    } else if (key === "Enter") {
+      key = "Enter"
+    } else if (key === "Space") {
+      key = "Space"
+    }
+
+    // Combine modifiers and key
+    const hotkeyString = [...modifiers, key].join("+")
+    onChange(hotkeyString)
+    setIsRecording(false)
+  }
+
+  const handleClick = () => {
+    setIsRecording(true)
+  }
+
+  const handleBlur = () => {
+    setIsRecording(false)
+  }
+
+  const clearHotkey = () => {
+    onChange("")
+    setIsRecording(false)
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <div
+        ref={inputRef}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
+        tabIndex={0}
+        className={`flex-1 cursor-pointer rounded-lg border px-4 py-2 text-sm font-medium transition-all ${
+          isRecording
+            ? "border-accent-primary bg-accent-primary/10 text-accent-primary ring-2 ring-accent-primary/50"
+            : "border-border bg-background-tertiary text-text-primary hover:border-accent-primary/50"
+        }`}
+      >
+        {isRecording ? (
+          <span className="animate-pulse">Press keys...</span>
+        ) : value ? (
+          <span className="flex items-center gap-2">
+            {formatHotkey(value).split(" + ").map((part, i, arr) => (
+              <span key={i} className="flex items-center gap-2">
+                <kbd className="rounded bg-background-secondary px-2 py-0.5 text-xs">
+                  {part}
+                </kbd>
+                {i < arr.length - 1 && <span className="text-text-muted">+</span>}
+              </span>
+            ))}
+          </span>
+        ) : (
+          <span className="text-text-muted">{placeholder}</span>
+        )}
+      </div>
+      {value && (
+        <button
+          onClick={clearHotkey}
+          className="rounded-lg border border-border bg-background-tertiary px-3 py-2 text-sm text-text-secondary transition-colors hover:border-error hover:text-error"
+        >
+          Clear
+        </button>
+      )}
+    </div>
+  )
 }
 
 export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
@@ -553,12 +691,27 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               <label className="mb-2 block text-sm font-medium text-text-secondary">
                 Clips Folder
               </label>
-              <input
-                type="text"
-                value={settings.output_path}
-                onChange={e => setSettings(prev => prev ? { ...prev, output_path: e.target.value } : null)}
-                className="w-full rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
-              />
+              <div className="flex items-center gap-2">
+                <div className="flex-1 rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary">
+                  {settings.output_path}
+                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      const result = await window.electronAPI.dialog.openFolder()
+                      if (result && !result.canceled && result.filePaths && result.filePaths.length > 0) {
+                        setSettings(prev => prev ? { ...prev, output_path: result.filePaths[0] } : null)
+                      }
+                    } catch (error) {
+                      console.error('Failed to open folder picker:', error)
+                    }
+                  }}
+                  className="flex items-center gap-2 rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:border-accent-primary hover:text-accent-primary"
+                >
+                  <FolderOpen className="h-4 w-4" />
+                  Browse...
+                </button>
+              </div>
               <p className="mt-1 text-xs text-text-muted">
                 Where clips are saved when you press {settings.hotkey.save_clip}
               </p>
@@ -662,18 +815,16 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               <label className="mb-2 block text-sm font-medium text-text-secondary">
                 Save Clip Hotkey
               </label>
-              <input
-                type="text"
+              <HotkeyInput
                 value={settings.hotkey.save_clip}
-                onChange={e => setSettings(prev => prev ? { ...prev, hotkey: { ...prev.hotkey, save_clip: e.target.value } } : null)}
-                className="w-full rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
-                placeholder="F9"
+                onChange={(value) => setSettings(prev => prev ? { ...prev, hotkey: { ...prev.hotkey, save_clip: value } } : null)}
+                placeholder="Click to set hotkey (e.g., F9)"
               />
-               <p className="mt-1 text-xs text-text-muted">
-                 Press this key to save the last {formatDuration(settings.buffer_seconds)} as a clip (~{estimatedSize})
-               </p>
-             </div>
-           </section>
+              <p className="mt-1 text-xs text-text-muted">
+                Press this key combination to save the last {formatDuration(settings.buffer_seconds)} as a clip (~{estimatedSize})
+              </p>
+            </div>
+          </section>
 
           {/* Startup & Behavior */}
           <section className="rounded-xl border border-border bg-background-secondary p-6">
@@ -709,29 +860,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   <span
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                       settings.ui?.start_with_windows ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-
-              {/* Minimize to Tray */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Minimize2 className="h-4 w-4 text-text-muted" />
-                  <div>
-                    <label className="block text-sm font-medium text-text-primary">Minimize to Tray</label>
-                    <p className="text-xs text-text-muted">Keep running in background when closing window</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setSettings(prev => prev ? { ...prev, ui: { ...(prev.ui || {}), minimize_to_tray: !(prev.ui?.minimize_to_tray) } } : null)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    settings.ui?.minimize_to_tray ? 'bg-accent-primary' : 'bg-background-tertiary'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      settings.ui?.minimize_to_tray ? 'translate-x-6' : 'translate-x-1'
                     }`}
                   />
                 </button>

@@ -1,57 +1,89 @@
-import { useEffect, useState, useMemo } from 'react'
-import { Search, Grid3X3, List, Loader2, ArrowUpDown, RefreshCw } from 'lucide-react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { Search, Grid3X3, List, Loader2, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react'
 import { ClipCard } from './ClipCard'
 import { useThumbnails } from '../../hooks/useThumbnails'
 import { useVideoMetadata, type VideoMetadata } from '../../hooks/useVideoMetadata'
-import type { ClipInfo } from '../../types/electron'
+import { useLibraryState } from '../../hooks/useLibraryState'
+import type { ClipInfo, ClipMetadata } from '../../types/electron'
 
-type SortOption = 'date' | 'size' | 'name' | 'favorite'
-type FilterOption = 'all' | 'favorites' | 'recent'
-
-interface LibraryProps {
+export interface LibraryProps {
   onOpenEditor: (clip: ClipInfo, metadata: VideoMetadata) => void
+  onRegisterUpdate: ((updateFn: (clipId: string, metadata: ClipMetadata) => void) => void) | undefined
 }
 
-export const Library: React.FC<LibraryProps> = ({ onOpenEditor }) => {
+// Constants for virtualization
+const GRID_CARD_HEIGHT = 240
+const LIST_CARD_HEIGHT = 88
+const GRID_GAP = 16
+const LIST_GAP = 16
+const OVERSCAN_ROWS = 2
+
+export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate }) => {
   const [clips, setClips] = useState<ClipInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
-  const [sortBy, setSortBy] = useState<SortOption>('date')
-  const [filterBy, setFilterBy] = useState<FilterOption>('all')
-  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [containerHeight, setContainerHeight] = useState(0)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  
+  // Use persistent state
+  const {
+    state: libraryState,
+    scrollRef: persistedScrollRef,
+    isRestored,
+    setSearchQuery,
+    setViewMode,
+    setSortBy,
+    toggleSortDirection,
+    setFilterBy,
+    setShowFavoritesOnly,
+    setSelectedTag,
+    saveScrollPosition,
+  } = useLibraryState()
 
   const { thumbnails, generateThumbnail } = useThumbnails()
   const { metadata, fetchMetadata } = useVideoMetadata()
 
-  useEffect(() => {
-    loadClips()
+  // Calculate responsive columns based on container width
+  const getGridCols = (width: number): number => {
+    if (width < 640) return 1
+    if (width < 1024) return 2
+    if (width < 1280) return 3
+    return 4
+  }
 
-    // Listen for new clips added via file watcher
+  // Load clips on mount
+  useEffect(() => {
+    if (isRestored) {
+      loadClips()
+    }
+
     const unsubscribeNew = window.electronAPI.on('clips:new', (data: unknown) => {
       const { filename } = data as { filename: string }
-      console.log('[Library] New clip detected:', filename)
-      // Refresh the clips list
-      loadClips()
+      const newClip: ClipInfo = {
+        id: filename.replace('.mp4', ''),
+        filename,
+        path: filename,
+        size: 0,
+        createdAt: new Date().toISOString(),
+        modifiedAt: new Date().toISOString(),
+        metadata: null,
+      }
+      setClips(prev => [newClip, ...prev])
     })
 
-    // Listen for clips removed via file watcher
     const unsubscribeRemoved = window.electronAPI.on('clips:removed', (data: unknown) => {
       const { filename } = data as { filename: string }
-      console.log('[Library] Clip removed:', filename)
-      // Refresh the clips list
-      loadClips()
+      setClips(prev => prev.filter(clip => clip.filename !== filename))
     })
 
-    // Cleanup listeners on unmount
     return () => {
       unsubscribeNew?.()
       unsubscribeRemoved?.()
     }
-  }, [])
+  }, [isRestored])
 
-  const loadClips = async () => {
+  const loadClips = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -63,44 +95,77 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor }) => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  // Handle metadata updates from Editor (real-time updates!) - defined first
+  const handleMetadataUpdate = useCallback((clipId: string, newMetadata: ClipMetadata) => {
+    setClips(prev => prev.map(clip =>
+      clip.id === clipId
+        ? { ...clip, metadata: { ...clip.metadata, ...newMetadata } }
+        : clip
+    ))
+  }, [])
+
+  // Register update function with parent App (runs after handleMetadataUpdate is defined)
+  useEffect(() => {
+    if (onRegisterUpdate) {
+      onRegisterUpdate(handleMetadataUpdate)
+    }
+  }, [onRegisterUpdate, handleMetadataUpdate])
+
+  // Extract all unique tags from clips with counts
+  const tagCounts = useMemo(() => {
+    const counts: { [tag: string]: number } = {}
+    clips.forEach(clip => {
+      clip.metadata?.tags?.forEach(tag => {
+        counts[tag] = (counts[tag] || 0) + 1
+      })
+    })
+    return counts
+  }, [clips])
+
+  const allTags = useMemo(() => {
+    return Object.keys(tagCounts).sort()
+  }, [tagCounts])
 
   const filteredAndSortedClips = useMemo(() => {
     let result = clips.filter(clip =>
-      clip.filename.toLowerCase().includes(searchQuery.toLowerCase())
+      clip.filename.toLowerCase().includes(libraryState.searchQuery.toLowerCase())
     )
 
-    // Apply filters
-    if (showFavoritesOnly) {
+    if (libraryState.showFavoritesOnly) {
       result = result.filter(clip => clip.metadata?.favorite)
     }
 
-    if (filterBy === 'recent') {
-      const oneWeekAgo = new Date()
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
-      result = result.filter(clip => new Date(clip.createdAt) > oneWeekAgo)
+    // Filter by selected tag
+    if (libraryState.selectedTag) {
+      result = result.filter(clip => clip.metadata?.tags?.includes(libraryState.selectedTag!))
     }
 
-    // Apply sorting
     result.sort((a, b) => {
-      switch (sortBy) {
+      let comparison = 0
+      switch (libraryState.sortBy) {
         case 'date':
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          comparison = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          break
         case 'size':
-          return b.size - a.size
+          comparison = b.size - a.size
+          break
         case 'name':
-          return a.filename.localeCompare(b.filename)
+          comparison = a.filename.localeCompare(b.filename)
+          break
         case 'favorite':
           const aFav = a.metadata?.favorite ? 1 : 0
           const bFav = b.metadata?.favorite ? 1 : 0
-          return bFav - aFav
-        default:
-          return 0
+          comparison = bFav - aFav
+          break
       }
+      // Reverse if ascending
+      return libraryState.sortDirection === 'asc' ? -comparison : comparison
     })
 
     return result
-  }, [clips, searchQuery, sortBy, filterBy, showFavoritesOnly])
+  }, [clips, libraryState.searchQuery, libraryState.sortBy, libraryState.sortDirection, libraryState.filterBy, libraryState.showFavoritesOnly, libraryState.selectedTag])
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes'
@@ -119,16 +184,49 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor }) => {
     })
   }
 
+  // Update container height and handle scroll
+  useEffect(() => {
+    const container = scrollRef.current
+    if (!container) return
+
+    const updateHeight = () => {
+      setContainerHeight(container.clientHeight)
+    }
+
+    updateHeight()
+    window.addEventListener('resize', updateHeight)
+    return () => window.removeEventListener('resize', updateHeight)
+  }, [])
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const newScrollTop = e.currentTarget.scrollTop
+    setScrollTop(newScrollTop)
+    saveScrollPosition()
+  }, [saveScrollPosition])
+
+  // Calculate visible range for virtualization
+  const isGrid = libraryState.viewMode === 'grid'
+  const rowHeight = isGrid ? GRID_CARD_HEIGHT + GRID_GAP : LIST_CARD_HEIGHT + LIST_GAP
+  const containerWidth = scrollRef.current?.clientWidth || 1200
+  const cols = isGrid ? getGridCols(containerWidth) : 1
+  const totalRows = Math.ceil(filteredAndSortedClips.length / cols)
+
+  // Calculate which rows are visible
+  const visibleStartRow = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN_ROWS)
+  const visibleEndRow = Math.min(totalRows, Math.ceil((scrollTop + containerHeight) / rowHeight) + OVERSCAN_ROWS)
+  const visibleStartIndex = visibleStartRow * cols
+  const visibleEndIndex = Math.min(filteredAndSortedClips.length, visibleEndRow * cols)
+
   return (
-    <div className="flex h-full flex-col bg-background-primary">
+    <div className="flex h-full w-full flex-col bg-background-primary">
       {/* Toolbar */}
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-border px-6">
         <div className="flex items-center gap-4">
           <h2 className="text-xl font-semibold text-text-primary">
-            {filterBy === 'favorites' || showFavoritesOnly
-              ? 'Favorites'
-              : filterBy === 'recent'
-                ? 'Recent Clips'
+            {libraryState.selectedTag
+              ? `Tag: ${libraryState.selectedTag}`
+              : libraryState.filterBy === 'favorites' || libraryState.showFavoritesOnly
+                ? 'Favorites'
                 : 'All Clips'}
           </h2>
           <span className="text-sm text-text-muted">{filteredAndSortedClips.length} clips</span>
@@ -141,25 +239,38 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor }) => {
             <input
               type="text"
               placeholder="Search clips..."
-              value={searchQuery}
+              value={libraryState.searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className="input w-64 pl-10"
             />
           </div>
 
-          {/* Sort Dropdown */}
-          <div className="relative">
-            <select
-              value={sortBy}
-              onChange={e => setSortBy(e.target.value as SortOption)}
-              className="input cursor-pointer appearance-none bg-background-secondary py-2 pl-4 pr-10"
+          {/* Sort Dropdown + Direction */}
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <select
+                value={libraryState.sortBy}
+                onChange={e => setSortBy(e.target.value as 'date' | 'size' | 'name' | 'favorite')}
+                className="input cursor-pointer appearance-none bg-background-secondary py-2 pl-4 pr-10"
+              >
+                <option value="date">Sort by Date</option>
+                <option value="size">Sort by Size</option>
+                <option value="name">Sort by Name</option>
+                <option value="favorite">Sort by Favorite</option>
+              </select>
+              <ArrowUpDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+            </div>
+            <button
+              onClick={toggleSortDirection}
+              className="flex items-center justify-center rounded-lg border border-border bg-background-secondary p-2 text-text-muted transition-all hover:bg-background-tertiary hover:text-text-primary"
+              title={libraryState.sortDirection === 'desc' ? 'Sort ascending' : 'Sort descending'}
             >
-              <option value="date">Sort by Date</option>
-              <option value="size">Sort by Size</option>
-              <option value="name">Sort by Name</option>
-              <option value="favorite">Sort by Favorite</option>
-            </select>
-            <ArrowUpDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+              {libraryState.sortDirection === 'desc' ? (
+                <ArrowDown className="h-4 w-4" />
+              ) : (
+                <ArrowUp className="h-4 w-4" />
+              )}
+            </button>
           </div>
 
           {/* View Toggle */}
@@ -167,7 +278,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor }) => {
             <button
               onClick={() => setViewMode('grid')}
               className={`rounded-md p-2 transition-all ${
-                viewMode === 'grid'
+                libraryState.viewMode === 'grid'
                   ? 'bg-accent-primary text-background-primary'
                   : 'text-text-muted hover:text-text-primary'
               }`}
@@ -177,7 +288,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor }) => {
             <button
               onClick={() => setViewMode('list')}
               className={`rounded-md p-2 transition-all ${
-                viewMode === 'list'
+                libraryState.viewMode === 'list'
                   ? 'bg-accent-primary text-background-primary'
                   : 'text-text-muted hover:text-text-primary'
               }`}
@@ -206,7 +317,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor }) => {
             setShowFavoritesOnly(false)
           }}
           className={`rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
-            filterBy === 'all' && !showFavoritesOnly
+            libraryState.filterBy === 'all' && !libraryState.showFavoritesOnly
               ? 'bg-accent-primary text-background-primary'
               : 'text-text-muted hover:bg-background-tertiary hover:text-text-primary'
           }`}
@@ -219,30 +330,56 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor }) => {
             setShowFavoritesOnly(true)
           }}
           className={`rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
-            filterBy === 'favorites' || showFavoritesOnly
+            libraryState.filterBy === 'favorites' || libraryState.showFavoritesOnly
               ? 'bg-accent-primary text-background-primary'
               : 'text-text-muted hover:bg-background-tertiary hover:text-text-primary'
           }`}
         >
           Favorites
         </button>
-        <button
-          onClick={() => {
-            setFilterBy('recent')
-            setShowFavoritesOnly(false)
-          }}
-          className={`rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
-            filterBy === 'recent'
-              ? 'bg-accent-primary text-background-primary'
-              : 'text-text-muted hover:bg-background-tertiary hover:text-text-primary'
-          }`}
-        >
-          Recent (7 days)
-        </button>
+        
+        {/* Tag Filter Dropdown */}
+        {allTags.length > 0 && (
+          <>
+            <div className="h-6 w-px bg-border mx-2" />
+            <div className="relative">
+              <select
+                value={libraryState.selectedTag || ''}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setSelectedTag(value || null)
+                }}
+                className={`cursor-pointer appearance-none rounded-md px-3 py-1.5 pr-8 text-sm font-medium transition-all ${
+                  libraryState.selectedTag
+                    ? 'bg-accent-primary text-background-primary'
+                    : 'bg-background-secondary text-text-muted hover:bg-background-tertiary hover:text-text-primary'
+                }`}
+              >
+                <option value="">All Tags</option>
+                {allTags.map(tag => (
+                  <option key={tag} value={tag}>{tag} ({tagCounts[tag]})</option>
+                ))}
+              </select>
+              {libraryState.selectedTag && (
+                <button
+                  onClick={() => setSelectedTag(null)}
+                  className="ml-2 rounded-md p-1 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
+                  title="Clear tag filter"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-6"
+      >
         {loading ? (
           <div className="flex h-full items-center justify-center">
             <div className="flex flex-col items-center gap-4 text-text-muted">
@@ -264,35 +401,50 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor }) => {
             <div className="text-center">
               <p className="mb-2 text-lg text-text-muted">No clips found</p>
               <p className="text-sm text-text-muted">
-                {showFavoritesOnly
-                  ? 'No favorite clips yet. Mark clips as favorites to see them here.'
-                  : 'Clips will appear here when you save them with F9 in ClipVault'}
+                {libraryState.selectedTag
+                  ? `No clips tagged with "${libraryState.selectedTag}". Try selecting a different tag or add this tag to clips in the editor.`
+                  : libraryState.showFavoritesOnly
+                    ? 'No favorite clips yet. Mark clips as favorites to see them here.'
+                    : 'Clips will appear here when you save them with F9 in ClipVault'}
               </p>
             </div>
           </div>
         ) : (
-          <div
-            className={`grid gap-4 ${
-              viewMode === 'grid'
-                ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-                : 'grid-cols-1'
-            }`}
-          >
-            {filteredAndSortedClips.map(clip => (
-              <ClipCard
-                key={clip.id}
-                clip={clip}
-                viewMode={viewMode}
-                formatFileSize={formatFileSize}
-                formatDate={formatDate}
-                thumbnailUrl={thumbnails[clip.id]}
-                metadata={metadata[clip.id]}
-                onGenerateThumbnail={generateThumbnail}
-                onFetchMetadata={fetchMetadata}
-                onOpenEditor={onOpenEditor}
-              />
-            ))}
-          </div>
+          <>
+            {/* Spacer for rows above visible range */}
+            {visibleStartRow > 0 && (
+              <div style={{ height: visibleStartRow * rowHeight }} />
+            )}
+            
+            {/* Visible clips grid */}
+            <div
+              className={`grid gap-4 ${
+                isGrid
+                  ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+                  : 'grid-cols-1'
+              }`}
+            >
+              {filteredAndSortedClips.slice(visibleStartIndex, visibleEndIndex).map(clip => (
+                <ClipCard
+                  key={clip.id}
+                  clip={clip}
+                  viewMode={libraryState.viewMode}
+                  formatFileSize={formatFileSize}
+                  formatDate={formatDate}
+                  thumbnailUrl={thumbnails[clip.id]}
+                  metadata={metadata[clip.id]}
+                  onGenerateThumbnail={generateThumbnail}
+                  onFetchMetadata={fetchMetadata}
+                  onOpenEditor={onOpenEditor}
+                />
+              ))}
+            </div>
+            
+            {/* Spacer for rows below visible range */}
+            {visibleEndRow < totalRows && (
+              <div style={{ height: (totalRows - visibleEndRow) * rowHeight }} />
+            )}
+          </>
         )}
       </div>
     </div>
