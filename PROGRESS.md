@@ -5,8 +5,8 @@
 
 ## Current Status Overview
 
-**Last Updated**: 2026-02-01
-**Status**: ✅ COMPLETE - Full Application Working
+**Last Updated**: 2026-02-01 (Phase 4 Detailed Planning Complete)
+**Status**: ✅ Phase 1-3 COMPLETE - Phase 4 Ready for Implementation
 **Architecture**: Independent Backend (C++) + Electron UI (React/TypeScript)
 **Packaging**: Single EXE with auto-starting backend
 
@@ -332,6 +332,104 @@ None - all features working as expected.
 
 ## Phase 4: Polish & Optimization (IN PROGRESS)
 
+### Critical Performance Fixes (High Priority)
+
+- [ ] **NVENC Hardware Encoding Fix** - Fix hardware encoding to eliminate 10-20% CPU usage
+      **Status**: Ready to implement
+      **Independent**: ✓ Yes
+      **Files**: `src/encoder.cpp`
+      **Problem**: NVENC failing, falling back to x264 (CPU encoding)
+
+  **Root Cause**: Only trying "ffmpeg_nvenc" encoder ID, but multiple IDs exist
+
+  **Solution**: Try multiple encoder IDs in order:
+
+  ```cpp
+  const char* nvenc_ids[] = {
+      "ffmpeg_nvenc",     // Current (uses obs-ffmpeg.dll)
+      "jim_nvenc",        // Alternative (uses obs-nvenc.dll)
+      "h264_nvenc",       // Generic H.264 NVENC
+      "hevc_nvenc",       // HEVC/H.265 (RTX 2000+, better quality)
+      "av1_nvenc"         // AV1 (RTX 4000+, best quality)
+  };
+
+  for (auto id : nvenc_ids) {
+      LOG_INFO("Trying encoder: " << id);
+      video_encoder_ = obs_video_encoder_create(id, "video_encoder", settings, nullptr);
+      if (video_encoder_) {
+          LOG_INFO("SUCCESS: Using " << id);
+          encoder_name_ = id;
+          break;
+      }
+  }
+  ```
+
+  **Note**: NVENC is NOT deprecated - still fully supported in latest drivers
+
+  **Acceptance Criteria**:
+  - [ ] Try all encoder IDs sequentially
+  - [ ] Log which encoder is selected
+  - [ ] CPU usage drops from 10-20% to 1-3%
+  - [ ] Maintain fallback to x264 if all NVENC variants fail
+
+- [ ] **Windows Thumbnail Cache Integration** - Task #20 (moved to critical)
+      See detailed implementation in Performance Optimization section below
+
+### Game Database
+
+- [ ] **Game Database Creation** - Compile 100-200 popular games for detection
+      **Status**: Ready to implement
+      **Independent**: ✓ Yes
+      **Files**: `config/games_database.json`
+      **Purpose**: Foundation for Task #15 (Game Detection)
+
+  **Structure**:
+
+  ```json
+  {
+    "version": "2025.02",
+    "games": [
+      {
+        "id": "league_of_legends",
+        "name": "League of Legends",
+        "executable": "League of Legends.exe",
+        "executable_patterns": ["League of Legends.exe", "LeagueClient.exe"],
+        "category": "MOBA",
+        "popular": true
+      },
+      {
+        "id": "valorant",
+        "name": "Valorant",
+        "executable": "VALORANT-Win64-Shipping.exe",
+        "category": "FPS",
+        "anti_cheat": "vanguard",
+        "popular": true
+      }
+    ]
+  }
+  ```
+
+  **Categories** (100-200 total):
+  - **FPS** (25): CS2, Valorant, Fortnite, Apex, CoD MW3, Overwatch 2, Rainbow Six Siege, Escape from Tarkov, etc.
+  - **MOBA** (10): LoL, Dota 2, SMITE, Heroes of the Storm, Pokemon Unite
+  - **Battle Royale** (15): PUBG, Fall Guys, Realm Royale, Spellbreak, etc.
+  - **MMO** (20): WoW, FF14, Lost Ark, Guild Wars 2, ESO, BDO, New World, etc.
+  - **Strategy** (20): StarCraft II, AoE IV, Civilization VI, Total War series, etc.
+  - **Sports** (15): FIFA, NBA 2K, Madden, Rocket League, etc.
+  - **Indie/Other** (30): Minecraft, Terraria, Stardew Valley, Among Us, Rust, etc.
+
+  **Sources**:
+  - PC Gamer Top 100 2025
+  - Steam Games Dataset
+  - Rock Paper Shotgun Top 100
+  - Esports titles
+
+  **Acceptance Criteria**:
+  - [ ] 100-200 games in database
+  - [ ] Executable names accurate
+  - [ ] Popular esports titles included
+  - [ ] JSON schema documented
+
 ### Performance & Quality
 
 - [x] **1. Quality Presets** - Test and optimize preset profiles (Low/Medium/High/Ultra)
@@ -357,65 +455,202 @@ None - all features working as expected.
 ### Audio & Notifications
 
 - [ ] **11. Audio Source Selection** - Allow user to select which microphone and system audio device to capture
-  - Add device selector dropdowns in Settings > Audio
-  - Use Windows WASAPI to enumerate available audio input/output devices
-  - Allow separate selection for desktop audio and microphone
-  - Store device IDs in config for persistence
+      **Status**: Ready to implement
+      **Independent**: ✓ Yes
+      **Files**: `src/capture.cpp`, `ui/src/renderer/components/Settings/Audio.tsx`
+      **Implementation**:
+  - Backend: WASAPI device enumeration using COM (`IMMDeviceEnumerator`)
+  - Enumerate output devices: `eRender` (desktop audio)
+  - Enumerate input devices: `eCapture` (microphones)
+  - Extract device IDs (`{0.0.0.00000000}.{GUID}` format) and friendly names
+  - Store selected device IDs in settings.json
+  - Apply via `obs_data_set_string(settings, "device_id", deviceId)` for WASAPI sources
+  - Requires backend restart when changed (already have restart logic ✓)
+
+  **UI Changes**:
+  - Add dropdown selectors in Settings > Audio section
+  - Show device names with "(Default)" indicator for default devices
+  - "Refresh" button to re-enumerate devices
+
+  **Acceptance Criteria**:
+  - [ ] User can see all available input/output audio devices
+  - [ ] Selected devices persist after restart
+  - [ ] Changing device requires backend restart notification
+  - [ ] Works with "default" device option for automatic switching
 
 - [ ] **12. Clip Notification & Sound** - Visual and audio feedback when clip is saved
-  - Slide-in notification panel in top-right corner (non-intrusive)
-  - Configurable notification duration (3-10 seconds)
-  - Optional "clip saved" sound effect
-  - Separate toggles in Settings > Notifications for:
-    - Show notification on clip save
-    - Play sound on clip save
-    - Notification sound type (subtle/chime/click)
+      **Status**: Ready to implement
+      **Independent**: ✓ Yes
+      **Files**: `src/replay.cpp`, `ui/src/renderer/stores/notificationStore.ts`, `ui/public/sounds/`
+      **Implementation**:
+  - Backend: Send IPC message when `obs_output_get_last_error` returns success
+  - Include clip filename, game name (if detected), timestamp
+  - Frontend: Toast notification component (top-right, non-intrusive)
+  - Sound: Optional WAV/MP3 playback (user-selectable in settings)
+
+  **UI Components**:
+  - Slide-in notification panel (Framer Motion for animation)
+  - Duration: 3-10 seconds (configurable)
+  - Sound options: Subtle click, chime, or none
+  - Settings toggles: Show notification / Play sound / Sound type
+
+  **Acceptance Criteria**:
+  - [ ] Toast appears within 1 second of F9 press
+  - [ ] Shows clip filename and game name
+  - [ ] Sound plays if enabled
+  - [ ] Configurable in Settings > Notifications
+  - [ ] Non-blocking (doesn't interfere with gameplay)
 
 ### Onboarding & Setup
 
 - [ ] **13. First Run Setup Wizard** - Guide users through initial configuration
-  - Step 1: Select clips save folder (create if doesn't exist)
-  - Step 2: Configure audio sources (optional, defaults work)
-  - Step 3: Quality/buffer settings (sensible defaults with customization)
-  - Step 4: Start with Windows option
-  - Skip option for users who prefer manual configuration
-  - Settings saved to standard location, backend auto-restarted
+      **Status**: Ready to implement
+      **Independent**: ✓ Yes
+      **Files**: `ui/src/renderer/components/FirstRunWizard/`, `ui/src/renderer/App.tsx`
+      **Implementation**:
+  - Check `settings.first_run_completed` flag on app start
+  - Multi-step modal overlay (4 steps + completion)
+  - Step 1: Welcome + Clips folder selection (with folder creation)
+  - Step 2: Audio device selection (dropdowns with defaults)
+  - Step 3: Quality preset selection (Performance/Balanced/Quality/Custom)
+  - Step 4: Startup options (start with Windows, minimize to tray)
+  - Skip option: "Configure manually later"
+  - On complete: Save all settings, mark first_run_completed, restart backend
+
+  **Purpose**: Prevent null/undefined issues by ensuring folder exists and settings are validated
+
+  **Acceptance Criteria**:
+  - [ ] Appears on first launch (no settings file)
+  - [ ] Forces folder selection and creation
+  - [ ] Shows sensible defaults for all options
+  - [ ] Skip button available
+  - [ ] Settings properly saved and backend restarted
+  - [ ] Doesn't appear on subsequent launches
 
 ### Library Management
 
 - [ ] **14. Bulk Clip Operations** - Select and act on multiple clips at once
-  - Multi-select via Ctrl+click or Shift+click
-  - Checkbox mode for touch/tablet users
+      **Status**: Ready to implement
+      **Independent**: ✓ Yes
+      **Files**: `ui/src/renderer/components/Library/Library.tsx` (major refactor)
+      **Implementation**:
+  - Add selection state to Library component
+  - Multi-select: Ctrl+click for individual, Shift+click for range
+  - Checkbox mode: Click checkbox to toggle selection
+  - Selection toolbar appears when clips selected (top of library)
   - Bulk actions:
-    - Delete selected clips (with confirmation)
-    - Add/remove tags from selected clips
-    - Export selected clips (queued, not parallel)
-    - Favorite/Unfavorite selected clips
-  - Select all / Deselect all buttons
-  - Selection count indicator
-  - Context menu for right-click actions
+    - Delete: Confirmation dialog with count ("Delete 12 clips?")
+    - Tags: Add/remove tags modal with tag input
+    - Export: Queue system (process one at a time, show progress)
+    - Favorite: Toggle favorite status for all selected
+  - Context menu (right-click) for quick actions
+  - Keyboard shortcuts: Ctrl+A (select all), Escape (deselect all)
+
+  **UI Changes**:
+  - Checkbox in each clip card (visible on hover or when any selected)
+  - Selection count badge ("12 selected")
+  - Sticky toolbar with action buttons
+  - Export queue progress indicator
+
+  **Acceptance Criteria**:
+  - [ ] Can select multiple clips with Ctrl/Shift click
+  - [ ] Can select all with Ctrl+A
+  - [ ] Bulk delete with confirmation
+  - [ ] Bulk tag add/remove
+  - [ ] Export queue processes sequentially (not parallel)
+  - [ ] Selection clears after action or on Escape
 
 ### Game Integration
 
-- [ ] **15. Game Detection & Tagging** - Auto-detect running game using process enumeration
-  - Identify game executable names and window titles
-  - Auto-tag clips with detected game name
-  - Filter clips by game in Library sidebar
-  - Display game icons alongside clip metadata
+- [ ] **15. Game Detection & Tagging** - Auto-detect running game at clip capture time
+      **Status**: Ready to implement
+      **Independent**: ✓ Yes (requires Task 4: Game Database)
+      **Files**: `src/hotkey.cpp`, `src/game_detector.cpp`, `config/games_database.json`
+      **Implementation**:
+  - When hotkey pressed: Detect game from foreground window
+  - Check if foreground window is fullscreen
+  - Get process name from window handle
+  - Match against game database (executable name patterns)
+  - Tag clip with game name in filename and metadata
+  - Save game info to clip metadata JSON
 
-- [ ] **16. Game Capture Mode** - Add dedicated game capture source with anti-cheat compatibility
-  - Use Windows Graphics Capture API (Windows 10 1803+) instead of legacy game capture
-  - Allow selecting specific game windows or full-screen capture
-  - Bypass anti-cheat restrictions that block global hooks
-  - Fallback to monitor capture if game capture unavailable
+  **Game Database** (see Task 4):
+  - 100-200 popular games with executable patterns
+  - Categories: FPS, MOBA, Battle Royale, MMO, Strategy, Sports, Indie
+  - Include anti-cheat info for reference
+
+  **Filename Format**:
+  - With game: `2026-02-01_14-30-22_LeagueOfLegends.mp4`
+  - Without game: `2026-02-01_14-30-22.mp4` (current behavior)
+
+  **UI Integration**:
+  - Library sidebar: Game filter dropdown
+  - Clip cards: Show game icon/name
+  - Metadata editor: Allow user to change/correct game tag
+
+  **Acceptance Criteria**:
+  - [ ] Detects game when F9 pressed (not continuous monitoring)
+  - [ ] Tags clip filename with game name
+  - [ ] Saves game metadata
+  - [ ] Library can filter by game
+  - [ ] User can manually change game tag
+  - [ ] Works for games in database (80%+ accuracy target)
+
+- [ ] **16. Game Capture Mode** - Add hook-based game capture source (anti-cheat safe, no yellow border)
+      **Status**: Ready to implement
+      **Independent**: ✓ Yes
+      **Files**: `src/capture.cpp`, `ui/src/renderer/components/Settings/Capture.tsx`
+      **Implementation**: **Option A** - Optional "Game Mode" setting
+
+  **Research Findings**:
+  - Insights.gg and SteelSeries use hook-based capture (NOT Windows Graphics Capture)
+  - Hook-based: NO yellow border, better performance, may be blocked by anti-cheat
+  - Windows Graphics Capture: Yellow border (unavoidable), anti-cheat safe
+  - OBS game capture hooks are whitelisted by most anti-cheat (see OBS knowledge base)
+
+  **Settings**:
+  - Add "Capture Mode" dropdown in Settings > Video:
+    - "Monitor Capture (Default)" - Current behavior, full monitor, anti-cheat safe
+    - "Game Capture (Experimental)" - Hook-based, specific window, no yellow border
+  - Default: Monitor Capture (safe choice)
+  - Auto-fallback: If game capture fails, automatically use monitor capture
+
+  **Backend Implementation**:
+
+  ```cpp
+  if (config.capture_mode == "game") {
+      // Try game capture first
+      obs_source_t* source = obs_source_create("game_capture", "game", settings, nullptr);
+      if (!source) {
+          // Fallback to monitor capture
+          LOG_WARNING("Game capture failed, using monitor capture");
+          source = obs_source_create("monitor_capture", "monitor", settings, nullptr);
+      }
+  }
+  ```
+
+  **Anti-Cheat Status** (from OBS knowledge base):
+  - ✅ Valorant/Vanguard - Works with proper certificate
+  - ✅ Fortnite/EAC - Works
+  - ✅ CS2/VAC - Works (with compatibility mode)
+  - ✅ Apex Legends - Works
+  - ⚠️ Some games may block hooks - fallback handles this
+
+  **Acceptance Criteria**:
+  - [ ] Setting available in Settings > Video
+  - [ ] Game capture shows no yellow border
+  - [ ] Auto-fallback to monitor if game capture fails
+  - [ ] Works with Valorant, Fortnite, CS2
+  - [ ] Better performance than monitor capture (lower CPU/GPU usage)
+  - [ ] Default remains monitor capture (safe choice)
 
 ### Advanced Features
 
 - [ ] **17. GPU Decoding** - Enable hardware-accelerated video decoding for smoother playback
-  - Use D3D11 Video Decoder for GPU-accelerated video decoding
-  - Reduce CPU usage during playback in editor
-  - Support hardware decode for H.264, HEVC formats
-  - Automatic fallback to software decoding if GPU unavailable
+      **Status**: On Hold (Low Priority)
+      **Independent**: ✓ Yes
+      **Note**: Editor playback already works fine - user confirmed this is not needed
+      **Implementation**: Skip this feature for now
 
 ### Distribution & Installation
 
@@ -428,26 +663,179 @@ None - all features working as expected.
 
 ### UI Polish
 
-- [ ] **19. Custom Application Icon** - Replace Electron default icon with professional branded icon
-  - Design or source a professional 256x256 PNG icon (and variations: 16, 32, 48, 64, 128, 256)
-  - Convert to ICO format with multiple sizes for Windows
-  - Update electron-builder config to use custom icon for:
-    - EXE file icon
-    - Taskbar icon
-    - Start menu shortcut
-    - Desktop shortcut (if created)
-    - Add/Remove Programs entry
-  - Ensure icon follows Windows icon guidelines (multiple resolutions for scaling)
+- [ ] **19. Custom Application Icon** - Generate proper ICO from existing PNG assets
+      **Status**: Ready to implement
+      **Independent**: ✓ Yes
+      **Files**: `ui/public/icons/`, `ui/package.json`
+      **Current State**:
+  - PNG exists at `ui/public/icons/icon_256.png` ✓
+  - electron-builder config already points to it ✓
+  - Missing: Multi-resolution ICO file
 
-  ### Performance Optimization
+  **Implementation**:
 
-- [ ] **20. Windows Thumbnail Cache Integration** - Use native Windows thumbnail extraction
-  - Investigate Windows Shell thumbnail extraction APIs (IExtractImage, IThumbnailProvider)
-  - Potential 50-80% faster thumbnail generation on first load
-  - Cache in standard Windows thumbnail cache location
-  - Fallback to FFmpeg for formats Windows doesn't support
-  - Consider performance impact vs implementation complexity
-  - May reduce initial library load time significantly
+  ```powershell
+  # Generate multi-resolution ICO from PNG
+  magick convert ui/public/icons/icon_256.png `
+    -define icon:auto-resize=256,128,64,48,32,16 `
+    ui/public/icons/icon.ico
+  ```
+
+  **Update electron-builder config** (`ui/package.json`):
+
+  ```json
+  {
+    "build": {
+      "win": {
+        "icon": "public/icons/icon.ico"
+      }
+    }
+  }
+  ```
+
+  **Acceptance Criteria**:
+  - [ ] icon.ico generated with all sizes (16, 32, 48, 64, 128, 256)
+  - [ ] EXE file shows custom icon
+  - [ ] Taskbar shows custom icon
+  - [ ] Start menu shows custom icon
+  - [ ] Desktop shortcut shows custom icon
+
+### Performance Optimization
+
+- [ ] **20. Windows Thumbnail Cache Integration** - Use native Windows thumbnail extraction (10-50x faster)
+      **Status**: Ready to implement
+      **Independent**: ✓ Yes
+      **Files**: Create `native/thumbnail_addon/`, `ui/src/main/thumbnail.ts`
+      **Problem**: Current FFmpeg thumbnail generation is slow
+  - Spawns FFmpeg process for each clip (50-100ms overhead)
+  - Seeks to 10% of video (decodes stream)
+  - No caching - regenerates every time
+  - 50 clips = 5-25 seconds of blocking UI
+
+  **Solution**: Windows Thumbnail Cache API
+  - First-time: Windows extracts thumbnail (same speed as FFmpeg)
+  - Cached: <10ms from Windows thumbnail database
+  - Windows maintains cache automatically
+  - Supports all formats Windows Media Player supports
+
+  **Implementation**:
+
+  ```cpp
+  // Node.js native addon: thumbnail_addon.cpp
+  #include <windows.h>
+  #include <shobjidl.h>
+
+  bool ExtractThumbnail(const wchar_t* videoPath, const wchar_t* outputPath) {
+      IShellItemImageFactory* factory = nullptr;
+      SHCreateItemFromParsingName(videoPath, nullptr, IID_PPV_ARGS(&factory));
+
+      SIZE size = {480, 270};
+      HBITMAP hBitmap = nullptr;
+      factory->GetImage(size, SIIGBF_THUMBNAILONLY, &hBitmap);
+
+      // Save HBITMAP to JPEG
+      SaveHBITMAPToJPEG(hBitmap, outputPath);
+      DeleteObject(hBitmap);
+      factory->Release();
+      return true;
+  }
+  ```
+
+  **UI Integration**:
+
+  ```typescript
+  // Hybrid approach
+  async function generateThumbnail(clipId: string, videoPath: string) {
+    // Try Windows API first
+    const success = await thumbnailAddon.extract(videoPath, outputPath);
+    if (success) return getThumbnailUrl(clipId);
+
+    // Fallback to FFmpeg
+    return generateFFmpegThumbnail(clipId, videoPath);
+  }
+  ```
+
+  **Technical Details**:
+  - API: `IShellItemImageFactory::GetImage()` with `SIIGBF_THUMBNAILONLY`
+  - Cache: `%LocalAppData%\Microsoft\Windows\Explorer\thumbcache_*.db`
+  - Fallback: FFmpeg for exotic formats Windows doesn't support
+
+  **Acceptance Criteria**:
+  - [ ] Node.js native addon created
+  - [ ] Library loads in <2 seconds for 50 clips
+  - [ ] Thumbnails appear without "2min" placeholder delay
+  - [ ] Clips are clickable immediately
+  - [ ] Fallback to FFmpeg works for unsupported formats
+
+---
+
+## Implementation Priority & Execution Plan
+
+### Phase 4 Execution Order
+
+Since all tasks are **independent**, they can be completed in any order or in parallel by multiple AI agents.
+
+#### **Priority 1: Quick Wins (30 min - 2 days)**
+
+1. **Task 19: Custom Icon** (30 min) - Easiest task, immediate visual improvement
+2. **NVENC Hardware Encoding Fix** (1-2 days) - Biggest performance impact
+
+#### **Priority 2: Critical UX Improvements (2-5 days)**
+
+3. **Task 20: Thumbnail Cache** (2-3 days) - Fixes library loading slowness
+4. **Task 4: Game Database** (1 day) - Required foundation for game detection
+5. **Task 13: First Run Wizard** (2-3 days) - Prevents setup issues
+
+#### **Priority 3: Core Features (2-5 days)**
+
+6. **Task 15: Game Detection** (2-3 days) - Auto-organization of clips
+7. **Task 16: Game Capture Mode** (3-4 days) - Better performance, no yellow border
+8. **Task 11: Audio Selection** (2-3 days) - Flexibility for multi-device users
+
+#### **Priority 4: Polish Features (1-5 days)**
+
+9. **Task 12: Notifications** (1-2 days) - Better user feedback
+10. **Task 14: Bulk Operations** (4-5 days) - Power user feature
+
+#### **Priority 5: On Hold**
+
+11. **Task 17: GPU Decoding** - User confirmed not needed (editor works fine)
+
+### Parallel Execution Strategy
+
+**Option A: Sequential (One Agent)**
+Start with Priority 1 → 2 → 3 → 4 in order
+
+**Option B: Parallel (Multiple Agents)**
+
+- **Agent 1**: Tasks 19, 20, 4 (UI/Performance/Database)
+- **Agent 2**: NVENC Fix + Game Capture Mode (Backend encoding)
+- **Agent 3**: First Run Wizard + Notifications (UI polish)
+- **Agent 4**: Game Detection + Audio Selection (Audio/Game features)
+
+All tasks are truly independent - no blocking dependencies between any of them.
+
+### Acceptance Criteria Summary
+
+**Before releasing Phase 4:**
+
+- [ ] NVENC working (CPU <5% during recording)
+- [ ] Library loads fast (<2s for 50 clips)
+- [ ] Game detection working (80%+ accuracy)
+- [ ] Custom icon in EXE/taskbar
+- [ ] First run wizard prevents setup issues
+- [ ] Game capture mode available (optional setting)
+- [ ] Audio device selection works
+- [ ] Clip notifications show
+- [ ] Bulk operations functional
+
+### Ready to Start
+
+All research complete. All technical details documented. Tasks are granular and independent.
+
+**Recommended first task**: Pick any from Priority 1 (Icon or NVENC Fix)
+
+**Ready to execute?**
 
 ## Documentation
 
