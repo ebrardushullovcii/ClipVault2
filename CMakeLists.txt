@@ -50,6 +50,7 @@ target_link_libraries(ClipVault PRIVATE
     shell32
     user32
     gdiplus
+    psapi
 )
 
 # Static linking to avoid C++ runtime mismatch
@@ -78,5 +79,15 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/third_party/obs-studio-src/build/rundir/release/64
             ${CMAKE_SOURCE_DIR}/third_party/obs-studio-src/build/rundir/release/64bit
             ${CMAKE_SOURCE_DIR}/bin
         COMMENT "Copying OBS DLLs from build"
+    )
+endif()
+
+# Copy obs-nvenc.dll from pre-built OBS download (required for NVENC hardware encoding)
+if(EXISTS ${CMAKE_SOURCE_DIR}/third_party/obs-download/obs-plugins/64bit/obs-nvenc.dll)
+    add_custom_command(TARGET ClipVault POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_SOURCE_DIR}/third_party/obs-download/obs-plugins/64bit/obs-nvenc.dll
+            ${CMAKE_SOURCE_DIR}/bin/obs-plugins/64bit/obs-nvenc.dll
+        COMMENT "Copying obs-nvenc.dll for NVENC hardware encoding support"
     )
 endif()

@@ -765,7 +765,9 @@ ipcMain.handle('editor:saveState', async (_, clipId: string, state: unknown) => 
     const statePath = join(metadataDir, `${clipId}.json`)
     // Merge with existing metadata if any
     const existingContent = existsSync(statePath) ? JSON.parse(await readFile(statePath, 'utf-8')) : {}
-    const mergedState = { ...existingContent, ...state }
+    const existingObj = typeof existingContent === 'object' && existingContent !== null ? existingContent : {}
+    const stateObj = typeof state === 'object' && state !== null ? state : {}
+    const mergedState = { ...existingObj, ...stateObj } as Record<string, unknown>
     await writeFile(statePath, JSON.stringify(mergedState, null, 2), 'utf-8')
     console.log(`[Editor] Saved state for clip ${clipId}`)
     return true
@@ -1440,7 +1442,7 @@ app.whenReady().then(async () => {
               await writeFile(newPath, JSON.stringify(mergedData, null, 2), 'utf-8')
 
               // Delete old file
-              await unlink(oldPath)
+              await fsUnlinkAsync(oldPath)
               console.log(`[Main] Migrated ${oldFile} -> clips-metadata/${clipId}.json`)
             } catch (e) {
               console.error(`[Main] Failed to migrate ${oldFile}:`, e)

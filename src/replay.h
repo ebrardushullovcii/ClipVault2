@@ -57,14 +57,22 @@ private:
     std::string last_saved_file_;
     SaveCallback save_callback_;
 
-    // Render thread (CRITICAL: must run continuously to produce video frames)
+    // Render thread (for periodic health checks - OBS handles frame production)
     std::thread render_thread_;
     std::atomic<bool> render_thread_running_{false};
+
+    // Performance metrics
+    std::atomic<uint64_t> frame_count_{0};
+    std::atomic<uint64_t> last_stats_time_{0};
+    std::atomic<uint64_t> save_start_time_{0};
 
     // Start/stop render thread
     void start_render_thread();
     void stop_render_thread();
     void render_thread_loop();
+
+    // Performance logging
+    void log_performance_stats();
 
     // Signal callbacks
     static void on_replay_saved(void* data, calldata_t* calldata);

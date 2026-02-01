@@ -153,6 +153,33 @@ foreach ($tool in $FFmpegTools) {
     }
 }
 
+# Copy NVENC files (required for NVENC hardware encoding)
+Write-Host "`n[Copy] Copying NVENC files for hardware encoding..."
+
+# Copy obs-nvenc.dll plugin
+$NVEncSource = Join-Path $ProjectRoot "third_party/obs-download/obs-plugins/64bit/obs-nvenc.dll"
+$NVEncDest = Join-Path $DestDir "obs-plugins/64bit/obs-nvenc.dll"
+if (Test-Path $NVEncSource) {
+    $NVEncDestDir = Split-Path $NVEncDest -Parent
+    if (!(Test-Path $NVEncDestDir)) {
+        New-Item -ItemType Directory -Path $NVEncDestDir -Force | Out-Null
+    }
+    Copy-Item $NVEncSource $NVEncDest -Force
+    Write-Host "  Copied: obs-nvenc.dll" -ForegroundColor Gray
+} else {
+    Write-Host "  WARNING: obs-nvenc.dll not found in third_party/obs-download" -ForegroundColor Yellow
+}
+
+# Copy obs-nvenc-test.exe (CRITICAL: OBS uses this to detect NVENC capability)
+$NVEncTestSource = Join-Path $ProjectRoot "third_party/obs-download/bin/64bit/obs-nvenc-test.exe"
+$NVEncTestDest = Join-Path $DestDir "obs-nvenc-test.exe"
+if (Test-Path $NVEncTestSource) {
+    Copy-Item $NVEncTestSource $NVEncTestDest -Force
+    Write-Host "  Copied: obs-nvenc-test.exe (NVENC capability detector)" -ForegroundColor Gray
+} else {
+    Write-Host "  WARNING: obs-nvenc-test.exe not found - NVENC may not work!" -ForegroundColor Yellow
+}
+
 # Run
 if ($Run) {
     Write-Host "`n[Run] Starting ClipVault..."

@@ -5,6 +5,7 @@
 #include "capture.h"
 
 #include <windows.h>
+#include <psapi.h>
 #include <chrono>
 #include <iomanip>
 #include <sstream>
@@ -221,25 +222,55 @@ bool ReplayManager::start()
     if (!obs_api::output_start(replay_output_)) {
         LOG_WARNING("[REPLAY] Initial start failed, attempting encoder fallback...");
 
-        // Try fallback to x264 encoder
+        // Try other NVENC encoders first before falling back to x264
         auto& encoder = EncoderManager::instance();
-        if (encoder.fallback_to_x264()) {
-            LOG_INFO("[REPLAY] Reconnecting x264 encoder...");
-            obs_api::output_set_video_encoder(replay_output_, encoder.get_video_encoder());
+        bool nvenc_success = false;
 
-            LOG_INFO("[REPLAY] Retrying start with x264...");
-            if (obs_api::output_start(replay_output_)) {
-                active_ = true;
-                
-                // Start the render thread (CRITICAL for video frame production)
-                start_render_thread();
-                
-                LOG_INFO("[REPLAY] ==========================================");
-                LOG_INFO("[REPLAY] STARTED WITH X264 FALLBACK");
-                LOG_INFO("[REPLAY] Status: RECORDING TO MEMORY");
-                LOG_INFO("[REPLAY] ==========================================");
-                return true;
+        if (encoder.is_using_nvenc()) {
+            LOG_INFO("[REPLAY] Current encoder is NVENC, trying other NVENC variants first...");
+            while (encoder.try_next_nvenc_encoder()) {
+                LOG_INFO("[REPLAY] Reconnecting new NVENC encoder...");
+                obs_api::output_set_video_encoder(replay_output_, encoder.get_video_encoder());
+
+                LOG_INFO("[REPLAY] Retrying start with " + encoder.encoder_name() + "...");
+                if (obs_api::output_start(replay_output_)) {
+                    active_ = true;
+                    start_render_thread();
+                    LOG_INFO("[REPLAY] ==========================================");
+                    LOG_INFO("[REPLAY] STARTED WITH " + encoder.encoder_name() + " (NVENC)");
+                    LOG_INFO("[REPLAY] Status: RECORDING TO MEMORY");
+                    LOG_INFO("[REPLAY] ==========================================");
+                    nvenc_success = true;
+                    break;
+                } else {
+                    LOG_WARNING("[REPLAY] " + encoder.encoder_name() + " also failed, trying next...");
+                }
             }
+        }
+
+        // If all NVENC encoders failed, fall back to x264
+        if (!nvenc_success) {
+            LOG_INFO("[REPLAY] All NVENC variants failed, falling back to x264...");
+            if (encoder.fallback_to_x264()) {
+                LOG_INFO("[REPLAY] Reconnecting x264 encoder...");
+                obs_api::output_set_video_encoder(replay_output_, encoder.get_video_encoder());
+
+                LOG_INFO("[REPLAY] Retrying start with x264...");
+                if (obs_api::output_start(replay_output_)) {
+                    active_ = true;
+                    
+                    // Start the render thread (CRITICAL for video frame production)
+                    start_render_thread();
+                    
+                    LOG_INFO("[REPLAY] ==========================================");
+                    LOG_INFO("[REPLAY] STARTED WITH X264 FALLBACK");
+                    LOG_INFO("[REPLAY] Status: RECORDING TO MEMORY");
+                    LOG_INFO("[REPLAY] ==========================================");
+                    return true;
+                }
+            }
+        } else {
+            return true;
         }
 
         // Still failed
@@ -328,7 +359,9 @@ bool ReplayManager::save_clip()
     LOG_INFO("    Microphone: " + std::string(audio.microphone_enabled ? "enabled" : "disabled"));
     
     save_pending_ = true;
+    save_start_time_.store(GetTickCount64());
     LOG_INFO("[REPLAY] Save pending flag set to TRUE");
+    LOG_INFO("[PERF] Save operation started at tick: " + std::to_string(save_start_time_.load()));
 
     // Use procedure handler to trigger save (NOT output_signal!)
     LOG_INFO("[REPLAY] Getting procedure handler from replay buffer...");
@@ -433,6 +466,15 @@ void ReplayManager::on_replay_saved(void* data, calldata_t* calldata)
     
     LOG_INFO("[REPLAY] Processing save result...");
     LOG_INFO("[REPLAY] Path from calldata: " + std::string(path ? path : "(NULL)"));
+
+    // Calculate save duration
+    uint64_t save_start = self->save_start_time_.load();
+    uint64_t save_end = GetTickCount64();
+    uint64_t save_duration_ms = save_end - save_start;
+    LOG_INFO("[PERF] Save completed in " + std::to_string(save_duration_ms) + " ms");
+    if (save_duration_ms > 1000) {
+        LOG_WARNING("[PERF] Save took longer than 1 second - may cause CPU spike");
+    }
     
     if (path) {
         self->last_saved_file_ = path;
@@ -566,15 +608,17 @@ void ReplayManager::on_replay_stopped(void* data, calldata_t* calldata)
 void ReplayManager::start_render_thread()
 {
     LOG_INFO("[REPLAY] Starting render thread...");
-    
+    LOG_INFO("[PERF] NOTE: Render thread optimized - runs at 0.2 Hz (not 60 Hz)");
+    LOG_INFO("[PERF] OBS handles frame production internally, thread is for health checks only");
+
     if (render_thread_running_.load()) {
         LOG_WARNING("[REPLAY] Render thread already running");
         return;
     }
-    
+
     render_thread_running_.store(true);
     render_thread_ = std::thread(&ReplayManager::render_thread_loop, this);
-    
+
     LOG_INFO("[REPLAY] Render thread started successfully");
 }
 
@@ -598,27 +642,120 @@ void ReplayManager::stop_render_thread()
 
 void ReplayManager::render_thread_loop()
 {
-    LOG_INFO("[REPLAY] Render thread loop started (target: 60 FPS)");
-    
-    const auto frame_duration = std::chrono::milliseconds(16); // ~60 FPS
-    
+    LOG_INFO("[REPLAY] Render thread loop started (health check every 5 seconds)");
+
+    // OPTIMIZATION: OBS handles frame production internally from active sources.
+    // This thread only needs to do periodic health checks, not run at 60 FPS.
+    // Changed from 16ms (60 FPS) to 5000ms (0.2 Hz) - massive CPU savings!
+    const auto check_interval = std::chrono::milliseconds(5000);
+
+    last_stats_time_.store(GetTickCount64());
+
     while (render_thread_running_.load()) {
         auto start_time = std::chrono::steady_clock::now();
-        
-        // Note: obs_render_main_texture() is for UI preview, not needed for background recording
-        // The replay buffer captures frames automatically from active sources
-        // Just tick the video system to ensure frames flow
-        
-        // Calculate sleep time to maintain ~60 FPS
+
+        // Periodic health check and stats logging
+        frame_count_.fetch_add(1);
+
+        // Log performance stats every 30 seconds
+        uint64_t now = GetTickCount64();
+        uint64_t last_stats = last_stats_time_.load();
+        if (now - last_stats >= 30000) {
+            log_performance_stats();
+            last_stats_time_.store(now);
+        }
+
+        // Sleep for check interval
         auto end_time = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-        
-        if (elapsed < frame_duration) {
-            std::this_thread::sleep_for(frame_duration - elapsed);
+
+        if (elapsed < check_interval) {
+            std::this_thread::sleep_for(check_interval - elapsed);
         }
     }
-    
+
     LOG_INFO("[REPLAY] Render thread loop exited");
+}
+
+void ReplayManager::log_performance_stats()
+{
+    if (!active_ || !replay_output_) return;
+
+    LOG_INFO("[PERF] ==========================================");
+    LOG_INFO("[PERF] PERFORMANCE STATS");
+    LOG_INFO("[PERF] ==========================================");
+
+    // Get process memory info
+    PROCESS_MEMORY_COUNTERS_EX pmc;
+    if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
+        uint64_t working_set_mb = pmc.WorkingSetSize / (1024 * 1024);
+        uint64_t private_mb = pmc.PrivateUsage / (1024 * 1024);
+        uint64_t peak_mb = pmc.PeakWorkingSetSize / (1024 * 1024);
+
+        LOG_INFO("[PERF] --- MEMORY USAGE ---");
+        LOG_INFO("[PERF] Working Set: " + std::to_string(working_set_mb) + " MB (physical RAM in use)");
+        LOG_INFO("[PERF] Private Bytes: " + std::to_string(private_mb) + " MB (committed memory)");
+        LOG_INFO("[PERF] Peak Working Set: " + std::to_string(peak_mb) + " MB (max RAM used)");
+    }
+
+    // Get system memory info
+    MEMORYSTATUSEX memInfo;
+    memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+    if (GlobalMemoryStatusEx(&memInfo)) {
+        uint64_t total_mb = memInfo.ullTotalPhys / (1024 * 1024);
+        uint64_t avail_mb = memInfo.ullAvailPhys / (1024 * 1024);
+        uint64_t used_mb = total_mb - avail_mb;
+        DWORD percent = memInfo.dwMemoryLoad;
+
+        LOG_INFO("[PERF] --- SYSTEM MEMORY ---");
+        LOG_INFO("[PERF] System RAM: " + std::to_string(used_mb) + " / " + std::to_string(total_mb) + " MB (" + std::to_string(percent) + "% used)");
+    }
+
+    // Get encoder stats
+    auto& encoder = EncoderManager::instance();
+    obs_encoder_t* video_enc = encoder.get_video_encoder();
+
+    LOG_INFO("[PERF] --- ENCODER STATUS ---");
+    if (video_enc) {
+        const char* enc_id = obs_api::encoder_get_id(video_enc);
+        bool enc_active = obs_api::encoder_active(video_enc);
+        LOG_INFO("[PERF] Video Encoder: " + std::string(enc_id ? enc_id : "NULL"));
+        LOG_INFO("[PERF] Encoder Active: " + std::string(enc_active ? "YES" : "NO"));
+
+        // Check if using hardware (NVENC) or software (x264)
+        std::string enc_str = enc_id ? enc_id : "";
+        if (enc_str.find("nvenc") != std::string::npos) {
+            LOG_INFO("[PERF] Encoding Mode: HARDWARE (NVENC) - Low CPU expected");
+        } else if (enc_str.find("x264") != std::string::npos) {
+            LOG_INFO("[PERF] Encoding Mode: SOFTWARE (x264) - Higher CPU expected");
+        }
+    }
+
+    // Check video output
+    video_t* video = obs_api::get_video();
+    if (video) {
+        LOG_INFO("[PERF] Video Output: ACTIVE");
+    }
+
+    // Check replay buffer status
+    if (obs_api::output_active(replay_output_)) {
+        LOG_INFO("[PERF] Replay Buffer: RECORDING");
+
+        // Estimate buffer memory usage based on config
+        const auto& config = ConfigManager::instance();
+        int buffer_seconds = config.buffer_seconds();
+        const auto& video_cfg = config.video();
+
+        // Rough estimate: 1080p60 NVENC ~15-25 Mbps = ~2-3 MB/sec
+        // For 120 seconds = 240-360 MB in buffer
+        int estimated_buffer_mb = buffer_seconds * 3; // ~3 MB/sec estimate
+        LOG_INFO("[PERF] Estimated Buffer Size: ~" + std::to_string(estimated_buffer_mb) + " MB (for " + std::to_string(buffer_seconds) + "s buffer)");
+    }
+
+    // Log health check count
+    LOG_INFO("[PERF] Health Checks: " + std::to_string(frame_count_.load()));
+
+    LOG_INFO("[PERF] ==========================================");
 }
 
 } // namespace clipvault

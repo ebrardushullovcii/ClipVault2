@@ -23,6 +23,7 @@
     "test:ui": "npm run lint && npm run typecheck && npm run format:check"
   },
   "dependencies": {
+    "chokidar": "^3.6.0",
     "electron-store": "^8.1.0",
     "fluent-ffmpeg": "^2.1.2",
     "zustand": "^4.4.7"

@@ -26,6 +26,13 @@ public:
     // Fallback to x264 if NVENC fails (returns true if switched)
     bool fallback_to_x264();
 
+    // Try the next NVENC encoder when current one fails at runtime
+    // Returns true if successfully switched to a different NVENC encoder
+    bool try_next_nvenc_encoder();
+
+    // Check if current encoder is NVENC (not x264)
+    bool is_using_nvenc() const;
+
 private:
     EncoderManager() = default;
     ~EncoderManager();
@@ -35,6 +42,7 @@ private:
 
     bool create_video_encoder();
     bool create_audio_encoders();
+    bool create_specific_encoder(const char* encoder_id, const char* encoder_name);
 
     obs_encoder_t* video_encoder_ = nullptr;
     obs_encoder_t* audio_encoder_1_ = nullptr;  // Track 1: Desktop audio
@@ -43,6 +51,7 @@ private:
     bool initialized_ = false;
     std::string last_error_;
     std::string encoder_name_;
+    int current_nvenc_index_ = -1;  // Tracks which NVENC encoder we're using
 };
 
 } // namespace clipvault
