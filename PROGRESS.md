@@ -417,16 +417,6 @@ None - all features working as expected.
   - Support hardware decode for H.264, HEVC formats
   - Automatic fallback to software decoding if GPU unavailable
 
-### Performance Optimization
-
-- [ ] **19. Windows Thumbnail Cache Integration** - Use native Windows thumbnail extraction
-  - Investigate Windows Shell thumbnail extraction APIs (IExtractImage, IThumbnailProvider)
-  - Potential 50-80% faster thumbnail generation on first load
-  - Cache in standard Windows thumbnail cache location
-  - Fallback to FFmpeg for formats Windows doesn't support
-  - Consider performance impact vs implementation complexity
-  - May reduce initial library load time significantly
-
 ### Distribution & Installation
 
 - [x] **18. Easy Installation** - Create NSIS installer for easy distribution
@@ -435,6 +425,29 @@ None - all features working as expected.
   - Installer location: `ui\release\ClipVault-Setup-1.0.0.exe`
   - Custom NSIS script adds App Paths registration for Windows search
   - See `docs/PACKAGING.md` for implementation details
+
+### UI Polish
+
+- [ ] **19. Custom Application Icon** - Replace Electron default icon with professional branded icon
+  - Design or source a professional 256x256 PNG icon (and variations: 16, 32, 48, 64, 128, 256)
+  - Convert to ICO format with multiple sizes for Windows
+  - Update electron-builder config to use custom icon for:
+    - EXE file icon
+    - Taskbar icon
+    - Start menu shortcut
+    - Desktop shortcut (if created)
+    - Add/Remove Programs entry
+  - Ensure icon follows Windows icon guidelines (multiple resolutions for scaling)
+
+  ### Performance Optimization
+
+- [ ] **20. Windows Thumbnail Cache Integration** - Use native Windows thumbnail extraction
+  - Investigate Windows Shell thumbnail extraction APIs (IExtractImage, IThumbnailProvider)
+  - Potential 50-80% faster thumbnail generation on first load
+  - Cache in standard Windows thumbnail cache location
+  - Fallback to FFmpeg for formats Windows doesn't support
+  - Consider performance impact vs implementation complexity
+  - May reduce initial library load time significantly
 
 ## Documentation
 
