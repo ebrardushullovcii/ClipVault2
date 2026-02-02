@@ -419,8 +419,9 @@ bool ReplayManager::save_clip()
     save_start_uli.LowPart = save_start_ft.dwLowDateTime;
     save_start_uli.HighPart = save_start_ft.dwHighDateTime;
     save_start_time_.store(save_start_uli.QuadPart);
+    save_start_tick_.store(GetTickCount64());
     LOG_INFO("[REPLAY] Save pending flag set to TRUE");
-    LOG_INFO("[PERF] Save operation started at FILETIME: " + std::to_string(save_start_time_.load()));
+    LOG_INFO("[PERF] Save operation started at FILETIME: " + std::to_string(save_start_time_.load()) + ", tick: " + std::to_string(save_start_tick_.load()));
 
     // Use procedure handler to trigger save (NOT output_signal!)
     LOG_INFO("[REPLAY] Getting procedure handler from replay buffer...");
@@ -526,10 +527,10 @@ void ReplayManager::on_replay_saved(void* data, calldata_t* calldata)
     LOG_INFO("[REPLAY] Processing save result...");
     LOG_INFO("[REPLAY] Path from calldata: " + std::string(path ? path : "(NULL)"));
 
-    // Calculate save duration
-    uint64_t save_start = self->save_start_time_.load();
-    uint64_t save_end = GetTickCount64();
-    uint64_t save_duration_ms = save_end - save_start;
+    // Calculate save duration using consistent boot-tick units
+    uint64_t save_start_tick = self->save_start_tick_.load();
+    uint64_t save_end_tick = GetTickCount64();
+    uint64_t save_duration_ms = save_end_tick - save_start_tick;
     LOG_INFO("[PERF] Save completed in " + std::to_string(save_duration_ms) + " ms");
     if (save_duration_ms > 1000) {
         LOG_WARNING("[PERF] Save took longer than 1 second - may cause CPU spike");

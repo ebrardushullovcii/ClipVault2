@@ -180,6 +180,12 @@ export interface ElectronAPI {
   on: (channel: string, callback: (data: unknown) => void) => (() => void) | undefined
 }
 
+export interface GameEntry {
+  name: string
+  processNames: string[]
+  twitchId: string
+}
+
 declare global {
   interface Window {
     electronAPI: ElectronAPI

@@ -79,6 +79,7 @@ private:
     std::atomic<uint64_t> frame_count_{0};
     std::atomic<uint64_t> last_stats_time_{0};
     std::atomic<uint64_t> save_start_time_{0};
+    std::atomic<uint64_t> save_start_tick_{0};
 
     // Start/stop render thread
     void start_render_thread();

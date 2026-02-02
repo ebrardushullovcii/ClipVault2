@@ -216,11 +216,9 @@ std::string GameDetector::detect_game_from_foreground()
         return "";
     }
 
-    // Get window title for debugging
     char window_title[256] = {};
     GetWindowTextA(hwnd, window_title, sizeof(window_title));
-    LOG_INFO("[GAME_DETECTOR] Foreground window title: " + std::string(window_title));
-    
+
     std::string process_name = get_process_name_from_window(hwnd);
     if (process_name.empty()) {
         LOG_WARNING("[GAME_DETECTOR] Could not get process name from foreground window");

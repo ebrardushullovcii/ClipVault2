@@ -1,13 +1,7 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react'
+import React, { useMemo, useEffect, useRef } from 'react'
 import { X, Search, Gamepad2 } from 'lucide-react'
 import type { ClipInfo } from '../types/electron'
-
-// Game database structure
-interface GameEntry {
-  name: string
-  processNames: string[]
-  twitchId: string
-}
+import { useGameTagEditorStore, type GameEntry } from '../stores/gameTagEditorStore'
 
 // Built-in games database as fallback
 const BUILTIN_GAMES: GameEntry[] = [
@@ -68,10 +62,17 @@ export const GameTagEditor: React.FC<GameTagEditorProps> = ({
   currentGame,
   onSave,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('')
-  const [selectedGame, setSelectedGame] = useState<string | null>(currentGame)
-  const [gamesList, setGamesList] = useState<GameEntry[]>([])
-  const [loading, setLoading] = useState(true)
+  const {
+    searchQuery,
+    selectedGame,
+    gamesList,
+    loading,
+    setSearchQuery,
+    setSelectedGame,
+    setGamesList,
+    setLoading,
+  } = useGameTagEditorStore()
+
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Load games database
