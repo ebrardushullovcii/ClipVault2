@@ -197,6 +197,12 @@ std::vector<AudioDeviceInfo> enumerate_devices(EDataFlow direction) {
         std::wstring wstrId = get_device_id(device.get());
         std::wstring wstrName = get_wasapi_device_name(device.get());
 
+        // Skip devices without IDs to avoid "default" placeholder issues
+        if (wstrId.empty()) {
+            LOG_ERROR("Audio device missing ID; skipping entry");
+            continue;
+        }
+
         AudioDeviceInfo info;
         info.is_default = false;
 
