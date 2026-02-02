@@ -64,18 +64,29 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
   const [isLoadingAudio, setIsLoadingAudio] = useState(false)
 
   // Trim markers (in seconds)
-  const [trimStart, setTrimStart] = useState(clip.metadata?.trim?.start || 0)
-  const [trimEnd, setTrimEnd] = useState(clip.metadata?.trim?.end || metadata.duration || 0)
+  const [trimStart, setTrimStart] = useState(clip.metadata?.trim?.start ?? 0)
+  const [trimEnd, setTrimEnd] = useState(clip.metadata?.trim?.end ?? metadata.duration ?? 0)
   const [isDragging, setIsDragging] = useState<'start' | 'end' | 'playhead' | null>(null)
 
   // Audio tracks (for export selection)
-  const [audioTrack1, setAudioTrack1] = useState(clip.metadata?.audio?.track1 !== false) // Default true
-  const [audioTrack2, setAudioTrack2] = useState(clip.metadata?.audio?.track2 !== false) // Default true
+  const [audioTrack1, setAudioTrack1] = useState(clip.metadata?.audio?.track1 !== false)
+  const [audioTrack2, setAudioTrack2] = useState(clip.metadata?.audio?.track2 !== false)
   const [isFavorite, setIsFavorite] = useState(clip.metadata?.favorite || false)
   const [tags, setTags] = useState<string[]>(clip.metadata?.tags || [])
   const [newTag, setNewTag] = useState('')
   const [game, setGame] = useState(clip.metadata?.game || '')
   const [isEditingGame, setIsEditingGame] = useState(false)
+
+  // Track if we've already set trim end from video (to avoid re-setting on re-renders)
+  const isVideoDurationSetRef = useRef(false)
+  // Track if trimEnd was explicitly set from metadata
+  const isTrimEndFromMetadataRef = useRef(clip.metadata?.trim?.end !== undefined)
+
+  // Delete state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  // Editor settings
+  const [skipSeconds, setSkipSeconds] = useState(5)
 
   // Export state
   const [isExporting, setIsExporting] = useState(false)
@@ -84,15 +95,6 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
   const [targetSizeMB, setTargetSizeMB] = useState<number | 'original'>('original')
   const [showSizeDropdown, setShowSizeDropdown] = useState(false)
   const [videoSrc, setVideoSrc] = useState(`clipvault://clip/${encodeURIComponent(clip.filename)}`)
-
-  // Track if we've already set trim end from video (to avoid re-setting on re-renders)
-  const isVideoDurationSetRef = useRef(false)
-
-  // Delete state
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-
-  // Editor settings
-  const [skipSeconds, setSkipSeconds] = useState(5)
 
   // Load settings
   useEffect(() => {
@@ -814,6 +816,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
 
           {/* Game */}
           <button
+            type="button"
             onClick={() => setIsEditingGame(true)}
             className={`flex items-center gap-1 rounded-lg px-2 py-2 transition-colors ${
               game
@@ -865,12 +868,10 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
               onError={handleVideoError}
               onLoadedMetadata={() => {
                 const video = videoRef.current
-                // Only set trimEnd once from video metadata - ignore subsequent calls
                 if (video && video.duration && video.duration !== Infinity && !isVideoDurationSetRef.current) {
                   const videoDuration = video.duration
                   setDuration(videoDuration)
-                  // Only update if trimEnd hasn't been set from metadata (or is 0)
-                  if (trimEnd === 0) {
+                  if (!isTrimEndFromMetadataRef.current) {
                     setTrimEnd(videoDuration)
                     isVideoDurationSetRef.current = true
                     console.log('[Editor] Set trimEnd to video duration:', videoDuration)

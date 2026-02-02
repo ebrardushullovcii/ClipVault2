@@ -171,12 +171,13 @@ export const GameTagEditor: React.FC<GameTagEditorProps> = ({
   }
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
       onClick={onClose}
       onKeyDown={handleKeyDown}
+      tabIndex={0}
     >
-      <div 
+      <div
         className="w-full max-w-md rounded-xl border border-border bg-background-secondary shadow-2xl"
         onClick={e => e.stopPropagation()}
       >
@@ -188,12 +189,13 @@ export const GameTagEditor: React.FC<GameTagEditorProps> = ({
               Edit Game Tag
             </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
-          >
-            <X className="h-5 w-5" />
-          </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
+            >
+              <X className="h-5 w-5" />
+            </button>
         </div>
 
         {/* Content */}
@@ -239,54 +241,58 @@ export const GameTagEditor: React.FC<GameTagEditorProps> = ({
                 {searchQuery ? 'No games found matching your search.' : 'No games available.'}
               </div>
             ) : (
-              <div className="divide-y divide-border">
-                {filteredGames.map(game => (
-                  <button
-                    key={game.name}
-                    onClick={() => handleSelectGame(game.name)}
-                    className={`flex w-full items-center gap-3 px-4 py-2 text-left transition-colors ${
-                      selectedGame === game.name
-                        ? 'bg-purple-500/20 text-purple-400'
-                        : 'text-text-secondary hover:bg-background-secondary'
-                    }`}
-                  >
-                    <Gamepad2 className={`h-4 w-4 ${selectedGame === game.name ? 'text-purple-400' : 'text-text-muted'}`} />
-                    <span className="flex-1 text-sm">{game.name}</span>
-                    {selectedGame === game.name && (
-                      <span className="text-xs text-purple-400">Selected</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+                <div className="divide-y divide-border">
+                  {filteredGames.map(game => (
+                    <button
+                      type="button"
+                      key={game.name}
+                      onClick={() => handleSelectGame(game.name)}
+                      className={`flex w-full items-center gap-3 px-4 py-2 text-left transition-colors ${
+                        selectedGame === game.name
+                          ? 'bg-purple-500/20 text-purple-400'
+                          : 'text-text-secondary hover:bg-background-secondary'
+                      }`}
+                    >
+                      <Gamepad2 className={`h-4 w-4 ${selectedGame === game.name ? 'text-purple-400' : 'text-text-muted'}`} />
+                      <span className="flex-1 text-sm">{game.name}</span>
+                      {selectedGame === game.name && (
+                        <span className="text-xs text-purple-400">Selected</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-          {/* Actions */}
-          <div className="flex items-center justify-between">
-            <button
-              onClick={handleClear}
-              disabled={!selectedGame}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:opacity-50"
-            >
-              Clear Game Tag
-            </button>
-            <div className="flex items-center gap-2">
+            {/* Actions */}
+            <div className="flex items-center justify-between">
               <button
-                onClick={onClose}
-                className="rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-background-primary"
+                type="button"
+                onClick={handleClear}
+                disabled={!selectedGame}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:opacity-50"
               >
-                Cancel
+                Clear Game Tag
               </button>
-              <button
-                onClick={handleSave}
-                className="rounded-lg bg-accent-primary px-4 py-2 text-sm font-medium text-background-primary transition-colors hover:bg-accent-primary/90"
-              >
-                Save
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-background-primary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  className="rounded-lg bg-accent-primary px-4 py-2 text-sm font-medium text-background-primary transition-colors hover:bg-accent-primary/90"
+                >
+                  Save
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  )
-}
+    )
+  }

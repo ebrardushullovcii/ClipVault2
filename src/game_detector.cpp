@@ -9,10 +9,7 @@
 #include <algorithm>
 #include <cctype>
 
-// JSON parsing - using nlohmann/json if available, otherwise simple parser
-// For now, we'll implement a simple JSON parser for the game database
-#include <sstream>
-#include <regex>
+#include "json.hpp"
 
 namespace clipvault {
 
@@ -90,120 +87,54 @@ bool GameDatabase::load(const std::string& filepath)
                         std::istreambuf_iterator<char>());
     file.close();
     
-    // Simple JSON parsing for the games array
-    // Look for "games": [ ... ] and extract game entries
-    
+    // Parse JSON using nlohmann::json
     games_.clear();
     
-    // Extract version
-    size_t version_pos = content.find("\"version\"");
-    if (version_pos != std::string::npos) {
-        size_t colon_pos = content.find(":", version_pos);
-        size_t quote_start = content.find("\"", colon_pos);
-        size_t quote_end = content.find("\"", quote_start + 1);
-        if (quote_start != std::string::npos && quote_end != std::string::npos) {
-            version_ = content.substr(quote_start + 1, quote_end - quote_start - 1);
+    try {
+        auto json = nlohmann::json::parse(content);
+        
+        // Extract version
+        if (json.contains("version") && json["version"].is_string()) {
+            version_ = json["version"];
             LOG_INFO("[GAME_DB] Database version: " + version_);
         }
-    }
-    
-    // Find games array
-    size_t games_start = content.find("\"games\"");
-    if (games_start == std::string::npos) {
-        LOG_ERROR("[GAME_DB] Could not find 'games' array in database");
-        return false;
-    }
-    
-    // Find array start
-    size_t array_start = content.find("[", games_start);
-    if (array_start == std::string::npos) {
-        LOG_ERROR("[GAME_DB] Could not find games array start");
-        return false;
-    }
-    
-    // Find array end (matching bracket)
-    int bracket_count = 1;
-    size_t array_end = array_start + 1;
-    while (bracket_count > 0 && array_end < content.length()) {
-        if (content[array_end] == '[') bracket_count++;
-        else if (content[array_end] == ']') bracket_count--;
-        array_end++;
-    }
-    
-    std::string games_array = content.substr(array_start, array_end - array_start);
-    
-    // Parse individual game objects
-    // Look for { ... } objects in the array
-    size_t pos = 0;
-    while ((pos = games_array.find("{", pos)) != std::string::npos) {
-        size_t obj_start = pos;
-        int obj_bracket_count = 1;
-        size_t obj_end = obj_start + 1;
         
-        while (obj_bracket_count > 0 && obj_end < games_array.length()) {
-            if (games_array[obj_end] == '{') obj_bracket_count++;
-            else if (games_array[obj_end] == '}') obj_bracket_count--;
-            obj_end++;
-        }
-        
-        if (obj_bracket_count == 0) {
-            std::string game_obj = games_array.substr(obj_start, obj_end - obj_start);
-            
-            // Extract game name
-            GameInfo game;
-            size_t name_pos = game_obj.find("\"name\"");
-            if (name_pos != std::string::npos) {
-                size_t colon_pos = game_obj.find(":", name_pos);
-                size_t quote_start = game_obj.find("\"", colon_pos);
-                size_t quote_end = game_obj.find("\"", quote_start + 1);
-                if (quote_start != std::string::npos && quote_end != std::string::npos) {
-                    game.name = game_obj.substr(quote_start + 1, quote_end - quote_start - 1);
+        // Parse games array
+        if (json.contains("games") && json["games"].is_array()) {
+            for (const auto& game_json : json["games"]) {
+                GameInfo game;
+                
+                if (game_json.contains("name") && game_json["name"].is_string()) {
+                    game.name = game_json["name"];
                 }
-            }
-            
-            // Extract process names (processNames array)
-            size_t proc_pos = game_obj.find("\"processNames\"");
-            if (proc_pos != std::string::npos) {
-                size_t proc_array_start = game_obj.find("[", proc_pos);
-                size_t proc_array_end = game_obj.find("]", proc_array_start);
-                if (proc_array_start != std::string::npos && proc_array_end != std::string::npos) {
-                    std::string proc_array = game_obj.substr(proc_array_start, proc_array_end - proc_array_start + 1);
-                    
-                    // Extract individual process names
-                    size_t proc_name_pos = 0;
-                    while ((proc_name_pos = proc_array.find("\"", proc_name_pos)) != std::string::npos) {
-                        size_t proc_name_end = proc_array.find("\"", proc_name_pos + 1);
-                        if (proc_name_end != std::string::npos) {
-                            std::string proc_name = proc_array.substr(proc_name_pos + 1, proc_name_end - proc_name_pos - 1);
-                            if (!proc_name.empty()) {
-                                game.process_names.push_back(proc_name);
-                            }
-                            proc_name_pos = proc_name_end + 1;
-                        } else {
-                            break;
+                
+                if (game_json.contains("processNames") && game_json["processNames"].is_array()) {
+                    for (const auto& proc_name : game_json["processNames"]) {
+                        if (proc_name.is_string() && !proc_name.get<std::string>().empty()) {
+                            game.process_names.push_back(proc_name);
                         }
                     }
                 }
-            }
-            
-            // Extract twitch ID
-            size_t twitch_pos = game_obj.find("\"twitchId\"");
-            if (twitch_pos != std::string::npos) {
-                size_t colon_pos = game_obj.find(":", twitch_pos);
-                size_t quote_start = game_obj.find("\"", colon_pos);
-                size_t quote_end = game_obj.find("\"", quote_start + 1);
-                if (quote_start != std::string::npos && quote_end != std::string::npos) {
-                    game.twitch_id = game_obj.substr(quote_start + 1, quote_end - quote_start - 1);
+                
+                if (game_json.contains("twitchId") && game_json["twitchId"].is_string()) {
+                    game.twitch_id = game_json["twitchId"];
+                }
+                
+                // Add game if we have a name and at least one process name
+                if (!game.name.empty() && !game.process_names.empty()) {
+                    games_.push_back(game);
                 }
             }
-            
-            // Add game if we have a name and at least one process name
-            if (!game.name.empty() && !game.process_names.empty()) {
-                games_.push_back(game);
-            }
+        } else {
+            LOG_ERROR("[GAME_DB] Could not find 'games' array in database");
+            return false;
         }
-        
-        pos = obj_end;
+    } catch (const nlohmann::json::parse_error& e) {
+        LOG_ERROR("[GAME_DB] JSON parse error: " + std::string(e.what()));
+        return false;
+    } catch (const std::exception& e) {
+        LOG_ERROR("[GAME_DB] Error parsing database: " + std::string(e.what()));
+        return false;
     }
     
     loaded_ = !games_.empty();
@@ -220,25 +151,10 @@ bool GameDatabase::load(const std::string& filepath)
         }
         count++;
     }
-    
-    // Check if League of Legends is in the list
-    bool has_lol = false;
-    for (const auto& game : games_) {
-        if (game.name == "League of Legends") {
-            has_lol = true;
-            LOG_INFO("[GAME_DB] League of Legends found in database:");
-            for (const auto& proc : game.process_names) {
-                LOG_INFO("[GAME_DB]   Process: " + proc);
-            }
-            break;
-        }
-    }
-    if (!has_lol) {
-        LOG_WARNING("[GAME_DB] League of Legends NOT found in database!");
-    }
-    
+
+    LOG_INFO("[GAME_DB] Loaded " + std::to_string(games_.size()) + " games from database");
     LOG_INFO("[GAME_DB] ==========================================");
-    
+
     return loaded_;
 }
 
@@ -262,50 +178,6 @@ std::optional<GameInfo> GameDatabase::find_game_by_process(const std::string& pr
 // ============================================================================
 // GameDetector Implementation
 // ============================================================================
-
-// Helper function to enumerate all running processes
-void log_all_running_processes()
-{
-    LOG_INFO("[GAME_DETECTOR] ==========================================");
-    LOG_INFO("[GAME_DETECTOR] ENUMERATING ALL RUNNING PROCESSES:");
-    
-    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnapshot == INVALID_HANDLE_VALUE) {
-        LOG_WARNING("[GAME_DETECTOR] Failed to create process snapshot");
-        return;
-    }
-    
-    PROCESSENTRY32 pe32;
-    pe32.dwSize = sizeof(PROCESSENTRY32);
-    
-    if (!Process32First(hSnapshot, &pe32)) {
-        CloseHandle(hSnapshot);
-        LOG_WARNING("[GAME_DETECTOR] Failed to get first process");
-        return;
-    }
-    
-    int count = 0;
-    do {
-        // Check for League of Legends specifically
-        bool is_lol = (strstr(pe32.szExeFile, "League") != nullptr || 
-                       strstr(pe32.szExeFile, "Riot") != nullptr);
-        std::string marker = is_lol ? " <-- League related!" : "";
-        
-        LOG_INFO("[GAME_DETECTOR]   [" + std::to_string(pe32.th32ProcessID) + "] " + 
-                 std::string(pe32.szExeFile) + marker);
-        count++;
-        
-        // Stop after 100 processes to avoid flooding logs
-        if (count >= 100) {
-            LOG_INFO("[GAME_DETECTOR]   ... and " + std::to_string(count) + " more processes (truncated)");
-            break;
-        }
-    } while (Process32Next(hSnapshot, &pe32));
-    
-    CloseHandle(hSnapshot);
-    LOG_INFO("[GAME_DETECTOR] Total processes logged: " + std::to_string(count));
-    LOG_INFO("[GAME_DETECTOR] ==========================================");
-}
 
 GameDetector& GameDetector::instance()
 {
@@ -339,16 +211,13 @@ std::string GameDetector::detect_game_from_foreground()
     LOG_INFO("[GAME_DETECTOR] ==========================================");
     LOG_INFO("[GAME_DETECTOR] Starting game detection from foreground window");
     LOG_INFO("[GAME_DETECTOR] Database loaded: " + std::string(GameDatabase::instance().is_loaded() ? "YES" : "NO"));
-    
-    // Log ALL running processes to see what League process is actually named
-    log_all_running_processes();
-    
+
     HWND hwnd = get_foreground_window();
     if (!hwnd) {
         LOG_WARNING("[GAME_DETECTOR] No foreground window found!");
         return "";
     }
-    
+
     // Get window title for debugging
     char window_title[256] = {};
     GetWindowTextA(hwnd, window_title, sizeof(window_title));
@@ -512,18 +381,17 @@ std::string GameDetector::sanitize_for_filename(const std::string& game_name)
             c = '_';
         }
     }
-    
     // Remove .exe extension if present
     size_t exe_pos = result.find(".exe");
     if (exe_pos != std::string::npos) {
-        result = result.substr(0, exe_pos);
+        result.resize(exe_pos);
     }
-    
+
     // Limit length to 50 characters
     if (result.length() > 50) {
-        result = result.substr(0, 50);
+        result.resize(50);
     }
-    
+
     return result;
 }
 

@@ -7,35 +7,6 @@ import { useVideoMetadata, type VideoMetadata } from '../../hooks/useVideoMetada
 import { useLibraryState } from '../../hooks/useLibraryState'
 import type { ClipInfo, ClipMetadata } from '../../types/electron'
 
-// Extract game name from filename (format: YYYY-MM-DD_HH-MM-SS_GameName.mp4 or GameName__YYYY-MM-DD_HH-MM-SS.mp4)
-// Takes the LAST segment after __ and cleans it up - used for DISPLAY only, NOT for filtering
-function extractGameFromFilename(filename: string): string {
-  const baseName = filename.replace('.mp4', '')
-  const parts = baseName.split('__')
-  if (parts.length > 1) {
-    // Get the last segment (the game name)
-    let lastPart = parts[parts.length - 1]
-
-    // If it looks like a timestamp (HH-MM-SS format), something is wrong
-    if (/^\d{2}-\d{2}-\d{2}$/.test(lastPart)) {
-      return ''
-    }
-
-    // If it contains duplicates like "League of Legends League of Legends", take just the first occurrence
-    const words = lastPart.split(' ')
-    const seen = new Set<string>()
-    const cleanWords: string[] = []
-    for (const word of words) {
-      if (seen.has(word)) break // Stop at first duplicate
-      seen.add(word)
-      cleanWords.push(word)
-    }
-
-    return cleanWords.join(' ')
-  }
-  return ''
-}
-
 export interface LibraryProps {
   onOpenEditor: (clip: ClipInfo, metadata: VideoMetadata) => void
   onRegisterUpdate: ((updateFn: (clipId: string, metadata: ClipMetadata) => void) => void) | undefined
@@ -229,13 +200,13 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
 
     try {
       const newMetadata: ClipMetadata = {
-        ...editingGameClip.metadata,
+        ...(editingGameClip.metadata ?? {}),
         game: game || undefined,
       }
-      
+
       // Save to backend
       await window.electronAPI.saveClipMetadata(editingGameClip.id, newMetadata)
-      
+
       // Update local state
       setClips(prev => prev.map(clip =>
         clip.id === editingGameClip.id
@@ -245,7 +216,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
     } catch (error) {
       console.error('[Library] Failed to update game tag:', error)
     }
-    
+
     setEditingGameClip(null)
   }, [editingGameClip])
 
@@ -570,6 +541,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
               </select>
               {libraryState.selectedGame && (
                 <button
+                  type="button"
                   onClick={() => setSelectedGame(null)}
                   className="ml-2 rounded-md p-1 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
                   title="Clear game filter"
@@ -582,6 +554,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
             <div className="flex items-center gap-2">
               <span className="text-xs text-text-muted">No games tagged</span>
               <button
+                type="button"
                 onClick={() => {
                   if (clips.length > 0) {
                     setEditingGameClip(clips[0])
@@ -616,7 +589,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
               <p className="mb-4 text-text-secondary">{error}</p>
-              <button onClick={loadClips} className="btn-primary">
+              <button type="button" onClick={loadClips} className="btn-primary">
                 Retry
               </button>
             </div>

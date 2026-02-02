@@ -642,6 +642,11 @@ const char* output_get_last_error(obs_output_t* output)
     return g_obs_output_get_last_error && output ? g_obs_output_get_last_error(output) : nullptr;
 }
 
+const char* output_get_last_replay(obs_output_t* output)
+{
+    return g_obs_output_get_last_replay && output ? g_obs_output_get_last_replay(output) : nullptr;
+}
+
 bool output_can_begin_data_capture(obs_output_t* output, uint32_t flags)
 {
     return g_obs_output_can_begin_data_capture && output ? g_obs_output_can_begin_data_capture(output, flags) : false;

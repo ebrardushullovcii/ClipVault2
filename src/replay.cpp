@@ -15,6 +15,75 @@
 
 namespace clipvault {
 
+static std::string escape_json_string(const std::string& input)
+{
+    std::string output;
+    output.reserve(input.size());
+    for (char c : input) {
+        switch (c) {
+            case '"':  output += "\\\""; break;
+            case '\\': output += "\\\\"; break;
+            case '\n': output += "\\n";  break;
+            case '\r': output += "\\r";  break;
+            case '\t': output += "\\t";  break;
+            default:   output += c;      break;
+        }
+    }
+    return output;
+}
+
+static bool apply_game_tag_and_metadata(
+    const std::string& original_path,
+    const std::string& output_dir,
+    const std::string& current_game,
+    std::string& out_final_path)
+{
+    if (current_game.empty()) {
+        return false;
+    }
+
+    try {
+        std::filesystem::path fspath(original_path);
+        std::string sanitized_game = GameDetector::sanitize_for_filename(current_game);
+        std::filesystem::path new_path = fspath.parent_path() /
+            (fspath.stem().string() + "_" + sanitized_game + fspath.extension().string());
+
+        std::filesystem::rename(fspath, new_path);
+        out_final_path = new_path.string();
+
+        std::string metadata_dir = output_dir + "\\clips-metadata";
+        std::filesystem::create_directories(metadata_dir);
+        std::filesystem::path metadata_path = std::filesystem::path(metadata_dir) /
+            (new_path.stem().string() + ".json");
+
+        auto now_utc = std::chrono::system_clock::now();
+        auto time_utc = std::chrono::system_clock::to_time_t(now_utc);
+        std::stringstream ts;
+        ts << std::put_time(std::gmtime(&time_utc), "%Y-%m-%dT%H:%M:%S.000Z");
+
+        std::ofstream metadata_file(metadata_path);
+        if (metadata_file.is_open()) {
+            metadata_file << "{\n";
+            metadata_file << "  \"favorite\": false,\n";
+            metadata_file << "  \"tags\": [],\n";
+            metadata_file << "  \"game\": \"" << escape_json_string(current_game) << "\",\n";
+            metadata_file << "  \"audio\": {\n";
+            metadata_file << "    \"track1\": true,\n";
+            metadata_file << "    \"track2\": true\n";
+            metadata_file << "  },\n";
+            metadata_file << "  \"playheadPosition\": 0,\n";
+            metadata_file << "  \"lastModified\": \"" << ts.str() << "\"\n";
+            metadata_file << "}\n";
+            metadata_file.close();
+            return true;
+        }
+        return false;
+    } catch (const std::exception& e) {
+        LOG_WARNING("[GAME_TAG] Failed to apply game tag and metadata: " + std::string(e.what()));
+        return false;
+    }
+}
+
 ReplayManager& ReplayManager::instance()
 {
     static ReplayManager instance;
@@ -361,9 +430,14 @@ bool ReplayManager::save_clip()
     LOG_INFO("    Microphone: " + std::string(audio.microphone_enabled ? "enabled" : "disabled"));
     
     save_pending_ = true;
-    save_start_time_.store(GetTickCount64());
+    FILETIME save_start_ft;
+    GetSystemTimeAsFileTime(&save_start_ft);
+    ULARGE_INTEGER save_start_uli;
+    save_start_uli.LowPart = save_start_ft.dwLowDateTime;
+    save_start_uli.HighPart = save_start_ft.dwHighDateTime;
+    save_start_time_.store(save_start_uli.QuadPart);
     LOG_INFO("[REPLAY] Save pending flag set to TRUE");
-    LOG_INFO("[PERF] Save operation started at tick: " + std::to_string(save_start_time_.load()));
+    LOG_INFO("[PERF] Save operation started at FILETIME: " + std::to_string(save_start_time_.load()));
 
     // Use procedure handler to trigger save (NOT output_signal!)
     LOG_INFO("[REPLAY] Getting procedure handler from replay buffer...");
@@ -465,7 +539,7 @@ void ReplayManager::on_replay_saved(void* data, calldata_t* calldata)
     LOG_INFO("[REPLAY] save_pending was: " + std::string(self->save_pending_ ? "TRUE" : "FALSE"));
 
     const char* path = obs_api::calldata_string(calldata, "path");
-    
+
     LOG_INFO("[REPLAY] Processing save result...");
     LOG_INFO("[REPLAY] Path from calldata: " + std::string(path ? path : "(NULL)"));
 
@@ -477,75 +551,39 @@ void ReplayManager::on_replay_saved(void* data, calldata_t* calldata)
     if (save_duration_ms > 1000) {
         LOG_WARNING("[PERF] Save took longer than 1 second - may cause CPU spike");
     }
-    
+
     if (path) {
         self->last_saved_file_ = path;
         LOG_INFO("[REPLAY] SAVE SUCCESSFUL!");
         LOG_INFO("  File Path: " + self->last_saved_file_);
-        
-        // Log completion timestamp
-        auto now = std::chrono::system_clock::now();
-        auto time = std::chrono::system_clock::to_time_t(now);
+
+        // Log completion timestamp (UTC)
+        auto now_local = std::chrono::system_clock::now();
+        auto time_local = std::chrono::system_clock::to_time_t(now_local);
         std::stringstream ss;
-        ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
+        ss << std::put_time(std::gmtime(&time_local), "%Y-%m-%d %H:%M:%S");
         LOG_INFO("  Timestamp: " + ss.str());
-        
+
         // Log file info
         std::string dir = ConfigManager::instance().output_path();
         LOG_INFO("  Output Directory: " + dir);
-        
+
         // Check if file exists
         std::filesystem::path fspath(path);
         if (std::filesystem::exists(fspath)) {
             auto file_size = std::filesystem::file_size(fspath);
             LOG_INFO("  File Size: " + std::to_string(file_size / 1024 / 1024) + " MB");
             LOG_INFO("  File EXISTS: YES");
-            
-            // Game detection: rename file and create metadata if game was detected
+
             std::string current_game = self->current_game();
             if (!current_game.empty()) {
                 LOG_INFO("[GAME_TAG] Game detected for this clip: " + current_game);
 
-                // Create new filename with game name
-                std::string sanitized_game = GameDetector::sanitize_for_filename(current_game);
-                std::filesystem::path new_path = fspath.parent_path() /
-                    (fspath.stem().string() + "_" + sanitized_game + fspath.extension().string());
-
-                // Rename the file
-                try {
-                    std::filesystem::rename(fspath, new_path);
-                    LOG_INFO("[GAME_TAG] Renamed clip to: " + new_path.string());
-                    self->last_saved_file_ = new_path.string();
-
-                    // Create metadata file in clips-metadata folder (same format as UI)
-                    std::string metadata_dir = dir + "\\clips-metadata";
-                    std::filesystem::create_directories(metadata_dir);
-                    std::filesystem::path metadata_path = std::filesystem::path(metadata_dir) /
-                        (new_path.stem().string() + ".json");
-
-                    auto now = std::chrono::system_clock::now();
-                    auto time = std::chrono::system_clock::to_time_t(now);
-                    std::stringstream ts;
-                    ts << std::put_time(std::localtime(&time), "%Y-%m-%dT%H:%M:%S.000Z");
-
-                    std::ofstream metadata_file(metadata_path);
-                    if (metadata_file.is_open()) {
-                        metadata_file << "{\n";
-                        metadata_file << "  \"favorite\": false,\n";
-                        metadata_file << "  \"tags\": [],\n";
-                        metadata_file << "  \"game\": \"" << current_game << "\",\n";
-                        metadata_file << "  \"audio\": {\n";
-                        metadata_file << "    \"track1\": true,\n";
-                        metadata_file << "    \"track2\": true\n";
-                        metadata_file << "  },\n";
-                        metadata_file << "  \"playheadPosition\": 0,\n";
-                        metadata_file << "  \"lastModified\": \"" << ts.str() << "\"\n";
-                        metadata_file << "}\n";
-                        metadata_file.close();
-                        LOG_INFO("[GAME_TAG] Created metadata file: " + metadata_path.string());
-                    }
-                } catch (const std::exception& e) {
-                    LOG_WARNING("[GAME_TAG] Failed to rename file or create metadata: " + std::string(e.what()));
+                std::string final_path;
+                if (apply_game_tag_and_metadata(path, dir, current_game, final_path)) {
+                    self->last_saved_file_ = final_path;
+                    LOG_INFO("[GAME_TAG] Renamed clip to: " + final_path);
+                    LOG_INFO("[GAME_TAG] Created metadata file");
                 }
             } else {
                 LOG_INFO("[GAME_TAG] No game detected for this clip");
@@ -569,6 +607,7 @@ void ReplayManager::on_replay_saved(void* data, calldata_t* calldata)
         std::string latest_file;
         uint64_t latest_creation_time = 0;
 
+        // Use the save start time captured at save_clip() time (FILETIME format)
         uint64_t save_start = self->save_start_time_.load();
 
         LOG_INFO("[REPLAY] Looking for most recently created OBS file...");
@@ -595,8 +634,8 @@ void ReplayManager::on_replay_saved(void* data, calldata_t* calldata)
                     uli.HighPart = ft.dwHighDateTime;
                     uint64_t creation_time = uli.QuadPart;
 
-                    // Must be created after save started
-                    if (creation_time <= save_start * 10000) {
+                    // Must be created after save started (both in FILETIME format)
+                    if (creation_time <= save_start) {
                         continue;
                     }
 
@@ -625,45 +664,11 @@ void ReplayManager::on_replay_saved(void* data, calldata_t* calldata)
             if (!current_game.empty()) {
                 LOG_INFO("[GAME_TAG] Game detected for this clip (fallback path): " + current_game);
 
-                std::string sanitized_game = GameDetector::sanitize_for_filename(current_game);
-                std::filesystem::path new_path = fspath.parent_path() /
-                    (fspath.stem().string() + "_" + sanitized_game + fspath.extension().string());
-
-                try {
-                    std::filesystem::rename(fspath, new_path);
-                    LOG_INFO("[GAME_TAG] Renamed clip to: " + new_path.string());
-                    self->last_saved_file_ = new_path.string();
-                    fspath = new_path;
-
-                    // Create metadata file in clips-metadata folder
-                    std::string metadata_dir = dir + "\\clips-metadata";
-                    std::filesystem::create_directories(metadata_dir);
-                    std::filesystem::path metadata_path = std::filesystem::path(metadata_dir) /
-                        (new_path.stem().string() + ".json");
-
-                    auto now = std::chrono::system_clock::now();
-                    auto time = std::chrono::system_clock::to_time_t(now);
-                    std::stringstream ts;
-                    ts << std::put_time(std::localtime(&time), "%Y-%m-%dT%H:%M:%S.000Z");
-
-                    std::ofstream metadata_file(metadata_path);
-                    if (metadata_file.is_open()) {
-                        metadata_file << "{\n";
-                        metadata_file << "  \"favorite\": false,\n";
-                        metadata_file << "  \"tags\": [],\n";
-                        metadata_file << "  \"game\": \"" << current_game << "\",\n";
-                        metadata_file << "  \"audio\": {\n";
-                        metadata_file << "    \"track1\": true,\n";
-                        metadata_file << "    \"track2\": true\n";
-                        metadata_file << "  },\n";
-                        metadata_file << "  \"playheadPosition\": 0,\n";
-                        metadata_file << "  \"lastModified\": \"" << ts.str() << "\"\n";
-                        metadata_file << "}\n";
-                        metadata_file.close();
-                        LOG_INFO("[GAME_TAG] Created metadata file: " + metadata_path.string());
-                    }
-                } catch (const std::exception& e) {
-                    LOG_WARNING("[GAME_TAG] Failed to rename file or create metadata: " + std::string(e.what()));
+                std::string final_path;
+                if (apply_game_tag_and_metadata(latest_file, dir, current_game, final_path)) {
+                    self->last_saved_file_ = final_path;
+                    LOG_INFO("[GAME_TAG] Renamed clip to: " + final_path);
+                    LOG_INFO("[GAME_TAG] Created metadata file");
                 }
             } else {
                 LOG_INFO("[GAME_TAG] No game detected for this clip (fallback path)");

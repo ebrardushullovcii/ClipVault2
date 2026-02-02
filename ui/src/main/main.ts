@@ -781,16 +781,6 @@ ipcMain.handle('audio:getDevices', async (_, type: 'output' | 'input') => {
   }
 })
 
-// Extract game name from filename (format: YYYY-MM-DD_HH-MM-SS_GameName.mp4)
-function extractGameFromFilename(filename: string): string {
-  const baseName = filename.replace('.mp4', '')
-  const parts = baseName.split('__')
-  if (parts.length > 1) {
-    return parts[parts.length - 1].replace(/_/g, ' ')
-  }
-  return ''
-}
-
 // Get list of clips
 ipcMain.handle('clips:getList', async () => {
   try {
@@ -824,9 +814,6 @@ ipcMain.handle('clips:getList', async () => {
           } catch (e) {
             console.error('Failed to read metadata:', e)
           }
-
-          // Game detection: only use metadata.game if it exists
-          // The UI will extract game from filename for display purposes if needed
 
           return {
             id: clipId,

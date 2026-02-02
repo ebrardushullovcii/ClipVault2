@@ -4,6 +4,7 @@
 #include <functional>
 #include <thread>
 #include <atomic>
+#include <mutex>
 #include "obs_core.h"
 
 // Forward declaration
@@ -26,10 +27,17 @@ public:
 
     // Save the current buffer to file
     bool save_clip();
-    
-    // Set the current game for the next save operation
-    void set_current_game(const std::string& game_name) { current_game_ = game_name; }
-    const std::string& current_game() const { return current_game_; }
+
+    // Set the current game for the next save operation (thread-safe)
+    void set_current_game(const std::string& game_name) {
+        std::lock_guard<std::mutex> lock(current_game_mutex_);
+        current_game_ = game_name;
+    }
+    // Get the current game (thread-safe, returns a copy)
+    std::string current_game() const {
+        std::lock_guard<std::mutex> lock(current_game_mutex_);
+        return current_game_;
+    }
 
     // Check status
     bool is_initialized() const { return initialized_; }
@@ -41,7 +49,7 @@ public:
     // Callback for when save completes
     using SaveCallback = std::function<void(const std::string& path, bool success)>;
     void set_save_callback(SaveCallback callback) { save_callback_ = callback; }
-    
+
     // Debug: log pipeline statistics
     void log_pipeline_stats();
 
@@ -59,7 +67,8 @@ private:
     bool save_pending_ = false;
     std::string last_error_;
     std::string last_saved_file_;
-    std::string current_game_;  // Game name for next save operation
+    std::string current_game_;  // Game name for next save operation (protected by mutex)
+    mutable std::mutex current_game_mutex_;
     SaveCallback save_callback_;
 
     // Render thread (for periodic health checks - OBS handles frame production)
