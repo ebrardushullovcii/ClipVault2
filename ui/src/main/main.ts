@@ -5,7 +5,8 @@ import { unlink } from 'fs'
 import { unlink as fsUnlink } from 'fs'
 import { existsSync, createReadStream, readFileSync, createWriteStream } from 'fs'
 import ffmpeg from 'fluent-ffmpeg'
-import { spawn, execSync, ChildProcess } from 'child_process'
+import { spawn, execSync, execFile, ChildProcess } from 'child_process'
+import { promisify } from 'util'
 import { cleanupOrphanedCache, getCacheStats, formatBytes } from './cleanup'
 import chokidar from 'chokidar'
 
@@ -714,7 +715,9 @@ ipcMain.handle('system:getMonitors', async () => {
   }
 })
 
-// Get audio devices
+// Get audio devices - async implementation to avoid blocking main process
+const execFileAsync = promisify(execFile)
+
 ipcMain.handle('audio:getDevices', async (_, type: 'output' | 'input') => {
   try {
     const backendPath = isDev
@@ -726,22 +729,21 @@ ipcMain.handle('audio:getDevices', async (_, type: 'output' | 'input') => {
       return []
     }
 
-    const { execSync } = require('child_process')
-    const output = execSync(`"${backendPath}" --list-audio-devices`, {
-      encoding: 'utf-8',
+    // Use async execFile to avoid blocking the main process
+    const { stdout } = await execFileAsync(backendPath, ['--list-audio-devices'], {
+      encoding: 'utf8',
       timeout: 5000,
-      stdio: ['pipe', 'pipe', 'pipe'],
     })
 
     try {
-      const devices = JSON.parse(output)
+      const devices = JSON.parse(stdout)
       if (type === 'output') {
         return devices.filter((d: { type: string }) => d.type === 'output')
       } else {
         return devices.filter((d: { type: string }) => d.type === 'input')
       }
     } catch {
-      console.error('Failed to parse audio devices:', output)
+      console.error('Failed to parse audio devices:', stdout)
       return []
     }
   } catch (error) {

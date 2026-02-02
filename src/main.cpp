@@ -69,6 +69,24 @@ void parse_arguments(LPSTR lpCmdLine)
     }
 }
 
+// Helper to escape strings for JSON output
+std::string escape_json_string(const std::string& str) {
+    std::string escaped;
+    for (char c : str) {
+        switch (c) {
+            case '"': escaped += "\\\""; break;
+            case '\\': escaped += "\\\\"; break;
+            case '\b': escaped += "\\b"; break;
+            case '\f': escaped += "\\f"; break;
+            case '\n': escaped += "\\n"; break;
+            case '\r': escaped += "\\r"; break;
+            case '\t': escaped += "\\t"; break;
+            default: escaped += c;
+        }
+    }
+    return escaped;
+}
+
 // Get the directory where the exe is located
 std::string get_exe_directory()
 {
@@ -184,12 +202,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         for (const auto& dev : output_devices) {
             if (!first) std::cout << ",";
             first = false;
-            std::cout << "{\"id\":\"" << dev.id << "\",\"name\":\"" << dev.name << "\",\"type\":\"output\",\"is_default\":" << (dev.is_default ? "true" : "false") << "}";
+            std::cout << "{\"id\":\"" << escape_json_string(dev.id) << "\",\"name\":\"" << escape_json_string(dev.name) << "\",\"type\":\"output\",\"is_default\":" << (dev.is_default ? "true" : "false") << "}";
         }
 
         for (const auto& dev : input_devices) {
-            std::cout << ",";
-            std::cout << "{\"id\":\"" << dev.id << "\",\"name\":\"" << dev.name << "\",\"type\":\"input\",\"is_default\":" << (dev.is_default ? "true" : "false") << "}";
+            if (!first) std::cout << ",";
+            first = false;
+            std::cout << "{\"id\":\"" << escape_json_string(dev.id) << "\",\"name\":\"" << escape_json_string(dev.name) << "\",\"type\":\"input\",\"is_default\":" << (dev.is_default ? "true" : "false") << "}";
         }
 
         std::cout << "]";

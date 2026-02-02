@@ -26,17 +26,17 @@ static const size_t nvenc_count = sizeof(nvenc_ids) / sizeof(nvenc_ids[0]);
 // Map quality value (15-30) to encoder-specific settings
 QualityMapping get_quality_mapping(int quality) {
     // quality comes from settings (15=ultra, 18=high, 23=medium, 30=low)
-    if (quality <= 18) {
+    if (quality <= 15) {
         // Ultra quality
         return {15, 18, "p7", "slow"};
-    } else if (quality <= 21) {
+    } else if (quality <= 18) {
         // High quality
-        return {20, 21, "p5", "medium"};
-    } else if (quality <= 25) {
+        return {18, 21, "p5", "medium"};
+    } else if (quality <= 23) {
         // Medium quality
-        return {25, 23, "p3", "fast"};
+        return {23, 23, "p3", "fast"};
     } else {
-        // Low quality
+        // Low quality (30 and above)
         return {30, 28, "p1", "veryfast"};
     }
 }
@@ -227,6 +227,11 @@ bool EncoderManager::create_video_encoder()
 obs_data_t* EncoderManager::create_nvenc_settings(const char* encoder_id, const QualityMapping& quality)
 {
     obs_data_t* settings = obs_api::data_create();
+    
+    // Null check to avoid using nullptr in subsequent calls
+    if (!settings) {
+        return nullptr;
+    }
     
     if (strcmp(encoder_id, "jim_nvenc") == 0) {
         // jim_nvenc (obs-nvenc.dll) - modern NVENC with new API

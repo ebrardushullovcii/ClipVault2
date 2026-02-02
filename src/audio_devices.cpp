@@ -167,10 +167,9 @@ std::vector<AudioDeviceInfo> enumerate_devices(EDataFlow direction) {
         std::wstring wstrName = get_wasapi_device_name(device.get());
 
         AudioDeviceInfo info;
-        info.id = "default";
         info.is_default = false;
 
-        // Convert wide strings to UTF-8
+        // Convert wide strings to UTF-8 (only populate if conversion succeeds)
         if (!wstrId.empty()) {
             int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstrId.c_str(), (int)wstrId.size(), nullptr, 0, nullptr, nullptr);
             if (size_needed > 0) {
