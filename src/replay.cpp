@@ -15,23 +15,6 @@
 
 namespace clipvault {
 
-static std::string escape_json_string(const std::string& input)
-{
-    std::string output;
-    output.reserve(input.size());
-    for (char c : input) {
-        switch (c) {
-            case '"':  output += "\\\""; break;
-            case '\\': output += "\\\\"; break;
-            case '\n': output += "\\n";  break;
-            case '\r': output += "\\r";  break;
-            case '\t': output += "\\t";  break;
-            default:   output += c;      break;
-        }
-    }
-    return output;
-}
-
 static bool apply_game_tag_and_metadata(
     const std::string& original_path,
     const std::string& output_dir,

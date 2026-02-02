@@ -7,6 +7,23 @@
 
 namespace clipvault {
 
+std::string escape_json_string(const std::string& input) {
+    std::string output;
+    for (char c : input) {
+        switch (c) {
+            case '"':  output += "\\\""; break;
+            case '\\': output += "\\\\"; break;
+            case '\b': output += "\\b"; break;
+            case '\f': output += "\\f"; break;
+            case '\n': output += "\\n"; break;
+            case '\r': output += "\\r"; break;
+            case '\t': output += "\\t"; break;
+            default:   output += c;    break;
+        }
+    }
+    return output;
+}
+
 // Simple JSON value extraction helpers
 namespace {
 

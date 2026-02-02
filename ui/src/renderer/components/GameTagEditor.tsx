@@ -79,34 +79,17 @@ export const GameTagEditor: React.FC<GameTagEditorProps> = ({
     const loadGames = async () => {
       setLoading(true)
       let loadedGames: GameEntry[] = []
-      
-      // Try multiple possible paths
-      const possiblePaths = [
-        'games_database.json',
-        '../config/games_database.json',
-        '../../config/games_database.json',
-        '../../../config/games_database.json',
-        'bin/config/games_database.json',
-        '../../bin/config/games_database.json',
-      ]
 
-      for (const path of possiblePaths) {
-        try {
-          const response = await fetch(path)
-          if (response.ok) {
-            const data = await response.json()
-            if (data.games && Array.isArray(data.games)) {
-              loadedGames = data.games
-              console.log('[GameTagEditor] Loaded games from:', path)
-              break
-            }
-          }
-        } catch (error) {
-          // Continue to next path
+      try {
+        const response = await window.electronAPI.getGamesDatabase()
+        if (response.success && response.data?.games && Array.isArray(response.data.games)) {
+          loadedGames = response.data.games
+          console.log('[GameTagEditor] Loaded games from IPC API')
         }
+      } catch (error) {
+        console.log('[GameTagEditor] IPC API failed, using fallback')
       }
 
-      // Fallback to built-in games if none loaded
       if (loadedGames.length === 0) {
         console.log('[GameTagEditor] Using built-in games list (' + BUILTIN_GAMES.length + ' games)')
         loadedGames = BUILTIN_GAMES
@@ -180,6 +163,13 @@ export const GameTagEditor: React.FC<GameTagEditorProps> = ({
       <div
         className="w-full max-w-md rounded-xl border border-border bg-background-secondary shadow-2xl"
         onClick={e => e.stopPropagation()}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.stopPropagation()
+          }
+        }}
+        tabIndex={0}
+        role="dialog"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border p-4">

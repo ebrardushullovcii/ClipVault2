@@ -1,6 +1,4 @@
 #include "game_detector.h"
-#include "logger.h"
-#include "config.h"
 
 #include <windows.h>
 #include <psapi.h>
@@ -10,6 +8,9 @@
 #include <cctype>
 
 #include "json.hpp"
+
+#include "config.h"
+#include "logger.h"
 
 namespace clipvault {
 
@@ -46,11 +47,14 @@ GameDatabase& GameDatabase::instance()
 
 bool GameDatabase::load(const std::string& filepath)
 {
+    loaded_ = false;
+    version_.clear();
+    games_.clear();
+
     LOG_INFO("[GAME_DB] ==========================================");
     LOG_INFO("[GAME_DB] Loading game database from: " + filepath);
     LOG_INFO("[GAME_DB] Current working directory check...");
-    
-    // Try multiple possible paths
+
     std::vector<std::string> possible_paths = {
         filepath,
         "config/games_database.json",
@@ -61,10 +65,10 @@ bool GameDatabase::load(const std::string& filepath)
         "resources/bin/config/games_database.json",
         "./resources/bin/config/games_database.json"
     };
-    
+
     std::ifstream file;
     std::string actual_path;
-    
+
     for (const auto& path : possible_paths) {
         LOG_INFO("[GAME_DB] Trying path: " + path);
         file.open(path);
@@ -75,39 +79,35 @@ bool GameDatabase::load(const std::string& filepath)
         }
         file.clear();
     }
-    
+
     if (!file.is_open()) {
         LOG_ERROR("[GAME_DB] CRITICAL: Failed to open game database file from any path");
         LOG_ERROR("[GAME_DB] Tried " + std::to_string(possible_paths.size()) + " different paths");
         return false;
     }
-    
-    // Read entire file
+
     std::string content((std::istreambuf_iterator<char>(file)),
                         std::istreambuf_iterator<char>());
     file.close();
-    
-    // Parse JSON using nlohmann::json
+
     games_.clear();
-    
+
     try {
         auto json = nlohmann::json::parse(content);
-        
-        // Extract version
+
         if (json.contains("version") && json["version"].is_string()) {
             version_ = json["version"];
             LOG_INFO("[GAME_DB] Database version: " + version_);
         }
-        
-        // Parse games array
+
         if (json.contains("games") && json["games"].is_array()) {
             for (const auto& game_json : json["games"]) {
                 GameInfo game;
-                
+
                 if (game_json.contains("name") && game_json["name"].is_string()) {
                     game.name = game_json["name"];
                 }
-                
+
                 if (game_json.contains("processNames") && game_json["processNames"].is_array()) {
                     for (const auto& proc_name : game_json["processNames"]) {
                         if (proc_name.is_string() && !proc_name.get<std::string>().empty()) {
@@ -115,12 +115,11 @@ bool GameDatabase::load(const std::string& filepath)
                         }
                     }
                 }
-                
+
                 if (game_json.contains("twitchId") && game_json["twitchId"].is_string()) {
                     game.twitch_id = game_json["twitchId"];
                 }
-                
-                // Add game if we have a name and at least one process name
+
                 if (!game.name.empty() && !game.process_names.empty()) {
                     games_.push_back(game);
                 }
@@ -136,13 +135,12 @@ bool GameDatabase::load(const std::string& filepath)
         LOG_ERROR("[GAME_DB] Error parsing database: " + std::string(e.what()));
         return false;
     }
-    
+
     loaded_ = !games_.empty();
     LOG_INFO("[GAME_DB] ==========================================");
     LOG_INFO("[GAME_DB] Parsing complete!");
     LOG_INFO("[GAME_DB] Total games loaded: " + std::to_string(games_.size()));
-    
-    // Log first 5 games as sample
+
     LOG_INFO("[GAME_DB] Sample of loaded games:");
     int count = 0;
     for (const auto& game : games_) {

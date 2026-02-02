@@ -176,6 +176,7 @@ export interface ElectronAPI {
   showSaveDialog: (options: Electron.SaveDialogOptions) => Promise<Electron.SaveDialogReturnValue>
   dialog: DialogAPI
   editor: EditorAPI
+  getGamesDatabase: () => Promise<{ success: boolean; data?: { games: GameEntry[] }; error?: string }>
   on: (channel: string, callback: (data: unknown) => void) => (() => void) | undefined
 }
 
