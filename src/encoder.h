@@ -1,9 +1,17 @@
 #pragma once
 
 #include <string>
-#include "obs_core.h"  // For obs_encoder_t
+#include "obs_core.h"  // For obs_encoder_t and obs_data_t
 
 namespace clipvault {
+
+// Quality preset mappings
+struct QualityMapping {
+    int cqp;      // NVENC CQP value (lower = better quality, 15-51)
+    int crf;      // x264 CRF value (lower = better quality, 0-51)
+    const char* nvenc_preset;  // p1-p7 for jim_nvenc
+    const char* x264_preset;   // preset name for x264
+};
 
 class EncoderManager {
 public:
@@ -43,6 +51,7 @@ private:
     bool create_video_encoder();
     bool create_audio_encoders();
     bool create_specific_encoder(const char* encoder_id, const char* encoder_name);
+    obs_data_t* create_nvenc_settings(const char* encoder_id, const QualityMapping& quality);
 
     obs_encoder_t* video_encoder_ = nullptr;
     obs_encoder_t* audio_encoder_1_ = nullptr;  // Track 1: Desktop audio

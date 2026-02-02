@@ -714,6 +714,42 @@ ipcMain.handle('system:getMonitors', async () => {
   }
 })
 
+// Get audio devices
+ipcMain.handle('audio:getDevices', async (_, type: 'output' | 'input') => {
+  try {
+    const backendPath = isDev
+      ? join(appDir, '..', '..', '..', 'bin', 'ClipVault.exe')
+      : join(process.resourcesPath, 'bin', 'ClipVault.exe')
+
+    if (!existsSync(backendPath)) {
+      console.warn('Backend executable not found for audio device enumeration')
+      return []
+    }
+
+    const { execSync } = require('child_process')
+    const output = execSync(`"${backendPath}" --list-audio-devices`, {
+      encoding: 'utf-8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+
+    try {
+      const devices = JSON.parse(output)
+      if (type === 'output') {
+        return devices.filter((d: { type: string }) => d.type === 'output')
+      } else {
+        return devices.filter((d: { type: string }) => d.type === 'input')
+      }
+    } catch {
+      console.error('Failed to parse audio devices:', output)
+      return []
+    }
+  } catch (error) {
+    console.error('Failed to get audio devices:', error)
+    return []
+  }
+})
+
 // Get list of clips
 ipcMain.handle('clips:getList', async () => {
   try {

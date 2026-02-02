@@ -25,6 +25,7 @@ set(SOURCES
     src/capture.cpp
     src/encoder.cpp
     src/replay.cpp
+    src/audio_devices.cpp
 )
 
 # Create executable as Windows GUI app (no console window)
@@ -51,6 +52,7 @@ target_link_libraries(ClipVault PRIVATE
     user32
     gdiplus
     psapi
+    winmm
 )
 
 # Static linking to avoid C++ runtime mismatch
