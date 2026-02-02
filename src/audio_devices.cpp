@@ -148,11 +148,7 @@ std::vector<AudioDeviceInfo> enumerate_devices(EDataFlow direction) {
 
     // Get default device
     ComPtr<IMMDevice> defaultDevice;
-    if (direction == eRender) {
-        enumerator->GetDefaultAudioEndpoint(eRender, eConsole, defaultDevice.addressof());
-    } else {
-        enumerator->GetDefaultAudioEndpoint(eCapture, eConsole, defaultDevice.addressof());
-    }
+    enumerator->GetDefaultAudioEndpoint(direction, eConsole, defaultDevice.addressof());
 
     std::wstring defaultId;
     if (defaultDevice.get() != nullptr) {
