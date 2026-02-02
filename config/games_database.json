@@ -1,0 +1,814 @@
+{
+  "version": "1.0",
+  "description": "Game detection database for ClipVault. Add custom games to the customGames array.",
+  "games": [
+    {
+      "name": "League of Legends",
+      "processNames": ["League of Legends.exe", "LeagueClient.exe"],
+      "twitchId": "21779"
+    },
+    {
+      "name": "VALORANT",
+      "processNames": ["VALORANT.exe", "VALORANT-Win64-Shipping.exe"],
+      "twitchId": "516575"
+    },
+    {
+      "name": "Teamfight Tactics",
+      "processNames": ["League of Legends.exe"],
+      "twitchId": "513143"
+    },
+    {
+      "name": "Counter-Strike 2",
+      "processNames": ["cs2.exe", "csgo.exe"],
+      "twitchId": "32399"
+    },
+    {
+      "name": "Fortnite",
+      "processNames": ["FortniteClient-Win64-Shipping.exe"],
+      "twitchId": "33214"
+    },
+    {
+      "name": "Apex Legends",
+      "processNames": ["r5apex.exe"],
+      "twitchId": "511224"
+    },
+    {
+      "name": "Minecraft",
+      "processNames": ["Minecraft.exe", "javaw.exe"],
+      "twitchId": "27471"
+    },
+    {
+      "name": "Overwatch 2",
+      "processNames": ["Overwatch.exe"],
+      "twitchId": "515025"
+    },
+    {
+      "name": "Call of Duty",
+      "processNames": ["cod.exe", "sp22-cod.exe", "ModernWarfare.exe"],
+      "twitchId": "512710"
+    },
+    {
+      "name": "Genshin Impact",
+      "processNames": ["GenshinImpact.exe", "YuanShen.exe"],
+      "twitchId": "513181"
+    },
+    {
+      "name": "Roblox",
+      "processNames": ["RobloxPlayerBeta.exe"],
+      "twitchId": "23020"
+    },
+    {
+      "name": "Rocket League",
+      "processNames": ["RocketLeague.exe"],
+      "twitchId": "30921"
+    },
+    {
+      "name": "GTA V",
+      "processNames": ["GTA5.exe", "GTAV.exe"],
+      "twitchId": "32982"
+    },
+    { "name": "GTA IV", "processNames": ["GTAIV.exe"], "twitchId": "18707" },
+    {
+      "name": "Rainbow Six Siege",
+      "processNames": ["RainbowSix.exe"],
+      "twitchId": "460630"
+    },
+    {
+      "name": "Phasmophobia",
+      "processNames": ["Phasmophobia.exe"],
+      "twitchId": "518184"
+    },
+    {
+      "name": "Dead by Daylight",
+      "processNames": ["DeadByDaylight-Win64-Shipping.exe"],
+      "twitchId": "491487"
+    },
+    {
+      "name": "Cyberpunk 2077",
+      "processNames": ["Cyberpunk2077.exe"],
+      "twitchId": "65876"
+    },
+    {
+      "name": "Elden Ring",
+      "processNames": ["eldenring.exe"],
+      "twitchId": "512953"
+    },
+    {
+      "name": "Dark Souls III",
+      "processNames": ["DarkSoulsIII.exe"],
+      "twitchId": "490292"
+    },
+    {
+      "name": "Destiny 2",
+      "processNames": ["destiny2.exe"],
+      "twitchId": "497057"
+    },
+    {
+      "name": "World of Warcraft",
+      "processNames": ["Wow.exe", "WowClassic.exe"],
+      "twitchId": "18122"
+    },
+    {
+      "name": "Diablo IV",
+      "processNames": ["Diablo IV.exe"],
+      "twitchId": "515024"
+    },
+    {
+      "name": "Path of Exile",
+      "processNames": ["PathOfExile.exe", "PathOfExileSteam.exe"],
+      "twitchId": "29307"
+    },
+    {
+      "name": "Path of Exile 2",
+      "processNames": ["PathOfExile2.exe"],
+      "twitchId": "1477445638"
+    },
+    { "name": "Dota 2", "processNames": ["dota2.exe"], "twitchId": "29595" },
+    { "name": "PUBG", "processNames": ["TslGame.exe"], "twitchId": "493057" },
+    {
+      "name": "Escape from Tarkov",
+      "processNames": ["EscapeFromTarkov.exe"],
+      "twitchId": "491931"
+    },
+    {
+      "name": "Rust",
+      "processNames": ["RustClient.exe"],
+      "twitchId": "263490"
+    },
+    {
+      "name": "ARK: Survival Evolved",
+      "processNames": ["ShooterGame.exe"],
+      "twitchId": "489635"
+    },
+    {
+      "name": "Sea of Thieves",
+      "processNames": ["SoTGame.exe"],
+      "twitchId": "490377"
+    },
+    {
+      "name": "Fall Guys",
+      "processNames": ["FallGuys_client.exe"],
+      "twitchId": "512980"
+    },
+    {
+      "name": "Among Us",
+      "processNames": ["Among Us.exe"],
+      "twitchId": "510218"
+    },
+    {
+      "name": "Lethal Company",
+      "processNames": ["Lethal Company.exe"],
+      "twitchId": "2054538670"
+    },
+    {
+      "name": "Content Warning",
+      "processNames": ["Content Warning.exe"],
+      "twitchId": "766568744"
+    },
+    {
+      "name": "The Finals",
+      "processNames": ["Discovery.exe"],
+      "twitchId": "1910103699"
+    },
+    {
+      "name": "Garry's Mod",
+      "processNames": ["gmod.exe"],
+      "twitchId": "18846"
+    },
+    {
+      "name": "Golf It!",
+      "processNames": ["GolfIt.exe"],
+      "twitchId": "495764"
+    },
+    {
+      "name": "Gang Beasts",
+      "processNames": ["Gang Beasts.exe"],
+      "twitchId": "459527"
+    },
+    {
+      "name": "Human: Fall Flat",
+      "processNames": ["Human.exe"],
+      "twitchId": "488381"
+    },
+    {
+      "name": "It Takes Two",
+      "processNames": ["ItTakesTwo.exe"],
+      "twitchId": "518032"
+    },
+    {
+      "name": "A Way Out",
+      "processNames": ["AWayOut.exe"],
+      "twitchId": "506103"
+    },
+    {
+      "name": "Left 4 Dead 2",
+      "processNames": ["left4dead2.exe"],
+      "twitchId": "24495"
+    },
+    {
+      "name": "Back 4 Blood",
+      "processNames": ["Back4Blood.exe"],
+      "twitchId": "517474"
+    },
+    {
+      "name": "Deep Rock Galactic",
+      "processNames": ["FSD-Win64-Shipping.exe"],
+      "twitchId": "494849"
+    },
+    {
+      "name": "Terraria",
+      "processNames": ["Terraria.exe"],
+      "twitchId": "31376"
+    },
+    {
+      "name": "Stardew Valley",
+      "processNames": ["Stardew Valley.exe"],
+      "twitchId": "490744"
+    },
+    {
+      "name": "Valheim",
+      "processNames": ["valheim.exe"],
+      "twitchId": "506415"
+    },
+    {
+      "name": "Satisfactory",
+      "processNames": ["FactoryGame-Win64-Shipping.exe"],
+      "twitchId": "497081"
+    },
+    {
+      "name": "Palworld",
+      "processNames": ["Palworld-Win64-Shipping.exe"],
+      "twitchId": "1674091406"
+    },
+    {
+      "name": "Monster Hunter: World",
+      "processNames": ["MonsterHunterWorld.exe"],
+      "twitchId": "497467"
+    },
+    {
+      "name": "Monster Hunter Rise",
+      "processNames": ["MonsterHunterRise.exe"],
+      "twitchId": "517613"
+    },
+    {
+      "name": "Monster Hunter Wilds",
+      "processNames": ["MonsterHunterWilds.exe"],
+      "twitchId": "1286077738"
+    },
+    { "name": "Raft", "processNames": ["Raft.exe"], "twitchId": "489635" },
+    {
+      "name": "The Forest",
+      "processNames": ["TheForest.exe"],
+      "twitchId": "489111"
+    },
+    {
+      "name": "Sons of the Forest",
+      "processNames": ["SonsOfTheForest.exe"],
+      "twitchId": "297517679"
+    },
+    {
+      "name": "Subnautica",
+      "processNames": ["Subnautica.exe"],
+      "twitchId": "489776"
+    },
+    {
+      "name": "No Man's Sky",
+      "processNames": ["NMS.exe"],
+      "twitchId": "458883"
+    },
+    {
+      "name": "Red Dead Redemption 2",
+      "processNames": ["RDR2.exe"],
+      "twitchId": "493959"
+    },
+    {
+      "name": "The Witcher 3",
+      "processNames": ["witcher3.exe"],
+      "twitchId": "115977"
+    },
+    {
+      "name": "Hogwarts Legacy",
+      "processNames": ["HogwartsLegacy.exe"],
+      "twitchId": "1039740086"
+    },
+    {
+      "name": "Baldur's Gate 3",
+      "processNames": ["bg3.exe", "bg3_dx11.exe"],
+      "twitchId": "512934"
+    },
+    {
+      "name": "Divinity: Original Sin 2",
+      "processNames": ["EoCApp.exe"],
+      "twitchId": "496712"
+    },
+    { "name": "Hades", "processNames": ["Hades.exe"], "twitchId": "510566" },
+    {
+      "name": "Hades II",
+      "processNames": ["Hades2.exe"],
+      "twitchId": "1492100422"
+    },
+    {
+      "name": "Hollow Knight",
+      "processNames": ["hollow_knight.exe"],
+      "twitchId": "493551"
+    },
+    {
+      "name": "Celeste",
+      "processNames": ["Celeste.exe"],
+      "twitchId": "492367"
+    },
+    {
+      "name": "Cuphead",
+      "processNames": ["Cuphead.exe"],
+      "twitchId": "459064"
+    },
+    { "name": "Sekiro", "processNames": ["sekiro.exe"], "twitchId": "506415" },
+    {
+      "name": "Bloodborne",
+      "processNames": ["Bloodborne.exe"],
+      "twitchId": "490718"
+    },
+    {
+      "name": "Resident Evil 4",
+      "processNames": ["re4.exe"],
+      "twitchId": "1811467401"
+    },
+    {
+      "name": "Resident Evil Village",
+      "processNames": ["re8.exe"],
+      "twitchId": "518090"
+    },
+    {
+      "name": "Dead Space",
+      "processNames": ["Dead Space.exe"],
+      "twitchId": "2048803535"
+    },
+    {
+      "name": "Alan Wake 2",
+      "processNames": ["AlanWake2.exe"],
+      "twitchId": "1754908939"
+    },
+    {
+      "name": "Control",
+      "processNames": ["Control.exe"],
+      "twitchId": "506504"
+    },
+    {
+      "name": "Inscryption",
+      "processNames": ["Inscryption.exe"],
+      "twitchId": "1147745783"
+    },
+    {
+      "name": "DEVOUR",
+      "processNames": ["DEVOUR.exe"],
+      "twitchId": "836519689"
+    },
+    { "name": "GTFO", "processNames": ["GTFO.exe"], "twitchId": "500627" },
+    {
+      "name": "Ready or Not",
+      "processNames": ["ReadyOrNot.exe"],
+      "twitchId": "511701"
+    },
+    {
+      "name": "Hell Let Loose",
+      "processNames": ["HLL-Win64-Shipping.exe"],
+      "twitchId": "497456"
+    },
+    {
+      "name": "Squad",
+      "processNames": ["SquadGame.exe"],
+      "twitchId": "488420"
+    },
+    {
+      "name": "Arma 3",
+      "processNames": ["arma3.exe", "arma3_x64.exe"],
+      "twitchId": "32868"
+    },
+    { "name": "DayZ", "processNames": ["DayZ_x64.exe"], "twitchId": "65632" },
+    {
+      "name": "Hunt: Showdown",
+      "processNames": ["HuntGame.exe"],
+      "twitchId": "500188"
+    },
+    {
+      "name": "Tarkov Arena",
+      "processNames": ["Arena.exe"],
+      "twitchId": "743653081"
+    },
+    {
+      "name": "Marvel Rivals",
+      "processNames": ["Marvel-Win64-Shipping.exe"],
+      "twitchId": "1264310518"
+    },
+    {
+      "name": "Overcooked 2",
+      "processNames": ["Overcooked2.exe"],
+      "twitchId": "504294"
+    },
+    {
+      "name": "Plate Up!",
+      "processNames": ["PlateUp.exe"],
+      "twitchId": "706648058"
+    },
+    {
+      "name": "Unravel Two",
+      "processNames": ["Unravel2.exe"],
+      "twitchId": "504243"
+    },
+    {
+      "name": "Geometry Dash",
+      "processNames": ["GeometryDash.exe"],
+      "twitchId": "460951"
+    },
+    { "name": "osu!", "processNames": ["osu!.exe"], "twitchId": "21465" },
+    {
+      "name": "Beat Saber",
+      "processNames": ["Beat Saber.exe"],
+      "twitchId": "503116"
+    },
+    { "name": "VRChat", "processNames": ["VRChat.exe"], "twitchId": "499003" },
+    {
+      "name": "Half-Life: Alyx",
+      "processNames": ["hlvr.exe"],
+      "twitchId": "515195"
+    },
+    {
+      "name": "Zenless Zone Zero",
+      "processNames": ["ZenlessZoneZero.exe"],
+      "twitchId": "456845141"
+    },
+    {
+      "name": "Honkai: Star Rail",
+      "processNames": ["StarRail.exe"],
+      "twitchId": "1466835781"
+    },
+    {
+      "name": "Wuthering Waves",
+      "processNames": ["Wuthering Waves.exe"],
+      "twitchId": "1862498851"
+    },
+    {
+      "name": "Blue Protocol",
+      "processNames": ["BlueProtocol.exe"],
+      "twitchId": "1541998638"
+    },
+    {
+      "name": "Lost Ark",
+      "processNames": ["LOSTARK.exe"],
+      "twitchId": "490100"
+    },
+    {
+      "name": "New World",
+      "processNames": ["NewWorld.exe"],
+      "twitchId": "493597"
+    },
+    {
+      "name": "Final Fantasy XIV",
+      "processNames": ["ffxiv_dx11.exe"],
+      "twitchId": "24241"
+    },
+    {
+      "name": "Guild Wars 2",
+      "processNames": ["Gw2-64.exe"],
+      "twitchId": "22583"
+    },
+    {
+      "name": "Elder Scrolls Online",
+      "processNames": ["eso64.exe"],
+      "twitchId": "66170"
+    },
+    {
+      "name": "Black Desert Online",
+      "processNames": ["BlackDesert64.exe"],
+      "twitchId": "386821"
+    },
+    {
+      "name": "Warframe",
+      "processNames": ["Warframe.x64.exe"],
+      "twitchId": "115"
+    },
+    {
+      "name": "Stellaris",
+      "processNames": ["stellaris.exe"],
+      "twitchId": "489773"
+    },
+    {
+      "name": "Civilization VI",
+      "processNames": ["CivilizationVI.exe"],
+      "twitchId": "492410"
+    },
+    {
+      "name": "Europa Universalis IV",
+      "processNames": ["eu4.exe"],
+      "twitchId": "31339"
+    },
+    {
+      "name": "Hearts of Iron IV",
+      "processNames": ["hoi4.exe"],
+      "twitchId": "459243"
+    },
+    {
+      "name": "Crusader Kings III",
+      "processNames": ["ck3.exe"],
+      "twitchId": "510827"
+    },
+    {
+      "name": "Total War: Warhammer III",
+      "processNames": ["Warhammer3.exe"],
+      "twitchId": "515020"
+    },
+    {
+      "name": "Age of Empires IV",
+      "processNames": ["RelicCardinal.exe"],
+      "twitchId": "498482"
+    },
+    {
+      "name": "Starcraft II",
+      "processNames": ["SC2_x64.exe"],
+      "twitchId": "490422"
+    },
+    {
+      "name": "FIFA / EA FC",
+      "processNames": ["FC24.exe", "FC25.exe", "FIFA23.exe"],
+      "twitchId": "1745202732"
+    },
+    {
+      "name": "NBA 2K",
+      "processNames": ["NBA2K24.exe", "NBA2K25.exe"],
+      "twitchId": "495935"
+    },
+    {
+      "name": "Madden NFL",
+      "processNames": ["Madden24.exe", "Madden25.exe"],
+      "twitchId": "498531"
+    },
+    {
+      "name": "F1 24",
+      "processNames": ["F1_24.exe", "F1_2020_dx12.exe"],
+      "twitchId": "2063258695"
+    },
+    {
+      "name": "Assetto Corsa",
+      "processNames": ["AssettoCorsa.exe", "acs.exe"],
+      "twitchId": "313197"
+    },
+    {
+      "name": "Assetto Corsa Competizione",
+      "processNames": ["AC2-Win64-Shipping.exe"],
+      "twitchId": "505644"
+    },
+    {
+      "name": "iRacing",
+      "processNames": ["iRacingSim64DX11.exe"],
+      "twitchId": "25058"
+    },
+    {
+      "name": "Forza Horizon 5",
+      "processNames": ["ForzaHorizon5.exe"],
+      "twitchId": "516553"
+    },
+    {
+      "name": "Forza Motorsport",
+      "processNames": ["ForzaMotorsport.exe"],
+      "twitchId": "1909537066"
+    },
+    {
+      "name": "Microsoft Flight Simulator",
+      "processNames": ["FlightSimulator.exe"],
+      "twitchId": "7193"
+    },
+    {
+      "name": "Euro Truck Simulator 2",
+      "processNames": ["eurotrucks2.exe"],
+      "twitchId": "32354"
+    },
+    {
+      "name": "Snowrunner",
+      "processNames": ["SnowRunner.exe"],
+      "twitchId": "515066"
+    },
+    {
+      "name": "American Truck Simulator",
+      "processNames": ["amtrucks.exe"],
+      "twitchId": "459579"
+    },
+    {
+      "name": "Farming Simulator 22",
+      "processNames": ["FarmingSimulator2022.exe"],
+      "twitchId": "519981"
+    },
+    {
+      "name": "Cities: Skylines II",
+      "processNames": ["Cities2.exe"],
+      "twitchId": "1927246037"
+    },
+    {
+      "name": "Planet Coaster",
+      "processNames": ["PlanetCoaster.exe"],
+      "twitchId": "489772"
+    },
+    {
+      "name": "Power Wash Simulator",
+      "processNames": ["PowerWashSimulator.exe"],
+      "twitchId": "519103"
+    },
+    {
+      "name": "House Flipper",
+      "processNames": ["HouseFlipper.exe"],
+      "twitchId": "498574"
+    },
+    {
+      "name": "The Sims 4",
+      "processNames": ["TS4_x64.exe"],
+      "twitchId": "369252"
+    },
+    { "name": "inZOI", "processNames": ["inZOI.exe"], "twitchId": "286759738" },
+    {
+      "name": "Atomic Heart",
+      "processNames": ["AtomicHeart.exe"],
+      "twitchId": "505963"
+    },
+    {
+      "name": "Hi-Fi Rush",
+      "processNames": ["Hi-Fi-RUSH.exe"],
+      "twitchId": "1892146801"
+    },
+    {
+      "name": "Lies of P",
+      "processNames": ["LiesofP-Win64-Shipping.exe"],
+      "twitchId": "1313017660"
+    },
+    {
+      "name": "Armored Core VI",
+      "processNames": ["armoredcore6.exe"],
+      "twitchId": "1831971548"
+    },
+    {
+      "name": "Remnant II",
+      "processNames": ["Remnant2-Win64-Shipping.exe"],
+      "twitchId": "1295258186"
+    },
+    {
+      "name": "Starfield",
+      "processNames": ["Starfield.exe"],
+      "twitchId": "506438"
+    },
+    {
+      "name": "Gunfire Reborn",
+      "processNames": ["Gunfire Reborn.exe"],
+      "twitchId": "517645"
+    },
+    {
+      "name": "Risk of Rain 2",
+      "processNames": ["Risk of Rain 2.exe"],
+      "twitchId": "506507"
+    },
+    {
+      "name": "Enter the Gungeon",
+      "processNames": ["EtG.exe"],
+      "twitchId": "489646"
+    },
+    {
+      "name": "Slay the Spire",
+      "processNames": ["SlayTheSpire.exe"],
+      "twitchId": "496902"
+    },
+    {
+      "name": "Vampire Survivors",
+      "processNames": ["VampireSurvivors.exe"],
+      "twitchId": "1492063498"
+    },
+    {
+      "name": "Cult of the Lamb",
+      "processNames": ["Cult Of The Lamb.exe"],
+      "twitchId": "1182779662"
+    },
+    {
+      "name": "Don't Starve Together",
+      "processNames": ["dontstarve_steam.exe"],
+      "twitchId": "489776"
+    },
+    {
+      "name": "Grounded",
+      "processNames": ["Maine-Win64-Shipping.exe"],
+      "twitchId": "512996"
+    },
+    {
+      "name": "7 Days to Die",
+      "processNames": ["7DaysToDie.exe"],
+      "twitchId": "271304"
+    },
+    {
+      "name": "Project Zomboid",
+      "processNames": ["ProjectZomboid64.exe"],
+      "twitchId": "393659"
+    },
+    {
+      "name": "V Rising",
+      "processNames": ["VRising.exe"],
+      "twitchId": "1500853089"
+    },
+    {
+      "name": "Core Keeper",
+      "processNames": ["CoreKeeper.exe"],
+      "twitchId": "1658146009"
+    },
+    {
+      "name": "Darkest Dungeon",
+      "processNames": ["Darkest.exe"],
+      "twitchId": "490850"
+    },
+    {
+      "name": "Darkest Dungeon II",
+      "processNames": ["Darkest Dungeon II.exe"],
+      "twitchId": "518032"
+    },
+    {
+      "name": "Disco Elysium",
+      "processNames": ["disco.exe"],
+      "twitchId": "506462"
+    },
+    {
+      "name": "Outer Wilds",
+      "processNames": ["OuterWilds.exe"],
+      "twitchId": "506503"
+    },
+    {
+      "name": "Return of the Obra Dinn",
+      "processNames": ["ObraDinn.exe"],
+      "twitchId": "506468"
+    },
+    {
+      "name": "Teardown",
+      "processNames": ["teardown.exe"],
+      "twitchId": "514795"
+    },
+    {
+      "name": "People Playground",
+      "processNames": ["People Playground.exe"],
+      "twitchId": "516625"
+    },
+    {
+      "name": "Bloons TD 6",
+      "processNames": ["BloonsTD6.exe"],
+      "twitchId": "503488"
+    },
+    {
+      "name": "Keep Talking and Nobody Explodes",
+      "processNames": ["ktane.exe"],
+      "twitchId": "461492"
+    },
+    {
+      "name": "Demonologist",
+      "processNames": ["Demonologist.exe"],
+      "twitchId": "1286840579"
+    },
+    {
+      "name": "Ghost Watchers",
+      "processNames": ["Ghost Watchers.exe"],
+      "twitchId": "790163050"
+    },
+    {
+      "name": "Forewarned",
+      "processNames": ["Forewarned.exe"],
+      "twitchId": "1034700979"
+    },
+    {
+      "name": "Labyrinthine",
+      "processNames": ["Labyrinthine.exe"],
+      "twitchId": "1263463015"
+    },
+    {
+      "name": "Aim Lab",
+      "processNames": ["AimLab_tb.exe"],
+      "twitchId": "503456"
+    },
+    {
+      "name": "Kovaak's",
+      "processNames": ["FPSAimTrainer.exe"],
+      "twitchId": "506490"
+    },
+    { "name": "REPO", "processNames": ["REPO.exe"], "twitchId": "1294658629" },
+    {
+      "name": "Schedule I",
+      "processNames": ["Schedule I.exe"],
+      "twitchId": "1844198633"
+    },
+    {
+      "name": "Visual Studio Code",
+      "processNames": ["Code.exe"],
+      "twitchId": ""
+    },
+    {
+      "name": "Notepad++",
+      "processNames": ["notepad++.exe"],
+      "twitchId": ""
+    },
+    {
+      "name": "Notepad",
+      "processNames": ["notepad.exe"],
+      "twitchId": ""
+    }
+  ],
+  "customGames": []
+}

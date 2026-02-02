@@ -4,6 +4,7 @@
 #include <functional>
 #include <thread>
 #include <atomic>
+#include <mutex>
 #include "obs_core.h"
 
 // Forward declaration
@@ -27,6 +28,17 @@ public:
     // Save the current buffer to file
     bool save_clip();
 
+    // Set the current game for the next save operation (thread-safe)
+    void set_current_game(const std::string& game_name) {
+        std::lock_guard<std::mutex> lock(current_game_mutex_);
+        current_game_ = game_name;
+    }
+    // Get the current game (thread-safe, returns a copy)
+    std::string current_game() const {
+        std::lock_guard<std::mutex> lock(current_game_mutex_);
+        return current_game_;
+    }
+
     // Check status
     bool is_initialized() const { return initialized_; }
     bool is_active() const { return active_; }
@@ -37,7 +49,7 @@ public:
     // Callback for when save completes
     using SaveCallback = std::function<void(const std::string& path, bool success)>;
     void set_save_callback(SaveCallback callback) { save_callback_ = callback; }
-    
+
     // Debug: log pipeline statistics
     void log_pipeline_stats();
 
@@ -55,6 +67,8 @@ private:
     bool save_pending_ = false;
     std::string last_error_;
     std::string last_saved_file_;
+    std::string current_game_;  // Game name for next save operation (protected by mutex)
+    mutable std::mutex current_game_mutex_;
     SaveCallback save_callback_;
 
     // Render thread (for periodic health checks - OBS handles frame production)
@@ -65,6 +79,7 @@ private:
     std::atomic<uint64_t> frame_count_{0};
     std::atomic<uint64_t> last_stats_time_{0};
     std::atomic<uint64_t> save_start_time_{0};
+    std::atomic<uint64_t> save_start_tick_{0};
 
     // Start/stop render thread
     void start_render_thread();

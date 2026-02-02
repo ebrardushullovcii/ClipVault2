@@ -3,6 +3,7 @@
 #include "config.h"
 #include "encoder.h"
 #include "capture.h"
+#include "game_detector.h"
 
 #include <windows.h>
 #include <psapi.h>
@@ -10,8 +11,61 @@
 #include <iomanip>
 #include <sstream>
 #include <filesystem>
+#include <fstream>
 
 namespace clipvault {
+
+static bool apply_game_tag_and_metadata(
+    const std::string& original_path,
+    const std::string& output_dir,
+    const std::string& current_game,
+    std::string& out_final_path)
+{
+    if (current_game.empty()) {
+        return false;
+    }
+
+    try {
+        std::filesystem::path fspath(original_path);
+        std::string sanitized_game = GameDetector::sanitize_for_filename(current_game);
+        std::filesystem::path new_path = fspath.parent_path() /
+            (fspath.stem().string() + "_" + sanitized_game + fspath.extension().string());
+
+        std::filesystem::rename(fspath, new_path);
+        out_final_path = new_path.string();
+
+        std::string metadata_dir = output_dir + "\\clips-metadata";
+        std::filesystem::create_directories(metadata_dir);
+        std::filesystem::path metadata_path = std::filesystem::path(metadata_dir) /
+            (new_path.stem().string() + ".json");
+
+        auto now_utc = std::chrono::system_clock::now();
+        auto time_utc = std::chrono::system_clock::to_time_t(now_utc);
+        std::stringstream ts;
+        ts << std::put_time(std::gmtime(&time_utc), "%Y-%m-%dT%H:%M:%S.000Z");
+
+        std::ofstream metadata_file(metadata_path);
+        if (metadata_file.is_open()) {
+            metadata_file << "{\n";
+            metadata_file << "  \"favorite\": false,\n";
+            metadata_file << "  \"tags\": [],\n";
+            metadata_file << "  \"game\": \"" << escape_json_string(current_game) << "\",\n";
+            metadata_file << "  \"audio\": {\n";
+            metadata_file << "    \"track1\": true,\n";
+            metadata_file << "    \"track2\": true\n";
+            metadata_file << "  },\n";
+            metadata_file << "  \"playheadPosition\": 0,\n";
+            metadata_file << "  \"lastModified\": \"" << ts.str() << "\"\n";
+            metadata_file << "}\n";
+            metadata_file.close();
+            return true;
+        }
+        return false;
+    } catch (const std::exception& e) {
+        LOG_WARNING("[GAME_TAG] Failed to apply game tag and metadata: " + std::string(e.what()));
+        return false;
+    }
+}
 
 ReplayManager& ReplayManager::instance()
 {
@@ -359,9 +413,15 @@ bool ReplayManager::save_clip()
     LOG_INFO("    Microphone: " + std::string(audio.microphone_enabled ? "enabled" : "disabled"));
     
     save_pending_ = true;
-    save_start_time_.store(GetTickCount64());
+    FILETIME save_start_ft;
+    GetSystemTimeAsFileTime(&save_start_ft);
+    ULARGE_INTEGER save_start_uli;
+    save_start_uli.LowPart = save_start_ft.dwLowDateTime;
+    save_start_uli.HighPart = save_start_ft.dwHighDateTime;
+    save_start_time_.store(save_start_uli.QuadPart);
+    save_start_tick_.store(GetTickCount64());
     LOG_INFO("[REPLAY] Save pending flag set to TRUE");
-    LOG_INFO("[PERF] Save operation started at tick: " + std::to_string(save_start_time_.load()));
+    LOG_INFO("[PERF] Save operation started at FILETIME: " + std::to_string(save_start_time_.load()) + ", tick: " + std::to_string(save_start_tick_.load()));
 
     // Use procedure handler to trigger save (NOT output_signal!)
     LOG_INFO("[REPLAY] Getting procedure handler from replay buffer...");
@@ -463,41 +523,55 @@ void ReplayManager::on_replay_saved(void* data, calldata_t* calldata)
     LOG_INFO("[REPLAY] save_pending was: " + std::string(self->save_pending_ ? "TRUE" : "FALSE"));
 
     const char* path = obs_api::calldata_string(calldata, "path");
-    
+
     LOG_INFO("[REPLAY] Processing save result...");
     LOG_INFO("[REPLAY] Path from calldata: " + std::string(path ? path : "(NULL)"));
 
-    // Calculate save duration
-    uint64_t save_start = self->save_start_time_.load();
-    uint64_t save_end = GetTickCount64();
-    uint64_t save_duration_ms = save_end - save_start;
+    // Calculate save duration using consistent boot-tick units
+    uint64_t save_start_tick = self->save_start_tick_.load();
+    uint64_t save_end_tick = GetTickCount64();
+    uint64_t save_duration_ms = save_end_tick - save_start_tick;
     LOG_INFO("[PERF] Save completed in " + std::to_string(save_duration_ms) + " ms");
     if (save_duration_ms > 1000) {
         LOG_WARNING("[PERF] Save took longer than 1 second - may cause CPU spike");
     }
-    
+
     if (path) {
         self->last_saved_file_ = path;
         LOG_INFO("[REPLAY] SAVE SUCCESSFUL!");
         LOG_INFO("  File Path: " + self->last_saved_file_);
-        
-        // Log completion timestamp
-        auto now = std::chrono::system_clock::now();
-        auto time = std::chrono::system_clock::to_time_t(now);
+
+        // Log completion timestamp (UTC)
+        auto now_local = std::chrono::system_clock::now();
+        auto time_local = std::chrono::system_clock::to_time_t(now_local);
         std::stringstream ss;
-        ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
+        ss << std::put_time(std::gmtime(&time_local), "%Y-%m-%d %H:%M:%S");
         LOG_INFO("  Timestamp: " + ss.str());
-        
+
         // Log file info
         std::string dir = ConfigManager::instance().output_path();
         LOG_INFO("  Output Directory: " + dir);
-        
+
         // Check if file exists
         std::filesystem::path fspath(path);
         if (std::filesystem::exists(fspath)) {
             auto file_size = std::filesystem::file_size(fspath);
             LOG_INFO("  File Size: " + std::to_string(file_size / 1024 / 1024) + " MB");
             LOG_INFO("  File EXISTS: YES");
+
+            std::string current_game = self->current_game();
+            if (!current_game.empty()) {
+                LOG_INFO("[GAME_TAG] Game detected for this clip: " + current_game);
+
+                std::string final_path;
+                if (apply_game_tag_and_metadata(path, dir, current_game, final_path)) {
+                    self->last_saved_file_ = final_path;
+                    LOG_INFO("[GAME_TAG] Renamed clip to: " + final_path);
+                    LOG_INFO("[GAME_TAG] Created metadata file");
+                }
+            } else {
+                LOG_INFO("[GAME_TAG] No game detected for this clip");
+            }
         } else {
             LOG_WARNING("  File EXISTS: NO (path may be incorrect)");
         }
@@ -511,49 +585,53 @@ void ReplayManager::on_replay_saved(void* data, calldata_t* calldata)
         }
     } else {
         LOG_WARNING("[REPLAY] Path from OBS is NULL - checking output directory for files...");
-        
-        // Check output directory for recently created MP4 files
+
+        // Simply find the most recently created MP4 file with OBS naming pattern
         std::string dir = ConfigManager::instance().output_path();
         std::string latest_file;
-        uintmax_t latest_size = 0;
-        auto latest_time = 0ULL;
-        
+        uint64_t latest_creation_time = 0;
+
+        // Use the save start time captured at save_clip() time (FILETIME format)
+        uint64_t save_start = self->save_start_time_.load();
+
+        LOG_INFO("[REPLAY] Looking for most recently created OBS file...");
+
         try {
             WIN32_FIND_DATAA find_data;
             std::string search_path = dir + "\\*.mp4";
             HANDLE hFind = FindFirstFileA(search_path.c_str(), &find_data);
-            
+
             if (hFind != INVALID_HANDLE_VALUE) {
                 do {
                     std::string filename = find_data.cFileName;
                     std::string fullpath = dir + "\\" + filename;
-                    
-                    // Get file time
-                    FILETIME ft = find_data.ftLastWriteTime;
+
+                    // Only accept files that START with date pattern YYYY-MM-DD_
+                    if (filename.length() < 19 || filename[4] != '-' || filename[7] != '-' || filename[10] != '_') {
+                        continue;
+                    }
+
+                    // Get file creation time
+                    FILETIME ft = find_data.ftCreationTime;
                     ULARGE_INTEGER uli;
                     uli.LowPart = ft.dwLowDateTime;
                     uli.HighPart = ft.dwHighDateTime;
-                    uint64_t file_time = uli.QuadPart;
-                    uint64_t now_time = GetTickCount64();
-                    
-                    // Convert 100-nanosecond intervals to milliseconds
-                    uint64_t age_ms = (now_time > file_time / 10000) ? (now_time - file_time / 10000) : 0;
-                    
-                    // File created in last 10 seconds
-                    if (age_ms < 10000) {
-                        uint64_t size = (static_cast<uint64_t>(find_data.nFileSizeHigh) << 32) | find_data.nFileSizeLow;
-                        LOG_INFO("  Found recent file: " + fullpath);
-                        LOG_INFO("    Size: " + std::to_string(size / 1024 / 1024) + " MB");
-                        LOG_INFO("    Age: " + std::to_string(age_ms / 1000) + " seconds old");
-                        
-                        if (size > latest_size || (size == latest_size && age_ms < latest_time)) {
-                            latest_size = size;
-                            latest_file = fullpath;
-                            latest_time = age_ms;
-                        }
+                    uint64_t creation_time = uli.QuadPart;
+
+                    // Must be created after save started (both in FILETIME format)
+                    if (creation_time <= save_start) {
+                        continue;
+                    }
+
+                    LOG_INFO("  Found: " + filename);
+
+                    // Get the most recently created file
+                    if (creation_time > latest_creation_time) {
+                        latest_creation_time = creation_time;
+                        latest_file = fullpath;
                     }
                 } while (FindNextFileA(hFind, &find_data));
-                
+
                 FindClose(hFind);
             }
         } catch (...) {
@@ -564,10 +642,25 @@ void ReplayManager::on_replay_saved(void* data, calldata_t* calldata)
             LOG_INFO("[REPLAY] File found despite NULL path - considering save SUCCESS");
             LOG_INFO("  Actual File: " + latest_file);
             self->last_saved_file_ = latest_file;
-            
+
+            std::filesystem::path fspath(latest_file);
+            std::string current_game = self->current_game();
+            if (!current_game.empty()) {
+                LOG_INFO("[GAME_TAG] Game detected for this clip (fallback path): " + current_game);
+
+                std::string final_path;
+                if (apply_game_tag_and_metadata(latest_file, dir, current_game, final_path)) {
+                    self->last_saved_file_ = final_path;
+                    LOG_INFO("[GAME_TAG] Renamed clip to: " + final_path);
+                    LOG_INFO("[GAME_TAG] Created metadata file");
+                }
+            } else {
+                LOG_INFO("[GAME_TAG] No game detected for this clip (fallback path)");
+            }
+
             if (self->save_callback_) {
                 LOG_INFO("[REPLAY] Executing user callback with found file...");
-                self->save_callback_(latest_file, true);
+                self->save_callback_(self->last_saved_file_, true);
             }
         } else {
             LOG_ERROR("[REPLAY] SAVE FAILED - No recent files found!");

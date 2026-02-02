@@ -1,5 +1,5 @@
 import { Video, Settings, FolderOpen, Library, RotateCcw, ArrowLeft, ArrowRight } from 'lucide-react'
-import { APP_VERSION } from '../../constants/version'
+import { APP_VERSION } from '../../../constants/version'
 
 interface HeaderProps {
   currentView: 'library' | 'editor' | 'settings'

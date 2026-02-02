@@ -79,6 +79,7 @@ namespace obs_api {
     void output_signal(obs_output_t* output, const char* signal);
     const char* calldata_string(calldata_t* data, const char* name);
     const char* output_get_last_error(obs_output_t* output);
+    const char* output_get_last_replay(obs_output_t* output);
     
     // Procedure handler (for replay buffer save)
     proc_handler_t* output_get_proc_handler(obs_output_t* output);

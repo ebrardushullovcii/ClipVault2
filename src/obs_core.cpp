@@ -2,85 +2,77 @@
 #include "logger.h"
 #include "config.h"
 
-// Use the actual OBS headers to ensure struct compatibility
 #include <obs.h>
 
 #include <windows.h>
 
-// OBS function signatures - we'll load these dynamically
-typedef bool (*obs_startup_t)(const char *locale, const char *module_config_path, void *store);
-typedef void (*obs_shutdown_t)(void);
-typedef void (*obs_add_data_path_t)(const char *path);
-typedef void (*obs_add_module_path_t)(const char *bin, const char *data);
-typedef int (*obs_reset_video_t)(struct obs_video_info *ovi);
-typedef bool (*obs_reset_audio_t)(const struct obs_audio_info *oai);
-typedef void (*obs_load_all_modules_t)(void);
-typedef void (*obs_post_load_modules_t)(void);
+using obs_startup_t = bool(*)(const char *locale, const char *module_config_path, void *store);
+using obs_shutdown_t = void(*)(void);
+using obs_add_data_path_t = void(*)(const char *path);
+using obs_add_module_path_t = void(*)(const char *bin, const char *data);
+using obs_reset_video_t = int(*)(struct obs_video_info *ovi);
+using obs_reset_audio_t = bool(*)(const struct obs_audio_info *oai);
+using obs_load_all_modules_t = void(*)(void);
+using obs_post_load_modules_t = void(*)(void);
 
-// Source/data functions
-typedef obs_data_t* (*obs_data_create_t)(void);
-typedef void (*obs_data_release_t)(obs_data_t *data);
-typedef void (*obs_data_set_int_t)(obs_data_t *data, const char *name, long long val);
-typedef void (*obs_data_set_bool_t)(obs_data_t *data, const char *name, bool val);
-typedef void (*obs_data_set_string_t)(obs_data_t *data, const char *name, const char *val);
-typedef obs_source_t* (*obs_source_create_t)(const char *id, const char *name, obs_data_t *settings, obs_data_t *hotkey_data);
-typedef void (*obs_source_release_t)(obs_source_t *source);
-typedef void (*obs_source_set_audio_mixers_t)(obs_source_t *source, uint32_t mixers);
-typedef void (*obs_set_output_source_t)(uint32_t channel, obs_source_t *source);
-typedef bool (*obs_source_active_t)(obs_source_t *source);
-typedef void (*obs_source_activate_t)(obs_source_t *source);
-typedef void (*obs_source_deactivate_t)(obs_source_t *source, uint32_t hint);
+using obs_data_create_t = obs_data_t*(*)(void);
+using obs_data_release_t = void(*)(obs_data_t *data);
+using obs_data_set_int_t = void(*)(obs_data_t *data, const char *name, long long val);
+using obs_data_set_bool_t = void(*)(obs_data_t *data, const char *name, bool val);
+using obs_data_set_string_t = void(*)(obs_data_t *data, const char *name, const char *val);
+using obs_source_create_t = obs_source_t*(*)(const char *id, const char *name, obs_data_t *settings, obs_data_t *hotkey_data);
+using obs_source_release_t = void(*)(obs_source_t *source);
+using obs_source_set_audio_mixers_t = void(*)(obs_source_t *source, uint32_t mixers);
+using obs_set_output_source_t = void(*)(uint32_t channel, obs_source_t *source);
+using obs_source_active_t = bool(*)(obs_source_t *source);
+using obs_source_activate_t = void(*)(obs_source_t *source);
+using obs_source_deactivate_t = void(*)(obs_source_t *source, uint32_t hint);
 
-// Video render function (CRITICAL for frame production)
-typedef void (*obs_render_main_texture_t)(void);
+using obs_render_main_texture_t = void(*)(void);
 
-// Encoder functions
-typedef obs_encoder_t* (*obs_video_encoder_create_t)(const char *id, const char *name, obs_data_t *settings, obs_data_t *hotkey_data);
-typedef obs_encoder_t* (*obs_audio_encoder_create_t)(const char *id, const char *name, obs_data_t *settings, size_t mixer_idx, obs_data_t *hotkey_data);
-typedef void (*obs_encoder_release_t)(obs_encoder_t *encoder);
-typedef void (*obs_encoder_set_video_t)(obs_encoder_t *encoder, video_t *video);
-typedef void (*obs_encoder_set_audio_t)(obs_encoder_t *encoder, audio_t *audio);
-typedef video_t* (*obs_get_video_t)(void);
-typedef audio_t* (*obs_get_audio_t)(void);
+using obs_video_encoder_create_t = obs_encoder_t*(*)(const char *id, const char *name, obs_data_t *settings, obs_data_t *hotkey_data);
+using obs_audio_encoder_create_t = obs_encoder_t*(*)(const char *id, const char *name, obs_data_t *settings, size_t mixer_idx, obs_data_t *hotkey_data);
+using obs_encoder_release_t = void(*)(obs_encoder_t *encoder);
+using obs_encoder_set_video_t = void(*)(obs_encoder_t *encoder, video_t *video);
+using obs_encoder_set_audio_t = void(*)(obs_encoder_t *encoder, audio_t *audio);
+using obs_get_video_t = video_t*(*)(void);
+using obs_get_audio_t = audio_t*(*)(void);
 
-// Output functions
-typedef obs_output_t* (*obs_output_create_t)(const char *id, const char *name, obs_data_t *settings, obs_data_t *hotkey_data);
-typedef void (*obs_output_release_t)(obs_output_t *output);
-typedef void (*obs_output_set_video_encoder_t)(obs_output_t *output, obs_encoder_t *encoder);
-typedef void (*obs_output_set_audio_encoder_t)(obs_output_t *output, obs_encoder_t *encoder, size_t idx);
-typedef bool (*obs_output_start_t)(obs_output_t *output);
-typedef void (*obs_output_stop_t)(obs_output_t *output);
-typedef bool (*obs_output_active_t)(obs_output_t *output);
-typedef signal_handler_t* (*obs_output_get_signal_handler_t)(obs_output_t *output);
-typedef void (*signal_handler_connect_t)(signal_handler_t *handler, const char *signal, void (*callback)(void*, calldata_t*), void *data);
-typedef void (*obs_output_signal_t)(obs_output_t *output, const char *signal);
-typedef const char* (*calldata_string_t)(calldata_t *data, const char *name);
-typedef const char* (*obs_output_get_last_error_t)(obs_output_t *output);
-typedef bool (*obs_output_can_begin_data_capture_t)(obs_output_t *output, uint32_t flags);
-typedef void (*obs_output_set_mixers_t)(obs_output_t *output, uint32_t mixers);
-typedef void (*obs_output_set_video_source_t)(obs_output_t *output, obs_source_t *source);
+using obs_output_create_t = obs_output_t*(*)(const char *id, const char *name, obs_data_t *settings, obs_data_t *hotkey_data);
+using obs_output_release_t = void(*)(obs_output_t *output);
+using obs_output_set_video_encoder_t = void(*)(obs_output_t *output, obs_encoder_t *encoder);
+using obs_output_set_audio_encoder_t = void(*)(obs_output_t *output, obs_encoder_t *encoder, size_t idx);
+using obs_output_start_t = bool(*)(obs_output_t *output);
+using obs_output_stop_t = void(*)(obs_output_t *output);
+using obs_output_active_t = bool(*)(obs_output_t *output);
+using obs_output_get_signal_handler_t = signal_handler_t*(*)(obs_output_t *output);
+using signal_handler_connect_t = void(*)(signal_handler_t *handler, const char *signal, void (*callback)(void*, calldata_t*), void *data);
+using obs_output_signal_t = void(*)(obs_output_t *output, const char *signal);
+using calldata_string_t = const char*(*)(calldata_t *data, const char *name);
+using obs_output_get_last_error_t = const char*(*)(obs_output_t *output);
+using obs_output_get_last_replay_t = const char*(*)(obs_output_t *output);
+using obs_output_can_begin_data_capture_t = bool(*)(obs_output_t *output, uint32_t flags);
+using obs_output_set_mixers_t = void(*)(obs_output_t *output, uint32_t mixers);
+using obs_output_set_video_source_t = void(*)(obs_output_t *output, obs_source_t *source);
 
-// Debug/diagnostic functions
-typedef uint32_t (*obs_output_get_flags_t)(obs_output_t *output);
-typedef const char* (*obs_encoder_get_id_t)(const obs_encoder_t *encoder);
-typedef bool (*obs_encoder_active_t)(const obs_encoder_t *encoder);
-typedef const char* (*obs_output_get_id_t)(const obs_output_t *output);
-typedef const char* (*obs_output_get_name_t)(const obs_output_t *output);
-typedef obs_encoder_t* (*obs_output_get_video_encoder_t)(const obs_output_t *output);
-typedef obs_encoder_t* (*obs_output_get_audio_encoder_t)(const obs_output_t *output, size_t idx);
-typedef const char* (*obs_data_get_json_t)(obs_data_t *data);
+using obs_output_get_flags_t = uint32_t(*)(obs_output_t *output);
+using obs_encoder_get_id_t = const char*(*)(const obs_encoder_t *encoder);
+using obs_encoder_active_t = bool(*)(const obs_encoder_t *encoder);
+using obs_output_get_id_t = const char*(*)(const obs_output_t *output);
+using obs_output_get_name_t = const char*(*)(const obs_output_t *output);
+using obs_output_get_video_encoder_t = obs_encoder_t*(*)(const obs_output_t *output);
+using obs_output_get_audio_encoder_t = obs_encoder_t*(*)(const obs_output_t *output, size_t idx);
+using obs_data_get_json_t = const char*(*)(obs_data_t *data);
 
-// Procedure handler functions (for replay buffer save)
-typedef proc_handler_t* (*obs_output_get_proc_handler_t)(obs_output_t *output);
-typedef void (*calldata_init_t)(calldata_t *data);
-typedef void (*calldata_free_t)(calldata_t *data);
-typedef bool (*proc_handler_call_t)(proc_handler_t *handler, const char *name, calldata_t *data);
+using obs_output_get_proc_handler_t = proc_handler_t*(*)(obs_output_t *output);
+using calldata_init_t = void(*)(calldata_t *data);
+using calldata_free_t = void(*)(calldata_t *data);
+using proc_handler_call_t = bool(*)(proc_handler_t *handler, const char *name, calldata_t *data);
 
-// Scene functions (needed for video rendering pipeline)
-typedef obs_scene_t* (*obs_scene_create_t)(const char *name);
-typedef void (*obs_scene_release_t)(obs_scene_t *scene);
-typedef obs_source_t* (*obs_scene_get_source_t)(const obs_scene_t *scene);
-typedef obs_sceneitem_t* (*obs_scene_add_t)(obs_scene_t *scene, obs_source_t *source);
+using obs_scene_create_t = obs_scene_t*(*)(const char *name);
+using obs_scene_release_t = void(*)(obs_scene_t *scene);
+using obs_scene_get_source_t = obs_source_t*(*)(const obs_scene_t *scene);
+using obs_scene_add_t = obs_sceneitem_t*(*)(obs_scene_t *scene, obs_source_t *source);
 
 namespace clipvault {
 
@@ -134,6 +126,7 @@ static signal_handler_connect_t g_signal_handler_connect = nullptr;
 static obs_output_signal_t g_obs_output_signal = nullptr;
 static calldata_string_t g_calldata_string = nullptr;
 static obs_output_get_last_error_t g_obs_output_get_last_error = nullptr;
+static obs_output_get_last_replay_t g_obs_output_get_last_replay = nullptr;
 static obs_output_can_begin_data_capture_t g_obs_output_can_begin_data_capture = nullptr;
 static obs_output_set_mixers_t g_obs_output_set_mixers = nullptr;
 static obs_output_set_video_source_t g_obs_output_set_video_source = nullptr;
@@ -251,7 +244,8 @@ static bool load_obs_functions()
     g_obs_output_signal = (obs_output_signal_t)GetProcAddress(g_obs_module, "obs_output_signal");
     g_calldata_string = (calldata_string_t)GetProcAddress(g_obs_module, "calldata_string");
     g_obs_output_get_last_error = (obs_output_get_last_error_t)GetProcAddress(g_obs_module, "obs_output_get_last_error");
-g_obs_output_can_begin_data_capture = (obs_output_can_begin_data_capture_t)GetProcAddress(g_obs_module, "obs_output_can_begin_data_capture");
+    g_obs_output_get_last_replay = (obs_output_get_last_replay_t)GetProcAddress(g_obs_module, "obs_output_get_last_replay");
+    g_obs_output_can_begin_data_capture = (obs_output_can_begin_data_capture_t)GetProcAddress(g_obs_module, "obs_output_can_begin_data_capture");
     g_obs_output_set_mixers = (obs_output_set_mixers_t)GetProcAddress(g_obs_module, "obs_output_set_mixers");
     g_obs_output_set_video_source = (obs_output_set_video_source_t)GetProcAddress(g_obs_module, "obs_output_set_video_source");
 
@@ -637,6 +631,11 @@ const char* calldata_string(calldata_t* data, const char* name)
 const char* output_get_last_error(obs_output_t* output)
 {
     return g_obs_output_get_last_error && output ? g_obs_output_get_last_error(output) : nullptr;
+}
+
+const char* output_get_last_replay(obs_output_t* output)
+{
+    return g_obs_output_get_last_replay && output ? g_obs_output_get_last_replay(output) : nullptr;
 }
 
 bool output_can_begin_data_capture(obs_output_t* output, uint32_t flags)

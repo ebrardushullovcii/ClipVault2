@@ -4,6 +4,8 @@
 
 namespace clipvault {
 
+std::string escape_json_string(const std::string& input);
+
 struct VideoConfig {
     int width = 1920;
     int height = 1080;

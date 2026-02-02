@@ -7,6 +7,7 @@
 #include "replay.h"
 #include "hotkey.h"
 #include "audio_devices.h"
+#include "game_detector.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -69,23 +70,6 @@ void parse_arguments(LPSTR lpCmdLine)
     }
 }
 
-// Helper to escape strings for JSON output
-std::string escape_json_string(const std::string& str) {
-    std::string escaped;
-    for (char c : str) {
-        switch (c) {
-            case '"': escaped += "\\\""; break;
-            case '\\': escaped += "\\\\"; break;
-            case '\b': escaped += "\\b"; break;
-            case '\f': escaped += "\\f"; break;
-            case '\n': escaped += "\\n"; break;
-            case '\r': escaped += "\\r"; break;
-            case '\t': escaped += "\\t"; break;
-            default: escaped += c;
-        }
-    }
-    return escaped;
-}
 
 // Get the directory where the exe is located
 std::string get_exe_directory()
@@ -202,13 +186,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         for (const auto& dev : output_devices) {
             if (!first) std::cout << ",";
             first = false;
-            std::cout << "{\"id\":\"" << escape_json_string(dev.id) << "\",\"name\":\"" << escape_json_string(dev.name) << "\",\"type\":\"output\",\"is_default\":" << (dev.is_default ? "true" : "false") << "}";
+            std::cout << "{\"id\":\"" << clipvault::escape_json_string(dev.id) << "\",\"name\":\"" << clipvault::escape_json_string(dev.name) << "\",\"type\":\"output\",\"is_default\":" << (dev.is_default ? "true" : "false") << "}";
         }
 
         for (const auto& dev : input_devices) {
             if (!first) std::cout << ",";
             first = false;
-            std::cout << "{\"id\":\"" << escape_json_string(dev.id) << "\",\"name\":\"" << escape_json_string(dev.name) << "\",\"type\":\"input\",\"is_default\":" << (dev.is_default ? "true" : "false") << "}";
+            std::cout << "{\"id\":\"" << clipvault::escape_json_string(dev.id) << "\",\"name\":\"" << clipvault::escape_json_string(dev.name) << "\",\"type\":\"input\",\"is_default\":" << (dev.is_default ? "true" : "false") << "}";
         }
 
         std::cout << "]";
@@ -315,6 +299,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         clipvault::Logger::instance().shutdown();
         return 1;
     }
+    
+    // Initialize game detector (loads game database)
+    auto& game_detector = clipvault::GameDetector::instance();
+    if (!game_detector.initialize()) {
+        LOG_WARNING("Failed to initialize game detector - game detection will be limited");
+    } else {
+        LOG_INFO("Game detector initialized successfully");
+    }
 
     // Start the replay buffer
     if (!replay.start()) {
@@ -371,6 +363,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         auto& hotkey = clipvault::HotkeyManager::instance();
         hotkey.set_callback([&replay]() {
             LOG_INFO("Hotkey callback executing - triggering save...");
+            
+            // Detect game from foreground window
+            std::string detected_game = clipvault::GameDetector::instance().detect_game_from_foreground();
+            if (!detected_game.empty()) {
+                LOG_INFO("Game detected: " + detected_game);
+            } else {
+                LOG_INFO("No game detected in foreground window");
+            }
+            
+            // Set game for this save operation
+            replay.set_current_game(detected_game);
+            
             if (!replay.save_clip()) {
                 LOG_ERROR("Failed to save clip: " + replay.last_error());
             }
@@ -406,6 +410,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         } else {
             hotkey.set_callback([&replay]() {
                 LOG_INFO("Hotkey callback executing - triggering save...");
+                
+                // Detect game from foreground window
+                std::string detected_game = clipvault::GameDetector::instance().detect_game_from_foreground();
+                if (!detected_game.empty()) {
+                    LOG_INFO("Game detected: " + detected_game);
+                } else {
+                    LOG_INFO("No game detected in foreground window");
+                }
+                
+                // Set game for this save operation
+                replay.set_current_game(detected_game);
+                
                 if (!replay.save_clip()) {
                     LOG_ERROR("Failed to save clip: " + replay.last_error());
                 }

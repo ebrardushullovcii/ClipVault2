@@ -7,6 +7,23 @@
 
 namespace clipvault {
 
+std::string escape_json_string(const std::string& input) {
+    std::string output;
+    for (char c : input) {
+        switch (c) {
+            case '"':  output += "\\\""; break;
+            case '\\': output += "\\\\"; break;
+            case '\b': output += "\\b"; break;
+            case '\f': output += "\\f"; break;
+            case '\n': output += "\\n"; break;
+            case '\r': output += "\\r"; break;
+            case '\t': output += "\\t"; break;
+            default:   output += c;    break;
+        }
+    }
+    return output;
+}
+
 // Simple JSON value extraction helpers
 namespace {
 
@@ -208,26 +225,14 @@ bool ConfigManager::save(const std::string& filepath) {
         return false;
     }
 
-    // Helper to escape strings for JSON
-    auto escape_json = [](const std::string& str) -> std::string {
-        std::string result;
-        for (char c : str) {
-            if (c == '\\' || c == '"') {
-                result += '\\';
-            }
-            result += c;
-        }
-        return result;
-    };
-
     file << "{\n";
-    file << "    \"output_path\": \"" << escape_json(config_.output_path) << "\",\n";
+    file << "    \"output_path\": \"" << escape_json_string(config_.output_path) << "\",\n";
     file << "    \"buffer_seconds\": " << config_.buffer_seconds << ",\n";
     file << "    \"video\": {\n";
     file << "        \"width\": " << config_.video.width << ",\n";
     file << "        \"height\": " << config_.video.height << ",\n";
     file << "        \"fps\": " << config_.video.fps << ",\n";
-    file << "        \"encoder\": \"" << escape_json(config_.video.encoder) << "\",\n";
+    file << "        \"encoder\": \"" << escape_json_string(config_.video.encoder) << "\",\n";
     file << "        \"quality\": " << config_.video.quality << ",\n";
     file << "        \"monitor\": " << config_.video.monitor << "\n";
     file << "    },\n";
@@ -236,11 +241,11 @@ bool ConfigManager::save(const std::string& filepath) {
     file << "        \"bitrate\": " << config_.audio.bitrate << ",\n";
     file << "        \"system_audio_enabled\": " << (config_.audio.system_audio_enabled ? "true" : "false") << ",\n";
     file << "        \"microphone_enabled\": " << (config_.audio.microphone_enabled ? "true" : "false") << ",\n";
-    file << "        \"system_audio_device_id\": \"" << escape_json(config_.audio.system_audio_device_id) << "\",\n";
-    file << "        \"microphone_device_id\": \"" << escape_json(config_.audio.microphone_device_id) << "\"\n";
+    file << "        \"system_audio_device_id\": \"" << escape_json_string(config_.audio.system_audio_device_id) << "\",\n";
+    file << "        \"microphone_device_id\": \"" << escape_json_string(config_.audio.microphone_device_id) << "\"\n";
     file << "    },\n";
     file << "    \"hotkey\": {\n";
-    file << "        \"save_clip\": \"" << escape_json(config_.hotkey.save_clip) << "\"\n";
+    file << "        \"save_clip\": \"" << escape_json_string(config_.hotkey.save_clip) << "\"\n";
     file << "    },\n";
     file << "    \"ui\": {\n";
     file << "        \"show_notifications\": " << (config_.ui.show_notifications ? "true" : "false") << ",\n";

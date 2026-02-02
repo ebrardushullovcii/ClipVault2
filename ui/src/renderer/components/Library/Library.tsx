@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
-import { Search, Grid3X3, List, Loader2, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react'
+import { Search, Grid3X3, List, Loader2, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Gamepad2, X, Plus } from 'lucide-react'
 import { ClipCard } from './ClipCard'
+import { GameTagEditor } from '../GameTagEditor'
 import { useThumbnails } from '../../hooks/useThumbnails'
 import { useVideoMetadata, type VideoMetadata } from '../../hooks/useVideoMetadata'
 import { useLibraryState } from '../../hooks/useLibraryState'
@@ -24,12 +25,12 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
   const [error, setError] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [containerHeight, setContainerHeight] = useState(0)
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const [editingGameClip, setEditingGameClip] = useState<ClipInfo | null>(null)
   
   // Use persistent state
   const {
     state: libraryState,
-    scrollRef: persistedScrollRef,
+    scrollRef,
     isRestored,
     setSearchQuery,
     setViewMode,
@@ -38,6 +39,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
     setFilterBy,
     setShowFavoritesOnly,
     setSelectedTag,
+    setSelectedGame,
     saveScrollPosition,
   } = useLibraryState()
 
@@ -187,6 +189,37 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
     ))
   }, [])
 
+  // Handle editing game tag
+  const handleEditGame = useCallback((clip: ClipInfo) => {
+    setEditingGameClip(clip)
+  }, [])
+
+  // Handle saving game tag
+  const handleSaveGame = useCallback(async (game: string | null) => {
+    if (!editingGameClip) return
+
+    try {
+      const newMetadata: ClipMetadata = {
+        ...(editingGameClip.metadata ?? {}),
+        game: game || undefined,
+      }
+
+      // Save to backend
+      await window.electronAPI.saveClipMetadata(editingGameClip.id, newMetadata)
+
+      // Update local state
+      setClips(prev => prev.map(clip =>
+        clip.id === editingGameClip.id
+          ? { ...clip, metadata: newMetadata }
+          : clip
+      ))
+    } catch (error) {
+      console.error('[Library] Failed to update game tag:', error)
+    }
+
+    setEditingGameClip(null)
+  }, [editingGameClip])
+
   // Register update function with parent App (runs after handleMetadataUpdate is defined)
   useEffect(() => {
     if (onRegisterUpdate) {
@@ -209,6 +242,25 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
     return Object.keys(tagCounts).sort()
   }, [tagCounts])
 
+  // Extract all unique games from clips with counts
+  // ONLY counts games from actual metadata tags (backend detection or user tagging)
+  // Does NOT use filename extraction for filtering - filename is just for display
+  const gameCounts = useMemo(() => {
+    const counts: { [game: string]: number } = {}
+    clips.forEach(clip => {
+      // Only use metadata.game - never extract from filename for filter
+      const game = clip.metadata?.game
+      if (game) {
+        counts[game] = (counts[game] || 0) + 1
+      }
+    })
+    return counts
+  }, [clips])
+
+  const allGames = useMemo(() => {
+    return Object.keys(gameCounts).sort()
+  }, [gameCounts])
+
   const filteredAndSortedClips = useMemo(() => {
     let result = clips.filter(clip =>
       clip.filename.toLowerCase().includes(libraryState.searchQuery.toLowerCase())
@@ -221,6 +273,11 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
     // Filter by selected tag
     if (libraryState.selectedTag) {
       result = result.filter(clip => clip.metadata?.tags?.includes(libraryState.selectedTag!))
+    }
+
+    // Filter by selected game
+    if (libraryState.selectedGame) {
+      result = result.filter(clip => clip.metadata?.game === libraryState.selectedGame)
     }
 
     result.sort((a, b) => {
@@ -246,7 +303,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
     })
 
     return result
-  }, [clips, libraryState.searchQuery, libraryState.sortBy, libraryState.sortDirection, libraryState.filterBy, libraryState.showFavoritesOnly, libraryState.selectedTag])
+  }, [clips, libraryState.searchQuery, libraryState.sortBy, libraryState.sortDirection, libraryState.filterBy, libraryState.showFavoritesOnly, libraryState.selectedTag, libraryState.selectedGame])
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes'
@@ -307,11 +364,13 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-border px-6">
         <div className="flex items-center gap-4">
           <h2 className="text-xl font-semibold text-text-primary">
-            {libraryState.selectedTag
-              ? `Tag: ${libraryState.selectedTag}`
-              : libraryState.filterBy === 'favorites' || libraryState.showFavoritesOnly
-                ? 'Favorites'
-                : 'All Clips'}
+            {libraryState.selectedGame
+              ? libraryState.selectedGame
+              : libraryState.selectedTag
+                ? `Tag: ${libraryState.selectedTag}`
+                : libraryState.filterBy === 'favorites' || libraryState.showFavoritesOnly
+                  ? 'Favorites'
+                  : 'All Clips'}
           </h2>
           <span className="text-sm text-text-muted">{filteredAndSortedClips.length} clips</span>
         </div>
@@ -450,12 +509,67 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
                   className="ml-2 rounded-md p-1 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
                   title="Clear tag filter"
                 >
-                  ×
+                  <X className="h-3 w-3" />
                 </button>
               )}
             </div>
           </>
         )}
+
+        {/* Game Filter Dropdown - Always visible */}
+        <div className="h-6 w-px bg-border mx-2" />
+        <div className="relative flex items-center">
+          {allGames.length > 0 ? (
+            <>
+              <Gamepad2 className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-text-muted pointer-events-none" />
+              <select
+                value={libraryState.selectedGame || ''}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setSelectedGame(value || null)
+                }}
+                className={`cursor-pointer appearance-none rounded-md pl-7 pr-8 py-1.5 text-sm font-medium transition-all ${
+                  libraryState.selectedGame
+                    ? 'bg-accent-primary text-background-primary'
+                    : 'bg-background-secondary text-text-muted hover:bg-background-tertiary hover:text-text-primary'
+                }`}
+              >
+                <option value="">All Games</option>
+                {allGames.map(game => (
+                  <option key={game} value={game}>{game} ({gameCounts[game]})</option>
+                ))}
+              </select>
+              {libraryState.selectedGame && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedGame(null)}
+                  className="ml-2 rounded-md p-1 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
+                  title="Clear game filter"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted">No games tagged</span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (clips.length > 0) {
+                    setEditingGameClip(clips[0])
+                  }
+                }}
+                disabled={clips.length === 0}
+                className="flex items-center gap-1 rounded-md bg-background-secondary px-2 py-1 text-xs text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                title={clips.length === 0 ? "No clips available to tag" : "Add game to the first clip"}
+              >
+                <Plus className="h-3 w-3" />
+                Add Game
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Content */}
@@ -475,7 +589,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
               <p className="mb-4 text-text-secondary">{error}</p>
-              <button onClick={loadClips} className="btn-primary">
+              <button type="button" onClick={loadClips} className="btn-primary">
                 Retry
               </button>
             </div>
@@ -520,6 +634,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
                   onGenerateThumbnail={generateThumbnail}
                   onFetchMetadata={fetchMetadata}
                   onOpenEditor={onOpenEditor}
+                  onEditGame={handleEditGame}
                 />
               ))}
             </div>
@@ -531,6 +646,15 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
           </>
         )}
       </div>
+
+      {/* Game Tag Editor Modal */}
+      <GameTagEditor
+        isOpen={!!editingGameClip}
+        onClose={() => setEditingGameClip(null)}
+        clip={editingGameClip}
+        currentGame={editingGameClip?.metadata?.game || null}
+        onSave={handleSaveGame}
+      />
     </div>
   )
 }

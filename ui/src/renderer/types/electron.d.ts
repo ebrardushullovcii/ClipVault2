@@ -13,6 +13,7 @@ export interface VideoMetadata {
 export interface ClipMetadata {
   favorite?: boolean
   tags?: string[]
+  game?: string
   trim?: {
     start: number
     end: number
@@ -175,7 +176,14 @@ export interface ElectronAPI {
   showSaveDialog: (options: Electron.SaveDialogOptions) => Promise<Electron.SaveDialogReturnValue>
   dialog: DialogAPI
   editor: EditorAPI
+  getGamesDatabase: () => Promise<{ success: boolean; data?: { games: GameEntry[] }; error?: string }>
   on: (channel: string, callback: (data: unknown) => void) => (() => void) | undefined
+}
+
+export interface GameEntry {
+  name: string
+  processNames: string[]
+  twitchId: string
 }
 
 declare global {

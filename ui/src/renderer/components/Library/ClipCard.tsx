@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, memo } from 'react'
-import { Play, Clock, HardDrive, Film, Maximize } from 'lucide-react'
+import { Play, Clock, HardDrive, Film, Maximize, Gamepad2, Plus } from 'lucide-react'
 import type { VideoMetadata } from '../../hooks/useVideoMetadata'
 import type { ClipInfo } from '../../types/electron'
 
@@ -13,6 +13,7 @@ interface ClipCardProps {
   onGenerateThumbnail: (clipId: string, videoPath: string) => Promise<string | undefined>
   onFetchMetadata: (clipId: string, videoPath: string) => Promise<VideoMetadata | undefined>
   onOpenEditor?: (clip: ClipInfo, metadata: VideoMetadata) => void
+  onEditGame?: (clip: ClipInfo) => void
 }
 
 export const ClipCard: React.FC<ClipCardProps> = memo(({
@@ -25,6 +26,7 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
   onGenerateThumbnail,
   onFetchMetadata,
   onOpenEditor,
+  onEditGame,
 }) => {
   const cardRef = useRef<HTMLDivElement>(null)
   const [isVisible, setIsVisible] = useState(false)
@@ -120,6 +122,13 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
     }
   }
 
+  const handleGameClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (onEditGame) {
+      onEditGame(clip)
+    }
+  }
+
   const isGrid = viewMode === 'grid'
 
   const formatDuration = (seconds: number): string => {
@@ -208,9 +217,32 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
           )}
         </div>
 
+        {/* Game tag - always visible */}
+        <div className="mt-2">
+          {clip.metadata?.game ? (
+            <button
+              onClick={handleGameClick}
+              className="inline-flex items-center gap-1 rounded bg-purple-500/10 px-2 py-1 text-xs text-purple-400 transition-colors hover:bg-purple-500/20"
+              title="Click to edit game"
+            >
+              <Gamepad2 className="h-3 w-3" />
+              {clip.metadata.game}
+            </button>
+          ) : (
+            <button
+              onClick={handleGameClick}
+              className="inline-flex items-center gap-1 rounded bg-background-tertiary/50 px-2 py-1 text-xs text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
+              title="Click to add game"
+            >
+              <Plus className="h-3 w-3" />
+              Game
+            </button>
+          )}
+        </div>
+
         {/* Tags (if any in metadata) */}
         {clip.metadata?.tags && clip.metadata.tags.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1">
+          <div className="mt-2 flex flex-wrap gap-1">
             {clip.metadata.tags.map((tag, index) => (
               <span
                 key={index}
@@ -242,6 +274,7 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
     prevProps.metadata?.height === nextProps.metadata?.height &&
     prevProps.metadata?.fps === nextProps.metadata?.fps &&
     prevProps.clip.metadata?.favorite === nextProps.clip.metadata?.favorite &&
-    JSON.stringify(prevProps.clip.metadata?.tags) === JSON.stringify(nextProps.clip.metadata?.tags)
+    JSON.stringify(prevProps.clip.metadata?.tags) === JSON.stringify(nextProps.clip.metadata?.tags) &&
+    prevProps.clip.metadata?.game === nextProps.clip.metadata?.game
   )
 })
