@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
-    "postinstall": "electron-builder install-app-deps && cd native/thumbnail-addon && npm install",
+    "postinstall": "electron-builder install-app-deps",
     "lint": "eslint . --ext .ts,.tsx,.js",
     "lint:fix": "eslint . --ext .ts,.tsx,.js --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,json,css,md}\"",
@@ -78,20 +78,6 @@
       {
         "from": "../64x64.png",
         "to": "64x64.png"
-      },
-      {
-        "from": "native/thumbnail-addon/build/Release",
-        "to": "native/thumbnail-addon",
-        "filter": [
-          "*.node"
-        ]
-      },
-      {
-        "from": "src/main",
-        "to": "native/thumbnail-addon",
-        "filter": [
-          "thumbnail-extractor.cjs"
-        ]
       }
     ],
     "win": {

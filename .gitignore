@@ -50,9 +50,30 @@ config/settings.local.json
 # Temporary files
 temp_obs/
 temp_obs.zip
+tmp_copy.sh
+
+# Test scripts
 test_nvenc.bat
 test_nvenc.ps1
-tmp_copy.sh
+scripts/run-test.ps1
+scripts/test-clipvault.ps1
+scripts/quick-check.ps1
+scripts/validate-clip.ps1
+test-*.cjs
+test-*.js
+test-*.mjs
+test_*.cjs
+test-*.mp4
+
+# OBS metadata
+win-capture/
+ui/win-capture/
+
+# Debug files
+builder-debug.yml
+*.patch
+crash_debug.log
+debug_startup.log
 
 # Third party source (we clone this separately)
 third_party/obs-studio-src/
