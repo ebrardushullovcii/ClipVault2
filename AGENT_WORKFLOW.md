@@ -3,6 +3,54 @@
 > This guide is optimized for autonomous agents (Opencode, Claude Code, etc.)
 > Human review is minimal - agents must verify their own work
 
+## Branch & PR Workflow (CRITICAL)
+
+**ALL work must be done on branches. ALL changes must go through pull requests.**
+
+```
+1. Create branch from master: git checkout -b feature/your-feature
+2. Make changes on branch
+3. Commit changes (use conventional commits)
+4. Push branch: git push -u origin feature/your-feature
+5. Create PR on GitHub
+6. CodeRabbit reviews PR automatically
+7. Address CodeRabbit feedback
+8. Get human review + approval
+9. Merge to master
+10. Delete branch
+```
+
+### Branch Naming
+
+- `feature/*` - New features
+- `fix/*` - Bug fixes
+- `refactor/*` - Code refactoring
+- `docs/*` - Documentation only
+- `test/*` - Adding/fixing tests
+
+### Never
+
+- ❌ Never commit directly to master
+- ❌ Never push to master
+- ❌ Never work without a branch
+
+## CodeRabbit Integration
+
+CodeRabbit automatically reviews every PR on GitHub. Use these commands in PR comments:
+
+- `@coderabbitai summarize` - Get PR summary
+- `@coderabbitai explain` - Explain specific code sections
+- `@coderabbitai walkthrough` - Step-by-step walkthrough
+
+**Before writing code, fetch CodeRabbit PR comments:**
+
+```powershell
+gh pr view --json number,title,body,reviews
+gh pr review-diff  # See all comments
+```
+
+Add relevant CodeRabbit suggestions to your implementation context.
+
 ## Critical Principle
 
 **If you can't verify it works, don't say it's done.**
