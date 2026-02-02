@@ -312,7 +312,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             });
         } else {
             // Try to find UI relative to backend
-            std::string ui_exe = exe_dir + "\\..\\..\\..\\ui\\release\\win-unpacked\\ClipVault.exe";
+            // Backend is at: resources/bin/ClipVault.exe
+            // UI is at: ClipVault.exe (same level as resources/)
+            std::string ui_exe = exe_dir + "\\..\\..\\ClipVault.exe";
             LOG_INFO("Looking for UI at: " + ui_exe);
             tray.set_open_ui_callback([ui_exe]() {
                 LOG_INFO("Opening UI: " + ui_exe);

@@ -79,11 +79,13 @@ export async function cleanupOrphanedCache(
   
   try {
     // Get list of valid clip IDs from the clips directory
+    // Clip IDs are the full filename without .mp4 extension
+    // e.g., "VALORANT__2025-10-12__20-52-36.mp4" -> "VALORANT__2025-10-12__20-52-36"
     const clipFiles = await readdir(clipsPath)
     const validClipIds = new Set(
       clipFiles
         .filter(f => f.endsWith('.mp4'))
-        .map(f => basename(f, extname(f)).split('_')[0]) // Extract clip ID from filename
+        .map(f => basename(f, '.mp4')) // Full clip ID = filename without .mp4
     )
     
     // Clean up orphaned thumbnails
@@ -114,7 +116,8 @@ export async function cleanupOrphanedCache(
         if (!audioFile.endsWith('.m4a')) continue
         
         // Extract clip ID from filename like "{clipId}_track1.m4a"
-        const clipId = audioFile.split('_')[0]
+        // The clip ID contains multiple underscores, so we need to remove only the last part
+        const clipId = audioFile.replace(/_track[12]\.m4a$/, '')
         if (!validClipIds.has(clipId)) {
           const audioPath = join(audioCachePath, audioFile)
           const deleted = await permanentDelete(audioPath)

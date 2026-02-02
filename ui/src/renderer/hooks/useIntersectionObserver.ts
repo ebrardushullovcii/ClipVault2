@@ -96,26 +96,34 @@ export const thumbnailQueue = new ThumbnailQueue()
 export const useLazyThumbnail = (
   clipId: string,
   videoPath: string,
-  onGenerate: (clipId: string, videoPath: string) => Promise<void>
+  onGenerate: (clipId: string, videoPath: string) => Promise<void>,
+  shouldRetry?: boolean
 ) => {
   const { ref, isVisible } = useIntersectionObserver({
     threshold: 0.1,
     rootMargin: '200px', // Start loading when within 200px of viewport
-    triggerOnce: true,
+    triggerOnce: false, // Allow re-triggering for retries
   })
   
   const hasEnqueuedRef = useRef(false)
+  const retryCountRef = useRef(0)
+  const maxRetries = 3
 
   useEffect(() => {
-    if (isVisible && !hasEnqueuedRef.current) {
+    // Allow enqueue if:
+    // 1. Element is visible
+    // 2. Not already enqueued OR shouldRetry is true
+    // 3. Haven't exceeded max retries
+    if (isVisible && (!hasEnqueuedRef.current || shouldRetry) && retryCountRef.current < maxRetries) {
       hasEnqueuedRef.current = true
+      retryCountRef.current++
       
       // Add to queue with a staggered delay based on index
       thumbnailQueue.enqueue(async () => {
         await onGenerate(clipId, videoPath)
       })
     }
-  }, [isVisible, clipId, videoPath, onGenerate])
+  }, [isVisible, clipId, videoPath, onGenerate, shouldRetry])
 
   return { ref, isVisible }
 }

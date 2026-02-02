@@ -28,9 +28,11 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
 }) => {
   const cardRef = useRef<HTMLDivElement>(null)
   const [isVisible, setIsVisible] = useState(false)
-  const hasLoadedRef = useRef(false)
+  const hasAttemptedRef = useRef(false)
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const observerRef = useRef<IntersectionObserver | null>(null)
+  const retryCountRef = useRef(0)
+  const maxRetries = 3
   
   // Lazy loading with intersection observer
   useEffect(() => {
@@ -43,40 +45,48 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
       return
     }
 
-    // Reset hasLoaded when dependencies change (e.g., when card remounts with new data)
-    hasLoadedRef.current = false
-
     observerRef.current = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting && !hasLoadedRef.current) {
-            setIsVisible(true)
-            hasLoadedRef.current = true
+          // Trigger if:
+          // 1. Element is intersecting
+          // 2. Haven't exceeded max retries
+          // 3. Either hasn't attempted yet, or thumbnail is still missing (retry)
+          if (entry.isIntersecting && retryCountRef.current < maxRetries) {
+            const shouldRetry = hasAttemptedRef.current && !thumbnailUrl
             
-            // Load thumbnail and metadata (only if not already loaded)
-            timeoutRef.current = setTimeout(async () => {
-              try {
-                // Check again at call time in case props updated
-                if (!thumbnailUrl) {
-                  await onGenerateThumbnail(clip.id, clip.path)
+            if (!hasAttemptedRef.current || shouldRetry) {
+              setIsVisible(true)
+              hasAttemptedRef.current = true
+              retryCountRef.current++
+              
+              // Load thumbnail and metadata
+              timeoutRef.current = setTimeout(async () => {
+                try {
+                  // Check again at call time in case props updated
+                  if (!thumbnailUrl) {
+                    await onGenerateThumbnail(clip.id, clip.path)
+                  }
+                  if (!metadata) {
+                    await onFetchMetadata(clip.id, clip.path)
+                  }
+                } catch (error) {
+                  // Log error but allow retry on next visibility
+                  console.error(`[ClipCard] Failed to load for ${clip.id}:`, error)
                 }
-                if (!metadata) {
-                  await onFetchMetadata(clip.id, clip.path)
-                }
-              } catch (error) {
-                // Silently ignore errors - thumbnails will show placeholder
+              }, Math.random() * 100) // Slightly longer stagger
+              
+              // Keep observing for retries until we have the thumbnail
+              if (thumbnailUrl && metadata && observerRef.current) {
+                observerRef.current.unobserve(element)
               }
-            }, Math.random() * 50) // Small stagger
-            
-            if (observerRef.current) {
-              observerRef.current.unobserve(element)
             }
           }
         })
       },
       {
         threshold: 0,
-        rootMargin: '100px',
+        rootMargin: '200px', // Larger margin to catch cards earlier
       }
     )
 
@@ -93,8 +103,20 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
   }, [clip.id, clip.path, thumbnailUrl, metadata, onGenerateThumbnail, onFetchMetadata])
 
   const handleClick = () => {
-    if (metadata && onOpenEditor) {
-      onOpenEditor(clip, metadata)
+    if (onOpenEditor) {
+      // Allow clicking even without full metadata - Editor will load it
+      const fallbackMetadata: VideoMetadata = metadata || {
+        duration: 0,
+        width: 1920,
+        height: 1080,
+        fps: 60,
+        bitrate: 0,
+        size: clip.size,
+        format: 'mp4',
+        videoCodec: 'h264',
+        audioTracks: 2
+      }
+      onOpenEditor(clip, fallbackMetadata)
     }
   }
 
@@ -147,7 +169,7 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
 
         {/* Duration badge */}
         <div className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1 text-xs font-medium text-white">
-          {metadata ? formatDuration(metadata.duration) : '2:00'}
+          {metadata ? formatDuration(metadata.duration) : '...'}
         </div>
 
         {/* Resolution badge */}

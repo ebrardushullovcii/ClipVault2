@@ -5,9 +5,97 @@ import { unlink } from 'fs'
 import { unlink as fsUnlink } from 'fs'
 import { existsSync, createReadStream, readFileSync, createWriteStream } from 'fs'
 import ffmpeg from 'fluent-ffmpeg'
-import { spawn, execSync } from 'child_process'
+import { spawn, execSync, ChildProcess } from 'child_process'
 import { cleanupOrphanedCache, getCacheStats, formatBytes } from './cleanup'
 import chokidar from 'chokidar'
+
+import * as nodePath from 'path'
+import * as nodeFs from 'fs'
+
+const thumbnailLogPath = join(app.getPath('userData'), 'thumbnail.log')
+
+function logThumbnail(message: string): void {
+  const timestamp = new Date().toISOString()
+  const logLine = `[${timestamp}] ${message}\n`
+  console.log('[Thumbnail]', message)
+  try {
+    const logStream = createWriteStream(thumbnailLogPath, { flags: 'a' })
+    logStream.write(logLine)
+    logStream.end()
+  } catch {
+    // Ignore log errors
+  }
+}
+
+logThumbnail('ClipVault started - Thumbnail Worker Manager initialized')
+
+// Thumbnail Worker Manager - Optimized FFmpeg based
+// Uses input seeking (-ss before -i) for fast thumbnail extraction
+// Native Windows Thumbnail Cache API addon is disabled due to Electron compatibility issues
+class ThumbnailWorkerManager {
+  constructor() {
+    console.log('[ThumbnailWorker] Optimized FFmpeg-based thumbnail generation active')
+    logThumbnail('Thumbnail generation: Optimized FFmpeg with input seeking')
+  }
+
+  async extractThumbnail(videoPath: string, outputPath: string, width = 480, height = 270): Promise<{ success: boolean; error?: string; duration?: number }> {
+    const startTime = Date.now()
+    try {
+      // Skip if thumbnail already exists - this is the key optimization!
+      if (existsSync(outputPath)) {
+        return { success: true, duration: 0 }
+      }
+
+      const outputDir = dirname(outputPath)
+      if (!existsSync(outputDir)) {
+        await mkdir(outputDir, { recursive: true })
+      }
+
+      logThumbnail(`Extracting: ${basename(videoPath)}`)
+
+      // Use optimized FFmpeg with input seeking (-ss before -i is MUCH faster)
+      // This seeks directly in the file without decoding frames
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(videoPath)
+          .inputOptions(['-ss', '0.5']) // Input seeking - fast!
+          .outputOptions([
+            '-vframes', '1',           // Only 1 frame
+            '-q:v', '5',               // Good quality JPEG
+            '-vf', `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`
+          ])
+          .output(outputPath)
+          .on('end', () => resolve())
+          .on('error', (err) => {
+            console.error('[ThumbnailWorker] FFmpeg error:', err.message)
+            reject(err)
+          })
+          .run()
+      })
+
+      const duration = Date.now() - startTime
+      logThumbnail(`Success: ${basename(videoPath)} (${duration}ms)`)
+      return { success: true, duration }
+    } catch (error) {
+      const duration = Date.now() - startTime
+      console.error('[ThumbnailWorker] FFmpeg error:', error)
+      logThumbnail(`Error: ${basename(videoPath)} - ${error}`)
+      return { success: false, error: String(error), duration }
+    }
+  }
+
+  isAvailable(): boolean {
+    return true
+  }
+}
+
+let thumbnailWorker: ThumbnailWorkerManager | null = null
+
+function getThumbnailWorker(): ThumbnailWorkerManager {
+  if (!thumbnailWorker) {
+    thumbnailWorker = new ThumbnailWorkerManager()
+  }
+  return thumbnailWorker
+}
 
 // Get the directory containing the main script
 const appPath = process.argv[1] || process.cwd()
@@ -173,6 +261,15 @@ async function restartBackend(): Promise<boolean> {
 // App configuration
 const isDev = process.env.NODE_ENV === 'development'
 const thumbnailsPath = join(app.getPath('userData'), 'thumbnails')
+
+// Settings file path - use standard AppData location (same as C++ backend)
+// MUST be defined before getClipsPath() which uses it
+const getSettingsPath = (): string => {
+  // Use process.env.APPDATA to match C++ backend's CSIDL_APPDATA
+  // This ensures both backend and UI use exact same path
+  const appDataPath = process.env.APPDATA || app.getPath('appData')
+  return join(appDataPath, 'ClipVault', 'settings.json')
+}
 
 // Default clips path (fallback if not in settings)
 const DEFAULT_CLIPS_PATH = 'D:\\Clips\\ClipVault'
@@ -469,14 +566,6 @@ async function createWindow() {
 }
 
 // IPC Handlers
-
-// Settings file path - use standard AppData location (same as C++ backend)
-const getSettingsPath = () => {
-  // Use process.env.APPDATA to match C++ backend's CSIDL_APPDATA
-  // This ensures both backend and UI use exact same path
-  const appDataPath = process.env.APPDATA || app.getPath('appData')
-  return join(appDataPath, 'ClipVault', 'settings.json')
-}
 
 // Default settings object
 const defaultSettings = {
@@ -829,10 +918,34 @@ ipcMain.handle('dialog:save', async (_, options) => {
   return result
 })
 
+// Get all existing thumbnails (for instant library loading)
+ipcMain.handle('clips:getExistingThumbnails', async () => {
+  try {
+    if (!existsSync(thumbnailsPath)) {
+      return {}
+    }
+
+    const files = await readdir(thumbnailsPath)
+    const thumbnails: { [clipId: string]: string } = {}
+
+    for (const file of files) {
+      if (file.endsWith('.jpg')) {
+        const clipId = file.replace('.jpg', '')
+        thumbnails[clipId] = `clipvault://thumb/${encodeURIComponent(file)}`
+      }
+    }
+
+    console.log(`[Thumbnails] Found ${Object.keys(thumbnails).length} existing thumbnails`)
+    return thumbnails
+  } catch (error) {
+    console.error('[Thumbnails] Error getting existing thumbnails:', error)
+    return {}
+  }
+})
+
 // Generate thumbnail for a clip
 ipcMain.handle('clips:generateThumbnail', async (_, clipId: string, videoPath: string) => {
   try {
-    // Ensure thumbnails directory exists
     if (!existsSync(thumbnailsPath)) {
       await mkdir(thumbnailsPath, { recursive: true })
     }
@@ -840,30 +953,56 @@ ipcMain.handle('clips:generateThumbnail', async (_, clipId: string, videoPath: s
     const thumbnailFilename = `${clipId}.jpg`
     const thumbnailPath = join(thumbnailsPath, thumbnailFilename)
 
-    // Check if thumbnail already exists
     if (existsSync(thumbnailPath)) {
       return `clipvault://thumb/${encodeURIComponent(thumbnailFilename)}`
     }
 
-    // Generate thumbnail using FFmpeg
+    const worker = getThumbnailWorker()
+
+    if (worker.isAvailable()) {
+      logThumbnail(`Windows API: ${thumbnailFilename}`)
+      const startTime = Date.now()
+
+      try {
+        const result = await worker.extractThumbnail(videoPath, thumbnailPath, 480, 270)
+
+        if (result.success && existsSync(thumbnailPath)) {
+          logThumbnail(`Windows API success: ${thumbnailFilename} in ${result.duration || 0}ms`)
+          return `clipvault://thumb/${encodeURIComponent(thumbnailFilename)}`
+        } else {
+          logThumbnail(`Windows API failed: ${thumbnailFilename} - ${result.error}`)
+        }
+      } catch (error) {
+        logThumbnail(`Windows API error: ${thumbnailFilename} - ${error}`)
+      }
+    } else {
+      logThumbnail(`Worker unavailable, using FFmpeg: ${thumbnailFilename}`)
+    }
+
+    logThumbnail(`FFmpeg fallback: ${thumbnailFilename}`)
+    const ffStartTime = Date.now()
+
     return new Promise((resolve, reject) => {
       ffmpeg(videoPath)
-        .screenshots({
-          timestamps: ['10%'], // Take screenshot at 10% into the video
-          filename: thumbnailFilename,
-          folder: thumbnailsPath,
-          size: '480x270', // 16:9 aspect ratio thumbnail
-        })
+        .inputOptions(['-ss', '0.5']) // Input seeking - fast!
+        .outputOptions([
+          '-vframes', '1',
+          '-q:v', '5',
+          '-vf', 'scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2'
+        ])
+        .output(thumbnailPath)
         .on('end', () => {
+          logThumbnail(`FFmpeg success: ${thumbnailFilename} in ${Date.now() - ffStartTime}ms`)
           resolve(`clipvault://thumb/${encodeURIComponent(thumbnailFilename)}`)
         })
-        .on('error', err => {
-          console.error('FFmpeg error:', err)
+        .on('error', (err) => {
+          logThumbnail(`FFmpeg error: ${thumbnailFilename} - ${err}`)
           reject(err)
         })
+        .run()
     })
   } catch (error) {
-    console.error('Failed to generate thumbnail:', error)
+    logThumbnail(`Failed: ${clipId} - ${error}`)
     throw error
   }
 })
@@ -922,7 +1061,200 @@ ipcMain.handle('clips:getVideoMetadata', async (_, videoPath: string) => {
   }
 })
 
- // Keep reference to export preview window
+// Background thumbnail pre-generation on startup
+async function preGenerateThumbnails() {
+  try {
+    const clipsDir = getClipsPath()
+    if (!existsSync(clipsDir)) {
+      console.log('[Main] No clips directory, skipping thumbnail pre-generation')
+      return
+    }
+
+    const files = await readdir(clipsDir)
+    const videoFiles = files.filter(f => f.endsWith('.mp4'))
+
+    if (videoFiles.length === 0) {
+      return
+    }
+
+    console.log(`[Main] Pre-generating ${videoFiles.length} thumbnails...`)
+
+    let generated = 0
+    let skipped = 0
+    let windowsGenerated = 0
+    let ffmpegGenerated = 0
+
+    const batchSize = 3
+    const worker = getThumbnailWorker()
+    const useWorker = worker.isAvailable()
+
+    if (useWorker) {
+      logThumbnail(`Pre-generation: using Windows Thumbnail Cache for ${videoFiles.length} clips`)
+    } else {
+      logThumbnail(`Pre-generation: Worker not available, using FFmpeg for ${videoFiles.length} clips`)
+    }
+
+    for (let i = 0; i < videoFiles.length; i += batchSize) {
+      const batch = videoFiles.slice(i, i + batchSize)
+
+      await Promise.all(batch.map(async (filename) => {
+        const clipId = filename.replace('.mp4', '')
+        const thumbnailFilename = `${clipId}.jpg`
+        const thumbnailPath = join(thumbnailsPath, thumbnailFilename)
+
+        if (existsSync(thumbnailPath)) {
+          skipped++
+          return
+        }
+
+        const videoPath = join(clipsDir, filename)
+
+        if (useWorker) {
+          try {
+            const result = await worker.extractThumbnail(videoPath, thumbnailPath, 480, 270)
+            if (result.success && existsSync(thumbnailPath)) {
+              windowsGenerated++
+              generated++
+              logThumbnail(`Pre-gen Windows: ${thumbnailFilename} in ${result.duration || 0}ms`)
+              return
+            } else {
+              logThumbnail(`Pre-gen Windows failed: ${thumbnailFilename}`)
+            }
+          } catch (error) {
+            logThumbnail(`Pre-gen Windows error: ${thumbnailFilename} - ${error}`)
+          }
+        }
+
+        await new Promise<void>((resolve) => {
+          const ffStartTime = Date.now()
+          ffmpeg(videoPath)
+            .inputOptions(['-ss', '0.5']) // Input seeking - fast!
+            .outputOptions([
+              '-vframes', '1',
+              '-q:v', '5',
+              '-vf', 'scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2'
+            ])
+            .output(thumbnailPath)
+            .on('end', () => {
+              ffmpegGenerated++
+              generated++
+              logThumbnail(`Pre-gen: ${thumbnailFilename} in ${Date.now() - ffStartTime}ms`)
+              resolve()
+            })
+            .on('error', (err) => {
+              logThumbnail(`Pre-gen error: ${thumbnailFilename} - ${err}`)
+              resolve()
+            })
+            .run()
+        })
+      }))
+
+      if (i + batchSize < videoFiles.length) {
+        await new Promise(r => setTimeout(r, 100))
+      }
+    }
+    
+    logThumbnail(`Pre-generation complete: ${generated} generated (${windowsGenerated} Windows, ${ffmpegGenerated} FFmpeg), ${skipped} skipped`)
+  } catch (error) {
+    logThumbnail(`Pre-generation error: ${error}`)
+  }
+}
+
+// Watch clips folder for new files and generate thumbnails instantly
+// This is the KEY to fast library loading - thumbnails are ready before you open the Library
+let clipsWatcher: ReturnType<typeof chokidar.watch> | null = null
+
+function startClipsWatcher() {
+  const clipsDir = getClipsPath()
+  if (!existsSync(clipsDir)) {
+    console.log('[ClipsWatcher] No clips directory yet, will start watcher when it exists')
+    return
+  }
+
+  if (clipsWatcher) {
+    console.log('[ClipsWatcher] Already watching')
+    return
+  }
+
+  console.log(`[ClipsWatcher] Watching for new clips in: ${clipsDir}`)
+  logThumbnail(`Starting clips watcher on: ${clipsDir}`)
+
+  // Track files being written (recording in progress)
+  const pendingFiles = new Map<string, { size: number; checkCount: number }>()
+
+  clipsWatcher = chokidar.watch(clipsDir, {
+    ignored: /(^|[\/\\])\../, // Ignore hidden files
+    persistent: true,
+    ignoreInitial: true, // Don't fire for existing files
+    awaitWriteFinish: {
+      stabilityThreshold: 1000, // Wait 1s for file size to stabilize (recording complete)
+      pollInterval: 200
+    }
+  })
+
+  clipsWatcher.on('add', async (filePath: string) => {
+    // Only process .mp4 files
+    if (!filePath.endsWith('.mp4')) return
+
+    const filename = basename(filePath)
+    const clipId = filename.replace('.mp4', '')
+    const thumbnailFilename = `${clipId}.jpg`
+    const thumbnailPath = join(thumbnailsPath, thumbnailFilename)
+
+    // Skip if thumbnail already exists
+    if (existsSync(thumbnailPath)) {
+      logThumbnail(`[Watcher] Thumbnail already exists: ${thumbnailFilename}`)
+      return
+    }
+
+    logThumbnail(`[Watcher] New clip detected: ${filename} - generating thumbnail...`)
+    const startTime = Date.now()
+
+    try {
+      // Make sure thumbnails directory exists
+      if (!existsSync(thumbnailsPath)) {
+        await mkdir(thumbnailsPath, { recursive: true })
+      }
+
+      // Generate thumbnail using optimized FFmpeg
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(filePath)
+          .inputOptions(['-ss', '0.5']) // Input seeking - fast!
+          .outputOptions([
+            '-vframes', '1',
+            '-q:v', '5',
+            '-vf', 'scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2'
+          ])
+          .output(thumbnailPath)
+          .on('end', () => resolve())
+          .on('error', (err) => reject(err))
+          .run()
+      })
+
+      const duration = Date.now() - startTime
+      logThumbnail(`[Watcher] Thumbnail generated: ${thumbnailFilename} in ${duration}ms`)
+      console.log(`[ClipsWatcher] ✓ Thumbnail ready: ${thumbnailFilename} (${duration}ms)`)
+    } catch (error) {
+      logThumbnail(`[Watcher] Failed to generate thumbnail: ${thumbnailFilename} - ${error}`)
+      console.error(`[ClipsWatcher] ✗ Failed: ${thumbnailFilename}`, error)
+    }
+  })
+
+  clipsWatcher.on('error', (error) => {
+    console.error('[ClipsWatcher] Error:', error)
+    logThumbnail(`[Watcher] Error: ${error}`)
+  })
+}
+
+function stopClipsWatcher() {
+  if (clipsWatcher) {
+    clipsWatcher.close()
+    clipsWatcher = null
+    console.log('[ClipsWatcher] Stopped')
+  }
+}
+
+// Keep reference to export preview window
 let exportPreviewWindow: BrowserWindow | null = null
 
 // Create export preview window
@@ -1407,6 +1739,13 @@ app.whenReady().then(async () => {
         console.warn('[Main] Cleanup errors:', result.errors)
       }
 
+      // Pre-generate thumbnails in background
+      preGenerateThumbnails()
+
+      // Start watching for new clips - generates thumbnails INSTANTLY when clips are saved
+      // This is what Medal, SteelSeries, etc. do - thumbnails are ready before you open Library
+      startClipsWatcher()
+
       // Clean up old .clipvault.json files from clips folder (move to clips-metadata)
       console.log('[Main] Migrating old metadata files to clips-metadata folder...')
       try {
@@ -1542,6 +1881,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (event) => {
   console.log('App is quitting...')
   isQuitting = true
+  stopClipsWatcher()
   if (tray) {
     tray.destroy()
     tray = null

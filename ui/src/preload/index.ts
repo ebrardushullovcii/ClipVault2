@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteClip: (clipId: string) => ipcRenderer.invoke('clips:delete', clipId),
   generateThumbnail: (clipId: string, videoPath: string) =>
     ipcRenderer.invoke('clips:generateThumbnail', clipId, videoPath),
+  getExistingThumbnails: () => ipcRenderer.invoke('clips:getExistingThumbnails'),
   getVideoMetadata: (videoPath: string) => ipcRenderer.invoke('clips:getVideoMetadata', videoPath),
 
   // Audio tracks
@@ -175,6 +176,7 @@ declare global {
       saveClipMetadata: (clipId: string, metadata: unknown) => Promise<boolean>
       getClipMetadata: (clipId: string) => Promise<unknown | null>
       generateThumbnail: (clipId: string, videoPath: string) => Promise<string>
+      getExistingThumbnails: () => Promise<{ [clipId: string]: string }>
       getVideoMetadata: (videoPath: string) => Promise<VideoMetadata>
       extractAudioTracks: (clipId: string, videoPath: string) => Promise<AudioTrackUrls>
       getVideoFileUrl: (filename: string) => Promise<{ success: boolean; url?: string; path?: string; error?: string }>
