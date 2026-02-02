@@ -18,6 +18,8 @@ struct AudioConfig {
     int bitrate = 160;
     bool system_audio_enabled = true;
     bool microphone_enabled = true;
+    std::string system_audio_device_id = "default";
+    std::string microphone_device_id = "default";
 };
 
 struct HotkeyConfig {

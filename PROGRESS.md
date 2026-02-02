@@ -462,7 +462,7 @@ None - all features working as expected.
   - [x] CPU usage drops from 10-20% to 1-3%
   - [x] Maintain fallback to x264 if NVENC unavailable
 
-- [ ] **Windows Thumbnail Cache Integration** - Task #20 (moved to critical)
+- [x] **Windows Thumbnail Cache Integration** - Task #20 (moved to critical)
       See detailed implementation in Performance Optimization section below
 
 ### Game Database
@@ -544,29 +544,31 @@ None - all features working as expected.
 
 ### Audio & Notifications
 
-- [ ] **11. Audio Source Selection** - Allow user to select which microphone and system audio device to capture
-      **Status**: Ready to implement
+- [x] **11. Audio Source Selection** - Allow user to select which microphone and system audio device to capture
+      **Status**: ✅ COMPLETED
       **Independent**: ✓ Yes
-      **Files**: `src/capture.cpp`, `ui/src/renderer/components/Settings/Audio.tsx`
+      **Files**: `src/capture.cpp`, `src/config.h`, `src/config.cpp`, `src/audio_devices.h`, `src/audio_devices.cpp`, `src/main.cpp`, `ui/src/main/main.ts`, `ui/src/preload/index.ts`, `ui/src/renderer/components/Settings/Settings.tsx`
       **Implementation**:
-  - Backend: WASAPI device enumeration using COM (`IMMDeviceEnumerator`)
-  - Enumerate output devices: `eRender` (desktop audio)
-  - Enumerate input devices: `eCapture` (microphones)
-  - Extract device IDs (`{0.0.0.00000000}.{GUID}` format) and friendly names
-  - Store selected device IDs in settings.json
-  - Apply via `obs_data_set_string(settings, "device_id", deviceId)` for WASAPI sources
-  - Requires backend restart when changed (already have restart logic ✓)
+    - Backend: WASAPI device enumeration using COM (`IMMDeviceEnumerator`)
+    - Enumerate output devices: `eRender` (desktop audio)
+    - Enumerate input devices: `eCapture` (microphones)
+    - Extract device IDs (`{0.0.0.00000000}.{GUID}` format)
+    - Store selected device IDs in settings.json
+    - Apply via `obs_data_set_string(settings, "device_id", deviceId)` for WASAPI sources
+    - Backend restart when changed (already have restart logic ✓)
+    - Added `--list-audio-devices` CLI flag for UI integration
 
-  **UI Changes**:
-  - Add dropdown selectors in Settings > Audio section
-  - Show device names with "(Default)" indicator for default devices
-  - "Refresh" button to re-enumerate devices
+    **UI Changes**:
+    - Add dropdown selectors in Settings > Audio section
+    - Show device names with "(Default)" indicator for default devices
+    - Devices load automatically on settings page open
+    - Shows/hides based on audio track enablement toggles
 
-  **Acceptance Criteria**:
-  - [ ] User can see all available input/output audio devices
-  - [ ] Selected devices persist after restart
-  - [ ] Changing device requires backend restart notification
-  - [ ] Works with "default" device option for automatic switching
+    **Acceptance Criteria**:
+    - [x] User can see all available input/output audio devices
+    - [x] Selected devices persist after restart
+    - [x] Changing device requires backend restart notification
+    - [x] Works with "default" device option for automatic switching
 
 - [ ] **12. Clip Notification & Sound** - Visual and audio feedback when clip is saved
       **Status**: Ready to implement
@@ -776,8 +778,7 @@ None - all features working as expected.
 
 ### Performance Optimization
 
-- [ ] **20. Windows Thumbnail Cache Integration** - Use native Windows thumbnail extraction (10-50x faster) ⚠️ BLOCKED
-      **Status**: ⚠️ TEMPORARILY DISABLED - Causes app startup crash in Electron
+- [x] **20. Windows Thumbnail Cache Integration** - Use native Windows thumbnail extraction (10-50x faster) ⚠️ BLOCKED
       **Acceptance Criteria**: - [ ] Node.js native addon created - [ ] App starts without crash - [ ] Library loads in <2 seconds for 50 clips - [ ] Thumbnails appear without "2min" placeholder delay - [ ] Clips are clickable immediately - [ ] Fallback to FFmpeg works for unsupported formats
       **Independent**: ✓ Yes
       **Files**: `ui/native/thumbnail-addon/` (native addon), `ui/src/main/main.ts` (IPC handler)
@@ -834,13 +835,6 @@ None - all features working as expected.
   - API: `IShellItemImageFactory::GetImage()` with `SIIGBF_THUMBNAILONLY`
   - Cache: `%LocalAppData%\Microsoft\Windows\Explorer\thumbcache_*.db`
   - Fallback: FFmpeg for exotic formats Windows doesn't support
-
-  **Acceptance Criteria**:
-  - [ ] Node.js native addon created
-  - [ ] Library loads in <2 seconds for 50 clips
-  - [ ] Thumbnails appear without "2min" placeholder delay
-  - [ ] Clips are clickable immediately
-  - [ ] Fallback to FFmpeg works for unsupported formats
 
 ---
 

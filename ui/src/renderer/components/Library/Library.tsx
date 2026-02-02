@@ -43,6 +43,11 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
 
   const { thumbnails, generateThumbnail } = useThumbnails()
   const { metadata, fetchMetadata } = useVideoMetadata()
+  
+  // Track filenames currently being processed to avoid re-processing on re-renders
+  const processingFilesRef = useRef<Set<string>>(new Set())
+  // Track retry attempts for each filename
+  const retryAttemptsRef = useRef<Map<string, number>>(new Map())
 
   // Calculate responsive columns based on container width
   const getGridCols = (width: number): number => {
@@ -60,6 +65,18 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
 
     const unsubscribeNew = window.electronAPI.on('clips:new', (data: unknown) => {
       const { filename } = data as { filename: string }
+      
+      // Skip if already processing this file
+      if (processingFilesRef.current.has(filename)) {
+        console.log(`[Library] Skipping duplicate processing for ${filename}`)
+        return
+      }
+      
+      // Mark as processing
+      processingFilesRef.current.add(filename)
+      retryAttemptsRef.current.set(filename, 0)
+      
+      // Immediately add placeholder to show something to the user
       const newClip: ClipInfo = {
         id: filename.replace('.mp4', ''),
         filename,
@@ -70,11 +87,43 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
         metadata: null,
       }
       setClips(prev => [newClip, ...prev])
+      
+      // Attempt 1: Wait 3 seconds for file to be fully written
+      setTimeout(() => {
+        console.log(`[Library] Attempt 1: Refreshing clip data for ${filename}...`)
+        retryAttemptsRef.current.set(filename, 1)
+        refreshClipData(filename, 1)
+      }, 3000)
+      
+      // Attempt 2: Wait 6 seconds total (3s additional)
+      setTimeout(() => {
+        console.log(`[Library] Attempt 2: Refreshing clip data for ${filename}...`)
+        retryAttemptsRef.current.set(filename, 2)
+        refreshClipData(filename, 2)
+      }, 6000)
+      
+      // Attempt 3: Wait 15 seconds total (9s additional after attempt 2)
+      // This is the FINAL attempt - stop after this regardless of result
+      setTimeout(() => {
+        console.log(`[Library] Attempt 3 (FINAL): Refreshing clip data for ${filename}...`)
+        retryAttemptsRef.current.set(filename, 3)
+        refreshClipData(filename, 3)
+        
+        // Clean up tracking after final attempt
+        setTimeout(() => {
+          processingFilesRef.current.delete(filename)
+          retryAttemptsRef.current.delete(filename)
+          console.log(`[Library] Final attempt completed for ${filename}, stopped tracking`)
+        }, 100)
+      }, 15000)
     })
 
     const unsubscribeRemoved = window.electronAPI.on('clips:removed', (data: unknown) => {
       const { filename } = data as { filename: string }
       setClips(prev => prev.filter(clip => clip.filename !== filename))
+      // Clean up tracking when file is removed
+      processingFilesRef.current.delete(filename)
+      retryAttemptsRef.current.delete(filename)
     })
 
     return () => {
@@ -82,6 +131,38 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
       unsubscribeRemoved?.()
     }
   }, [isRestored])
+  
+  // Refresh data for a specific clip
+  const refreshClipData = useCallback(async (filename: string, attempt?: number) => {
+    try {
+      // Reload the entire clips list to get updated file info
+      const clipList = await window.electronAPI.getClipsList()
+      const updatedClip = clipList.find(c => c.filename === filename)
+      
+      if (updatedClip) {
+        // Update the clip in state with real data
+        setClips(prev => prev.map(clip => 
+          clip.filename === filename ? updatedClip : clip
+        ))
+        
+        // Trigger thumbnail generation
+        if (updatedClip.path && updatedClip.size > 0) {
+          console.log(`[Library] Attempt ${attempt || '?'}: Generating thumbnail for ${filename}...`)
+          generateThumbnail(updatedClip.id, updatedClip.path)
+            .then(() => console.log(`[Library] Thumbnail generated for ${filename}`))
+            .catch(err => console.error(`[Library] Failed to generate thumbnail for ${filename}:`, err))
+          
+          // Fetch video metadata (duration, resolution, etc.)
+          console.log(`[Library] Attempt ${attempt || '?'}: Fetching metadata for ${filename}...`)
+          fetchMetadata(updatedClip.id, updatedClip.path)
+            .then(() => console.log(`[Library] Metadata fetched for ${filename}`))
+            .catch(err => console.error(`[Library] Failed to fetch metadata for ${filename}:`, err))
+        }
+      }
+    } catch (err) {
+      console.error(`[Library] Attempt ${attempt || '?'}: Failed to refresh clip data for ${filename}:`, err)
+    }
+  }, [generateThumbnail, fetchMetadata])
 
   const loadClips = useCallback(async () => {
     try {

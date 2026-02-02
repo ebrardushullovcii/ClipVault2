@@ -169,6 +169,10 @@ bool ConfigManager::load(const std::string& filepath) {
         config_.audio.bitrate = extract_int(audio_json, "bitrate", config_.audio.bitrate);
         config_.audio.system_audio_enabled = extract_bool(audio_json, "system_audio_enabled", config_.audio.system_audio_enabled);
         config_.audio.microphone_enabled = extract_bool(audio_json, "microphone_enabled", config_.audio.microphone_enabled);
+        std::string system_device_id = extract_string(audio_json, "system_audio_device_id");
+        if (!system_device_id.empty()) config_.audio.system_audio_device_id = system_device_id;
+        std::string mic_device_id = extract_string(audio_json, "microphone_device_id");
+        if (!mic_device_id.empty()) config_.audio.microphone_device_id = mic_device_id;
     }
 
     // Parse hotkey section
@@ -231,7 +235,9 @@ bool ConfigManager::save(const std::string& filepath) {
     file << "        \"sample_rate\": " << config_.audio.sample_rate << ",\n";
     file << "        \"bitrate\": " << config_.audio.bitrate << ",\n";
     file << "        \"system_audio_enabled\": " << (config_.audio.system_audio_enabled ? "true" : "false") << ",\n";
-    file << "        \"microphone_enabled\": " << (config_.audio.microphone_enabled ? "true" : "false") << "\n";
+    file << "        \"microphone_enabled\": " << (config_.audio.microphone_enabled ? "true" : "false") << ",\n";
+    file << "        \"system_audio_device_id\": \"" << escape_json(config_.audio.system_audio_device_id) << "\",\n";
+    file << "        \"microphone_device_id\": \"" << escape_json(config_.audio.microphone_device_id) << "\"\n";
     file << "    },\n";
     file << "    \"hotkey\": {\n";
     file << "        \"save_clip\": \"" << escape_json(config_.hotkey.save_clip) << "\"\n";

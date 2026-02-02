@@ -17,22 +17,41 @@ interface AppSettings {
     bitrate: number
     system_audio_enabled: boolean
     microphone_enabled: boolean
+    system_audio_device_id?: string
+    microphone_device_id?: string
   }
   hotkey: {
     save_clip: string
   }
-  editor: {
-    skip_seconds: number
+  editor?: {
+    skip_seconds?: number
   }
-  ui: {
-    show_notifications: boolean
-    minimize_to_tray: boolean
-    start_with_windows: boolean
+  ui?: {
+    show_notifications?: boolean
+    minimize_to_tray?: boolean
+    start_with_windows?: boolean
   }
 }
 
 interface SettingsProps {
   onClose: () => void
+}
+
+interface MonitorInfo {
+  id: number
+  name: string
+  width: number
+  height: number
+  x: number
+  y: number
+  primary: boolean
+}
+
+interface AudioDeviceInfo {
+  id: string
+  name: string
+  type: 'output' | 'input'
+  is_default: boolean
 }
 
 // Quality presets with realistic bitrates for file size calculation
@@ -273,11 +292,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [error, setError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [monitors, setMonitors] = useState<MonitorInfo[]>([])
+  const [audioOutputDevices, setAudioOutputDevices] = useState<AudioDeviceInfo[]>([])
+  const [audioInputDevices, setAudioInputDevices] = useState<AudioDeviceInfo[]>([])
 
-  // Load settings and monitors on mount
+  // Load settings, monitors and audio devices on mount
   useEffect(() => {
     loadSettings()
     loadMonitors()
+    loadAudioDevices()
   }, [])
 
   const loadSettings = async () => {
@@ -301,6 +323,20 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       setMonitors(monitorList)
     } catch (err) {
       console.error('Error loading monitors:', err)
+    }
+  }
+
+  const loadAudioDevices = async () => {
+    try {
+      // Get audio devices from backend (returns WASAPI device IDs that OBS can use)
+      const [outputs, inputs] = await Promise.all([
+        window.electronAPI.getAudioDevices('output'),
+        window.electronAPI.getAudioDevices('input'),
+      ])
+      setAudioOutputDevices(outputs)
+      setAudioInputDevices(inputs)
+    } catch (err) {
+      console.error('Error loading audio devices:', err)
     }
   }
 
@@ -671,6 +707,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     <div className="text-xs text-text-muted mt-1">
                       Based on {formatDuration(settings.buffer_seconds)} @ {settings.video.width}x{settings.video.height} with {qualityPresets[currentPreset].label} quality
                     </div>
+                    <div className="text-xs text-text-muted/60 mt-0.5 italic">
+                      *Actual size varies with content complexity (CQP/CRF uses variable bitrate)
+                    </div>
                   </div>
                   <div className="text-lg font-semibold text-accent-primary">
                     {estimatedSize}
@@ -724,7 +763,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               <Mic className="h-5 w-5 text-accent-primary" />
               <h2 className="text-lg font-semibold text-text-primary">Audio</h2>
             </div>
-            
+
             <div className="space-y-4">
               <div className="flex items-center justify-between rounded-lg border border-border bg-background-tertiary p-4">
                 <div>
@@ -742,6 +781,25 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 </label>
               </div>
 
+              {settings.audio.system_audio_enabled && audioOutputDevices.length > 0 && (
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-text-secondary">
+                    System Audio Device
+                  </label>
+                  <select
+                    value={settings.audio.system_audio_device_id || 'default'}
+                    onChange={e => updateAudioSetting('system_audio_device_id', e.target.value)}
+                    className="w-full rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+                  >
+                    {audioOutputDevices.map(device => (
+                      <option key={device.id} value={device.id}>
+                        {device.name}{device.is_default ? ' (Default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="flex items-center justify-between rounded-lg border border-border bg-background-tertiary p-4">
                 <div>
                   <div className="font-medium text-text-primary">Microphone</div>
@@ -757,6 +815,25 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   <div className="h-6 w-11 rounded-full bg-background-primary peer-checked:bg-accent-primary peer-focus:outline-none after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:after:left-5.5" />
                 </label>
               </div>
+
+              {settings.audio.microphone_enabled && audioInputDevices.length > 0 && (
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-text-secondary">
+                    Microphone Device
+                  </label>
+                  <select
+                    value={settings.audio.microphone_device_id || 'default'}
+                    onChange={e => updateAudioSetting('microphone_device_id', e.target.value)}
+                    className="w-full rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+                  >
+                    {audioInputDevices.map(device => (
+                      <option key={device.id} value={device.id}>
+                        {device.name}{device.is_default ? ' (Default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-text-secondary">

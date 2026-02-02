@@ -1,5 +1,7 @@
 # ClipVault
 
+> **Development Workflow**: All work is done on branches and through pull requests. See [AGENTS.md](AGENTS.md) for details.
+
 A lightweight game clipping tool for Windows. Press F9, get the last 2 minutes as a perfect-quality MP4 with two separate audio tracks.
 
 ## Features
@@ -72,12 +74,24 @@ cd ui && npm run build:react && npx electron-builder --win --dir
 | [PLAN.md](PLAN.md) | Development roadmap |
 | [AGENTS.md](AGENTS.md) | Build commands, code style, agent rules |
 | [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md) | Step-by-step development process |
+| [CLAUDE.md](CLAUDE.md) | Claude AI context and guidelines |
 | [docs/BUILD.md](docs/BUILD.md) | Building from source |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design |
 | [docs/LIBOBS.md](docs/LIBOBS.md) | libobs API patterns |
 | [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) | Step-by-step implementation guide |
 | [TESTING.md](TESTING.md) | Manual testing procedures |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues and solutions |
+
+## Code Reviews
+
+This project uses [CodeRabbit](https://coderabbit.ai) for AI-powered code reviews on all pull requests. CodeRabbit automatically reviews:
+- C++ backend code (`src/`)
+- TypeScript/React UI code (`ui/src/`)
+
+Use `@coderabbitai` commands in PR comments:
+- `@coderabbitai summarize` - Get PR summary
+- `@coderabbitai explain` - Explain specific code sections
+- `@coderabbitai walkthrough` - Step-by-step walkthrough
 
 ## Architecture
 

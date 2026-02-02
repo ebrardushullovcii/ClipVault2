@@ -2,6 +2,60 @@
 
 > **For LLM Agents**: Read this file first. See `AGENT_WORKFLOW.md` for the development process.
 
+## Branch & PR Workflow (CRITICAL)
+
+**ALL work must be done on branches. ALL changes must go through pull requests.**
+
+```text
+1. Create branch from master: git checkout -b feature/your-feature
+2. Make changes on branch
+3. Commit changes (use conventional commits)
+4. Push branch: git push -u origin feature/your-feature
+5. Create PR on GitHub
+6. CodeRabbit reviews PR automatically
+7. Address CodeRabbit feedback
+8. Get human review + approval
+9. Merge to master
+10. Delete branch
+```
+
+### Branch Naming
+
+- `feature/*` - New features
+- `fix/*` - Bug fixes
+- `refactor/*` - Code refactoring
+- `docs/*` - Documentation only
+- `test/*` - Adding/fixing tests
+
+### Never
+
+- ❌ Never commit directly to master
+- ❌ Never push to master
+- ❌ Never work without a branch
+
+## CodeRabbit Integration
+
+CodeRabbit automatically reviews every PR on GitHub. To use its context in Claude:
+
+1. **Check CodeRabbit comments on GitHub** - Read all feedback before finalizing work
+2. **Use @coderabbitai commands** in GitHub PR comments:
+   - `@coderabbitai summarize` - Get PR summary
+   - `@coderabbitai explain` - Explain specific code sections
+   - `@coderabbitai walkthrough` - Step-by-step walkthrough
+3. **Fetch CodeRabbit context** before writing code - Check if it has reviewed similar changes
+
+### Fetching CodeRabbit PR Comments
+
+When working on a PR, fetch the review comments to understand what CodeRabbit flagged:
+
+```powershell
+# Get PR number from GitHub URL
+gh pr view --json number,title,body,reviews
+gh pr review-diff  # See all comments
+```
+
+Add relevant CodeRabbit suggestions to your implementation context.
+
 ## Quick Start
 
 ```powershell
@@ -11,14 +65,22 @@
 # 2. Check status
 Get-Content PROGRESS.md | Select-String "Current Status"
 
-# 3. Build & test (ALWAYS test packaged version!)
+# 3. Create branch for your work
+git checkout -b feature/your-feature-name
+
+# 4. Build & test (ALWAYS test packaged version!)
 .\build.ps1
 cd ui && npm run build:react && npx electron-builder --win --dir
 
-# 4. Test packaged app
+# 5. Test packaged app
 .\ui\release\win-unpacked\ClipVault.exe
 
-# 5. Update PROGRESS.md when done
+# 6. Commit and push
+git add .
+git commit -m "feat: description of changes"
+git push -u origin feature/your-feature-name
+
+# 7. Create PR on GitHub - CodeRabbit will review automatically
 ```
 
 ## Build Commands
@@ -166,6 +228,9 @@ ui/src/                 # Electron UI
 
 ## Don't Do
 
+- ❌ Never commit directly to master
+- ❌ Never push to master
+- ❌ Never work without a branch
 - ❌ Don't commit without testing packaged version
 - ❌ Don't ignore OBS return values
 - ❌ Don't forget to release OBS objects

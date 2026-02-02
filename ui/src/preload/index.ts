@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // System
   getMonitors: () => ipcRenderer.invoke('system:getMonitors'),
+  getAudioDevices: (type: 'output' | 'input') => ipcRenderer.invoke('audio:getDevices', type),
 
   // Clips
   getClipsList: () => ipcRenderer.invoke('clips:getList'),
@@ -165,6 +166,23 @@ interface EditorState {
   lastModified: string
 }
 
+interface AudioDeviceInfo {
+  id: string
+  name: string
+  type: 'output' | 'input'
+  is_default: boolean
+}
+
+interface MonitorInfo {
+  id: number
+  name: string
+  width: number
+  height: number
+  x: number
+  y: number
+  primary: boolean
+}
+
 // Type declarations for TypeScript
 declare global {
   interface Window {
@@ -191,6 +209,8 @@ declare global {
         audioSizeFormatted: string
         totalSizeFormatted: string
       } | null>
+      getMonitors: () => Promise<MonitorInfo[]>
+      getAudioDevices: (type: 'output' | 'input') => Promise<AudioDeviceInfo[]>
       openClipsFolder: () => Promise<void>
       showSaveDialog: (
         options: Electron.SaveDialogOptions

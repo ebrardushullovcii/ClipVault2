@@ -77,19 +77,24 @@ export interface AppSettings {
     bitrate: number
     system_audio_enabled: boolean
     microphone_enabled: boolean
+    system_audio_device_id?: string
+    microphone_device_id?: string
   }
   hotkey: {
     save_clip: string
   }
+  editor?: {
+    skip_seconds?: number
+  }
   ui?: {
-    show_notifications: boolean
-    minimize_to_tray: boolean
-    start_with_windows: boolean
+    show_notifications?: boolean
+    minimize_to_tray?: boolean
+    start_with_windows?: boolean
   }
   launcher?: {
-    autostart_backend: boolean
-    backend_mode: string
-    single_instance: boolean
+    autostart_backend?: boolean
+    backend_mode?: string
+    single_instance?: boolean
   }
 }
 
@@ -111,8 +116,16 @@ export interface ExportResult {
   error?: string
 }
 
+export interface AudioDeviceInfo {
+  id: string
+  name: string
+  type: 'output' | 'input'
+  is_default: boolean
+}
+
 export interface DialogAPI {
   save: (options: Electron.SaveDialogOptions) => Promise<Electron.SaveDialogReturnValue>
+  openFolder: () => Promise<Electron.OpenDialogReturnValue>
 }
 
 export interface EditorAPI {
@@ -136,6 +149,8 @@ export interface ElectronAPI {
   saveSettings: (settings: AppSettings) => Promise<{ success: boolean; restarted?: boolean }>
   restartBackend: () => Promise<{ success: boolean; restarted?: boolean }>
   getMonitors: () => Promise<MonitorInfo[]>
+  getAudioDevices: (type: 'output' | 'input') => Promise<AudioDeviceInfo[]>
+  setStartup: (enabled: boolean) => Promise<{ success: boolean }>
   getClipsList: () => Promise<ClipInfo[]>
   saveClipMetadata: (clipId: string, metadata: unknown) => Promise<boolean>
   getClipMetadata: (clipId: string) => Promise<unknown | null>

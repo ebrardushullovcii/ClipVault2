@@ -208,11 +208,13 @@ bool CaptureManager::create_audio_sources()
         LOG_INFO("  Creating desktop audio capture...");
 
         obs_data_t* settings = obs_api::data_create();
-        // CRITICAL: Use "device_id" (not "device") and "default" for default device
-        obs_api::data_set_string(settings, "device_id", "default");
+        // Use device_id from config, default to "default" if empty
+        std::string device_id = audio_cfg.system_audio_device_id.empty() ? "default" : audio_cfg.system_audio_device_id;
+        LOG_INFO("    Using device: " + device_id);
+        obs_api::data_set_string(settings, "device_id", device_id.c_str());
         // use_device_timing is recommended for output capture
         obs_api::data_set_bool(settings, "use_device_timing", true);
-        
+
         desktop_audio_ = obs_api::source_create("wasapi_output_capture", "desktop_audio", settings, nullptr);
         obs_api::data_release(settings);
 
@@ -240,9 +242,11 @@ bool CaptureManager::create_audio_sources()
         LOG_INFO("  Creating microphone capture...");
 
         obs_data_t* settings = obs_api::data_create();
-        // CRITICAL: Use "device_id" (not "device")
-        obs_api::data_set_string(settings, "device_id", "default");
-        
+        // Use device_id from config, default to "default" if empty
+        std::string device_id = audio_cfg.microphone_device_id.empty() ? "default" : audio_cfg.microphone_device_id;
+        LOG_INFO("    Using device: " + device_id);
+        obs_api::data_set_string(settings, "device_id", device_id.c_str());
+
         microphone_ = obs_api::source_create("wasapi_input_capture", "microphone", settings, nullptr);
         obs_api::data_release(settings);
 

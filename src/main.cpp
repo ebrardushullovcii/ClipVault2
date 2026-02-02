@@ -6,12 +6,14 @@
 #include "encoder.h"
 #include "replay.h"
 #include "hotkey.h"
+#include "audio_devices.h"
 
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <string>
 #include <cstring>
+#include <iostream>
 
 // Command line flags
 static bool g_background_mode = false;
@@ -65,6 +67,24 @@ void parse_arguments(LPSTR lpCmdLine)
         g_no_tray = true;
         LOG_INFO("Tray icon disabled");
     }
+}
+
+// Helper to escape strings for JSON output
+std::string escape_json_string(const std::string& str) {
+    std::string escaped;
+    for (char c : str) {
+        switch (c) {
+            case '"': escaped += "\\\""; break;
+            case '\\': escaped += "\\\\"; break;
+            case '\b': escaped += "\\b"; break;
+            case '\f': escaped += "\\f"; break;
+            case '\n': escaped += "\\n"; break;
+            case '\r': escaped += "\\r"; break;
+            case '\t': escaped += "\\t"; break;
+            default: escaped += c;
+        }
+    }
+    return escaped;
 }
 
 // Get the directory where the exe is located
@@ -169,6 +189,31 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     // Parse command line arguments
     parse_arguments(lpCmdLine);
+
+    // Handle --list-audio-devices flag (used by UI to enumerate devices)
+    std::string cmdLineStr(lpCmdLine);
+    if (cmdLineStr.find("--list-audio-devices") != std::string::npos) {
+        auto output_devices = clipvault::get_output_devices();
+        auto input_devices = clipvault::get_input_devices();
+
+        std::cout << "[";
+
+        bool first = true;
+        for (const auto& dev : output_devices) {
+            if (!first) std::cout << ",";
+            first = false;
+            std::cout << "{\"id\":\"" << escape_json_string(dev.id) << "\",\"name\":\"" << escape_json_string(dev.name) << "\",\"type\":\"output\",\"is_default\":" << (dev.is_default ? "true" : "false") << "}";
+        }
+
+        for (const auto& dev : input_devices) {
+            if (!first) std::cout << ",";
+            first = false;
+            std::cout << "{\"id\":\"" << escape_json_string(dev.id) << "\",\"name\":\"" << escape_json_string(dev.name) << "\",\"type\":\"input\",\"is_default\":" << (dev.is_default ? "true" : "false") << "}";
+        }
+
+        std::cout << "]";
+        return 0;
+    }
 
     // Check single instance (prevent multiple backends)
     if (!check_single_instance()) {

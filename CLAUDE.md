@@ -2,11 +2,57 @@
 
 > **For Claude AI**: This file provides essential context about the ClipVault project. Read this first when starting work.
 
-## Quick Overview
+## Branch & PR Workflow (CRITICAL)
 
-**ClipVault** is a lightweight Windows game clipping tool that runs in the system tray and records the last 2 minutes of gameplay. Press F9 to save clips with two separate audio tracks (game audio + microphone).
+**ALL work must be done on branches. ALL changes must go through pull requests.**
 
-**Status**: ✅ Complete and working
+```text
+1. Create branch from master: git checkout -b feature/your-feature
+2. Make changes on branch
+3. Commit changes (use conventional commits)
+4. Push branch: git push -u origin feature/your-feature
+5. Create PR on GitHub
+6. CodeRabbit reviews PR automatically
+7. Address CodeRabbit feedback
+8. Get human review + approval
+9. Merge to master
+10. Delete branch
+```
+
+### Branch Naming
+
+- `feature/*` - New features
+- `fix/*` - Bug fixes
+- `refactor/*` - Code refactoring
+- `docs/*` - Documentation only
+- `test/*` - Adding/fixing tests
+
+### Never
+
+- ❌ Never commit directly to master
+- ❌ Never push to master
+- ❌ Never work without a branch
+
+## CodeRabbit Integration
+
+CodeRabbit automatically reviews every PR on GitHub. Before writing code:
+
+1. **Check CodeRabbit comments on GitHub** - Read all feedback
+2. **Use @coderabbitai commands** in PR comments:
+   - `@coderabbitai summarize` - Get PR summary
+   - `@coderabbitai explain` - Explain specific code sections
+   - `@coderabbitai walkthrough` - Step-by-step walkthrough
+
+### Fetching CodeRabbit PR Comments
+
+When working on a PR, fetch review comments:
+
+```powershell
+gh pr view --json number,title,body,reviews
+gh pr review-diff  # See all comments
+```
+
+Add relevant CodeRabbit suggestions to your implementation context.
 
 ## Essential Files to Read
 
