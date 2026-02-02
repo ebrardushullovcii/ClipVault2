@@ -1,26 +1,24 @@
 language: en
 early_access: false
 reviews:
-  profile: ai
+  profile: assertive
   request_changes_workflow: true
   high_level_summary: true
   auto_review:
     enabled: true
     drafts: false
   path_filters:
-    exclude:
-      - "**/node_modules/**"
-      - "**/build/**"
-      - "**/dist/**"
-      - "**/release/**"
-      - "**/.git/**"
-      - "**/third_party/**"
-      - "**/bin/**"
-      - "ui/node_modules/**"
-      - "ui/release/**"
-    include:
-      - "src/**"
-      - "ui/src/**"
+    - "!**/node_modules/**"
+    - "!**/build/**"
+    - "!**/dist/**"
+    - "!**/release/**"
+    - "!**/.git/**"
+    - "!**/third_party/**"
+    - "!**/bin/**"
+    - "!ui/node_modules/**"
+    - "!ui/release/**"
+    - "src/**"
+    - "ui/src/**"
 chat:
   auto_reply: true
 categories:
@@ -33,8 +31,3 @@ categories:
 knowledge:
   base_path: .
   use_website: true
-rules:
-  ai:
-    prompt:
-      - "@coderabbitai explain"
-      - "@coderabbitai summarize"
