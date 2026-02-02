@@ -3,6 +3,17 @@
 #include <string>
 #include "obs_core.h"  // For obs_encoder_t and obs_data_t
 
+/**
+ * Create NVENC encoder settings based on an encoder identifier and a quality mapping.
+ *
+ * Builds and returns an obs_data_t configured for NVENC using the given encoder_id and
+ * QualityMapping values (CQP, preset, etc.). The returned obs_data_t contains encoder
+ * options appropriate for the selected NVENC encoder and quality profile.
+ *
+ * @param encoder_id Identifier of the NVENC encoder to target (e.g., plugin/encoder id string).
+ * @param quality QualityMapping that specifies CQP/CRF values and preset names to apply.
+ * @returns Configured obs_data_t pointer for NVENC settings, or `nullptr` on failure.
+ */
 namespace clipvault {
 
 // Quality preset mappings

@@ -154,6 +154,20 @@ int run_background_mode()
     return 0;
 }
 
+/**
+ * @brief Application entry point for the ClipVault backend.
+ *
+ * Initializes logging, configuration, OBS/capture/encoder/replay subsystems, enforces a single-instance lock,
+ * handles the special --list-audio-devices command-line flag (prints JSON array of devices then exits),
+ * and runs either the system-tray UI loop or a background service loop with hotkey handling. On exit, shuts down
+ * subsystems, releases the single-instance lock, and stops the logger.
+ *
+ * @param hInstance Handle to the current instance of the application.
+ * @param hPrevInstance Unused legacy parameter.
+ * @param lpCmdLine Command-line string passed to the application.
+ * @param nCmdShow Flags that specify how the window is to be shown (unused).
+ * @return int Process exit code: zero for normal shutdown, non-zero for initialization failures. 
+ */
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
     (void)hPrevInstance;

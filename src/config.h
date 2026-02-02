@@ -2,6 +2,68 @@
 
 #include <string>
 
+/**
+ * Holds video encoding and capture settings.
+ *
+ * Contains resolution, frame rate, encoder selection, quality level, and monitor index.
+ */
+
+/**
+ * Holds audio capture and encoding settings.
+ *
+ * Includes sample rate, bitrate, enable flags for system audio and microphone, and device IDs
+ * for system audio and microphone.
+ */
+
+/**
+ * Holds hotkey mappings.
+ *
+ * Contains key bindings used by the application (e.g., save clip).
+ */
+
+/**
+ * Holds user interface preferences.
+ *
+ * Controls notification visibility, tray minimization behavior, and startup with Windows.
+ */
+
+/**
+ * Holds launcher and initialization preferences.
+ *
+ * Controls backend autostart, backend mode, single-instance enforcement, and UI path override.
+ */
+
+/**
+ * Aggregates all application configuration sections and top-level settings.
+ *
+ * Contains output path, buffer duration, and nested video, audio, hotkey, UI, and launcher configs.
+ */
+
+/**
+ * Manager for loading, saving, and accessing the global configuration.
+ *
+ * Provides a single globally accessible ConfigManager and convenience accessors for configuration sections.
+ */
+
+/**
+ * Get the global ConfigManager singleton.
+ *
+ * @returns Reference to the global ConfigManager instance.
+ */
+
+/**
+ * Load configuration from the specified file.
+ *
+ * @param filepath Path to the configuration file to load.
+ * @returns `true` if the configuration was loaded successfully, `false` otherwise.
+ */
+
+/**
+ * Save the current configuration to the specified file.
+ *
+ * @param filepath Path where the configuration will be written.
+ * @returns `true` if the configuration was saved successfully, `false` otherwise.
+ */
 namespace clipvault {
 
 struct VideoConfig {

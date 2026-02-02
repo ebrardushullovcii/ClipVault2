@@ -23,7 +23,16 @@ static const char* nvenc_names[] = {
 
 static const size_t nvenc_count = sizeof(nvenc_ids) / sizeof(nvenc_ids[0]);
 
-// Map quality value (15-30) to encoder-specific settings
+/**
+ * @brief Map a numeric quality setting to encoder-specific parameters.
+ *
+ * @param quality Quality value from configuration (15 = highest quality, 30 = lowest quality).
+ * @return QualityMapping Struct containing mapped values:
+ *         - `cqp`: NVENC CQP/CQ value,
+ *         - `crf`: x264 CRF value,
+ *         - `nvenc_preset`: NVENC preset string,
+ *         - `x264_preset`: x264 preset string.
+ */
 QualityMapping get_quality_mapping(int quality) {
     // quality comes from settings (15=ultra, 18=high, 23=medium, 30=low)
     if (quality <= 18) {
@@ -41,6 +50,13 @@ QualityMapping get_quality_mapping(int quality) {
     }
 }
 
+/**
+ * @brief Provides access to the single global EncoderManager instance.
+ *
+ * The instance is created on first use and remains available for the lifetime of the program.
+ *
+ * @return EncoderManager& Reference to the shared EncoderManager singleton.
+ */
 EncoderManager& EncoderManager::instance()
 {
     static EncoderManager instance;
@@ -105,6 +121,20 @@ void EncoderManager::shutdown()
     LOG_INFO("Encoders shutdown complete");
 }
 
+/**
+ * @brief Creates and configures the application's video encoder according to the current video configuration.
+ *
+ * Attempts to create the encoder specified by ConfigManager::instance().video().encoder:
+ * - If set to "x264", creates a software x264 encoder with CRF and the mapped x264 preset.
+ * - If set to "nvenc", attempts available NVENC variants in order using encoder-specific NVENC settings.
+ * - If set to "auto" (default), tries NVENC variants first and falls back to x264 if all NVENC variants fail.
+ *
+ * On success the created encoder is stored in video_encoder_, encoder_name_ is set to the chosen encoder's display name,
+ * and the encoder is connected to the video output. When an NVENC variant succeeds, current_nvenc_index_ is updated.
+ * On failure last_error_ is set with a descriptive message.
+ *
+ * @returns `true` on success, `false` otherwise.
+ */
 bool EncoderManager::create_video_encoder()
 {
     const auto& video_cfg = ConfigManager::instance().video();
@@ -224,6 +254,19 @@ bool EncoderManager::create_video_encoder()
     return true;
 }
 
+/**
+ * @brief Build OBS encoder settings tailored for a specific NVENC backend and quality mapping.
+ *
+ * Creates an obs_data_t containing rate-control and preset fields appropriate for the given
+ * NVENC encoder implementation and the provided QualityMapping.
+ *
+ * @param encoder_id Null-terminated identifier of the NVENC backend (commonly "jim_nvenc",
+ *                   "ffmpeg_nvenc", or legacy identifiers such as "h264_nvenc"). Values not
+ *                   explicitly matched are treated as legacy NVENC.
+ * @param quality QualityMapping providing encoder-specific parameters (e.g., `cqp`, `nvenc_preset`).
+ * @return obs_data_t* A newly allocated settings object configured for the requested encoder.
+ *         The caller takes ownership and is responsible for releasing it when no longer needed.
+ */
 obs_data_t* EncoderManager::create_nvenc_settings(const char* encoder_id, const QualityMapping& quality)
 {
     obs_data_t* settings = obs_api::data_create();
@@ -259,6 +302,16 @@ obs_data_t* EncoderManager::create_nvenc_settings(const char* encoder_id, const 
     return settings;
 }
 
+/**
+ * @brief Creates and configures AAC audio encoders for desktop and microphone tracks.
+ *
+ * Creates two AAC audio encoders using the configured audio bitrate: Track 1 for desktop audio (mixer index 0)
+ * and Track 2 for microphone (mixer index 1), then binds each encoder to the global audio output.
+ * On failure the function cleans up any partially created encoder, records a human-readable `last_error_`,
+ * and releases temporary settings.
+ *
+ * @return true if both audio encoders are created and bound successfully, false otherwise.
+ */
 bool EncoderManager::create_audio_encoders()
 {
     const auto& audio_cfg = ConfigManager::instance().audio();
@@ -302,6 +355,16 @@ bool EncoderManager::create_audio_encoders()
     return true;
 }
 
+/**
+ * @brief Switches the active video encoder to x264 using the configured quality mapping.
+ *
+ * Attempts to release the current hardware encoder and create an x264 software encoder configured
+ * with the CRF and x264 preset derived from the current video quality setting. No action is taken
+ * if the manager is not initialized, there is no active video encoder, or the active encoder is
+ * already x264.
+ *
+ * @returns `true` if the switch to x264 succeeded and the manager is now using the x264 encoder, `false` otherwise.
+ */
 bool EncoderManager::fallback_to_x264()
 {
     if (!initialized_ || !video_encoder_) {
@@ -345,6 +408,16 @@ bool EncoderManager::fallback_to_x264()
     return true;
 }
 
+/**
+ * @brief Attempt to switch the active video encoder to the next available NVENC implementation.
+ *
+ * If successful, updates encoder_name_ and current_nvenc_index_, connects the new encoder to the video output,
+ * and makes the new encoder the active video_encoder_. The function does nothing and returns `false` if the
+ * manager is not initialized, there is no current video encoder, there are no remaining NVENC variants to try,
+ * or if creating any remaining NVENC encoder fails.
+ *
+ * @return true if a different NVENC encoder was successfully created, bound to the video output, and activated; `false` otherwise.
+ */
 bool EncoderManager::try_next_nvenc_encoder()
 {
     if (!initialized_ || !video_encoder_) {

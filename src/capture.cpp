@@ -199,6 +199,17 @@ bool CaptureManager::create_video_source()
     return true;
 }
 
+/**
+ * @brief Create and configure desktop and microphone audio capture sources based on the current audio configuration.
+ *
+ * Creates wasapi output (desktop) and/or wasapi input (microphone) sources when enabled in configuration,
+ * selecting device IDs from the configuration (defaults to "default" when unspecified), activating the sources,
+ * assigning them to output channels (desktop -> channel 1, microphone -> channel 2), and routing them to mixer
+ * tracks (desktop -> track 1, microphone -> track 2).
+ *
+ * @return bool `true` if all enabled audio sources were created and configured successfully, `false` if creation
+ *              of any requested source failed.
+ */
 bool CaptureManager::create_audio_sources()
 {
     const auto& audio_cfg = ConfigManager::instance().audio();

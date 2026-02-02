@@ -129,6 +129,17 @@ ConfigManager& ConfigManager::instance() {
     return instance;
 }
 
+/**
+ * @brief Load configuration values from a JSON-formatted file into the ConfigManager instance.
+ *
+ * Parses top-level fields and nested sections (video, audio, hotkey, ui) and updates the corresponding
+ * members of the internal configuration. Keys that are missing or empty leave the existing configuration
+ * values unchanged.
+ *
+ * @param filepath Path to the JSON configuration file.
+ * @return true if the file was opened and parsed and configuration values were applied; `false` if the
+ * file could not be opened (configuration remains unchanged).
+ */
 bool ConfigManager::load(const std::string& filepath) {
     LOG_INFO("Loading config from: " + filepath);
 
@@ -199,6 +210,15 @@ bool ConfigManager::load(const std::string& filepath) {
     return true;
 }
 
+/**
+ * @brief Write the current configuration to a JSON file at the specified path.
+ *
+ * Serializes the in-memory ConfigManager settings into a JSON object and writes it to the provided file path.
+ * String fields are escaped for inclusion in JSON.
+ *
+ * @param filepath Filesystem path where the configuration JSON will be written.
+ * @return true if the file was written successfully, false on failure (for example, if the file cannot be opened).
+ */
 bool ConfigManager::save(const std::string& filepath) {
     LOG_INFO("Saving config to: " + filepath);
 
