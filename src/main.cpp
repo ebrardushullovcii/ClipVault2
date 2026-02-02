@@ -7,6 +7,7 @@
 #include "replay.h"
 #include "hotkey.h"
 #include "audio_devices.h"
+#include "game_detector.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -315,6 +316,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         clipvault::Logger::instance().shutdown();
         return 1;
     }
+    
+    // Initialize game detector (loads game database)
+    auto& game_detector = clipvault::GameDetector::instance();
+    if (!game_detector.initialize()) {
+        LOG_WARNING("Failed to initialize game detector - game detection will be limited");
+    } else {
+        LOG_INFO("Game detector initialized successfully");
+    }
 
     // Start the replay buffer
     if (!replay.start()) {
@@ -371,6 +380,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         auto& hotkey = clipvault::HotkeyManager::instance();
         hotkey.set_callback([&replay]() {
             LOG_INFO("Hotkey callback executing - triggering save...");
+            
+            // Detect game from foreground window
+            std::string detected_game = clipvault::GameDetector::instance().detect_game_from_foreground();
+            if (!detected_game.empty()) {
+                LOG_INFO("Game detected: " + detected_game);
+            } else {
+                LOG_INFO("No game detected in foreground window");
+            }
+            
+            // Set game for this save operation
+            replay.set_current_game(detected_game);
+            
             if (!replay.save_clip()) {
                 LOG_ERROR("Failed to save clip: " + replay.last_error());
             }
@@ -406,6 +427,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         } else {
             hotkey.set_callback([&replay]() {
                 LOG_INFO("Hotkey callback executing - triggering save...");
+                
+                // Detect game from foreground window
+                std::string detected_game = clipvault::GameDetector::instance().detect_game_from_foreground();
+                if (!detected_game.empty()) {
+                    LOG_INFO("Game detected: " + detected_game);
+                } else {
+                    LOG_INFO("No game detected in foreground window");
+                }
+                
+                // Set game for this save operation
+                replay.set_current_game(detected_game);
+                
                 if (!replay.save_clip()) {
                     LOG_ERROR("Failed to save clip: " + replay.last_error());
                 }

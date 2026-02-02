@@ -26,6 +26,7 @@ set(SOURCES
     src/encoder.cpp
     src/replay.cpp
     src/audio_devices.cpp
+    src/game_detector.cpp
 )
 
 # Create executable as Windows GUI app (no console window)
@@ -71,6 +72,9 @@ add_custom_command(TARGET ClipVault POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_SOURCE_DIR}/config/settings.json
         ${CMAKE_SOURCE_DIR}/bin/config/settings.json
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/config/games_database.json
+        ${CMAKE_SOURCE_DIR}/bin/config/games_database.json
     COMMENT "Copying config files"
 )
 

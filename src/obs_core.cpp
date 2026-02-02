@@ -56,6 +56,7 @@ typedef void (*signal_handler_connect_t)(signal_handler_t *handler, const char *
 typedef void (*obs_output_signal_t)(obs_output_t *output, const char *signal);
 typedef const char* (*calldata_string_t)(calldata_t *data, const char *name);
 typedef const char* (*obs_output_get_last_error_t)(obs_output_t *output);
+typedef const char* (*obs_output_get_last_replay_t)(obs_output_t *output);
 typedef bool (*obs_output_can_begin_data_capture_t)(obs_output_t *output, uint32_t flags);
 typedef void (*obs_output_set_mixers_t)(obs_output_t *output, uint32_t mixers);
 typedef void (*obs_output_set_video_source_t)(obs_output_t *output, obs_source_t *source);
@@ -134,6 +135,7 @@ static signal_handler_connect_t g_signal_handler_connect = nullptr;
 static obs_output_signal_t g_obs_output_signal = nullptr;
 static calldata_string_t g_calldata_string = nullptr;
 static obs_output_get_last_error_t g_obs_output_get_last_error = nullptr;
+static obs_output_get_last_replay_t g_obs_output_get_last_replay = nullptr;
 static obs_output_can_begin_data_capture_t g_obs_output_can_begin_data_capture = nullptr;
 static obs_output_set_mixers_t g_obs_output_set_mixers = nullptr;
 static obs_output_set_video_source_t g_obs_output_set_video_source = nullptr;
@@ -251,7 +253,8 @@ static bool load_obs_functions()
     g_obs_output_signal = (obs_output_signal_t)GetProcAddress(g_obs_module, "obs_output_signal");
     g_calldata_string = (calldata_string_t)GetProcAddress(g_obs_module, "calldata_string");
     g_obs_output_get_last_error = (obs_output_get_last_error_t)GetProcAddress(g_obs_module, "obs_output_get_last_error");
-g_obs_output_can_begin_data_capture = (obs_output_can_begin_data_capture_t)GetProcAddress(g_obs_module, "obs_output_can_begin_data_capture");
+    g_obs_output_get_last_replay = (obs_output_get_last_replay_t)GetProcAddress(g_obs_module, "obs_output_get_last_replay");
+    g_obs_output_can_begin_data_capture = (obs_output_can_begin_data_capture_t)GetProcAddress(g_obs_module, "obs_output_can_begin_data_capture");
     g_obs_output_set_mixers = (obs_output_set_mixers_t)GetProcAddress(g_obs_module, "obs_output_set_mixers");
     g_obs_output_set_video_source = (obs_output_set_video_source_t)GetProcAddress(g_obs_module, "obs_output_set_video_source");
 

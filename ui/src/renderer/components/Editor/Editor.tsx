@@ -21,7 +21,9 @@ import {
   Star,
   Trash2,
   Trash,
+  Gamepad2,
 } from 'lucide-react'
+import { GameTagEditor } from '../GameTagEditor'
 import type { VideoMetadata } from '../../hooks/useVideoMetadata'
 import type { ClipInfo, ClipMetadata, AudioTrackUrls } from '../../types/electron'
 
@@ -72,6 +74,8 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
   const [isFavorite, setIsFavorite] = useState(clip.metadata?.favorite || false)
   const [tags, setTags] = useState<string[]>(clip.metadata?.tags || [])
   const [newTag, setNewTag] = useState('')
+  const [game, setGame] = useState(clip.metadata?.game || '')
+  const [isEditingGame, setIsEditingGame] = useState(false)
 
   // Export state
   const [isExporting, setIsExporting] = useState(false)
@@ -80,6 +84,9 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
   const [targetSizeMB, setTargetSizeMB] = useState<number | 'original'>('original')
   const [showSizeDropdown, setShowSizeDropdown] = useState(false)
   const [videoSrc, setVideoSrc] = useState(`clipvault://clip/${encodeURIComponent(clip.filename)}`)
+
+  // Track if we've already set trim end from video (to avoid re-setting on re-renders)
+  const isVideoDurationSetRef = useRef(false)
 
   // Delete state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -111,10 +118,13 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
         if (clipMetadata) {
           console.log('[Editor] Loading metadata for clip:', clip.id)
 
-          // Apply trim markers
+          // Apply trim markers - but preserve trimEnd if video duration was already set
           if (clipMetadata.trim) {
             setTrimStart(clipMetadata.trim.start)
-            setTrimEnd(clipMetadata.trim.end)
+            // Only reset trimEnd from metadata if video duration hasn't been set yet
+            if (!isVideoDurationSetRef.current) {
+              setTrimEnd(clipMetadata.trim.end)
+            }
           }
 
           // Apply audio settings
@@ -133,6 +143,9 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
           }
           if (clipMetadata.tags) {
             setTags(clipMetadata.tags)
+          }
+          if (clipMetadata.game !== undefined) {
+            setGame(clipMetadata.game)
           }
 
           // Apply playhead position
@@ -171,6 +184,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
         const newMetadata: ClipMetadata = {
           favorite: isFavorite,
           tags,
+          game,
           trim: {
             start: trimStart,
             end: trimEnd,
@@ -209,6 +223,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
     audioTrack2,
     isFavorite,
     tags,
+    game,
     onSave,
   ])
 
@@ -797,6 +812,20 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
             </div>
           </div>
 
+          {/* Game */}
+          <button
+            onClick={() => setIsEditingGame(true)}
+            className={`flex items-center gap-1 rounded-lg px-2 py-2 transition-colors ${
+              game
+                ? 'text-purple-400 hover:bg-purple-400/10'
+                : 'text-text-muted hover:bg-background-tertiary hover:text-text-primary'
+            }`}
+            title={game ? `Game: ${game}` : 'Add game tag'}
+          >
+            <Gamepad2 className="h-4 w-4" />
+            {game && <span className="max-w-[100px] truncate text-xs">{game}</span>}
+          </button>
+
           {/* Favorite */}
           <button
             onClick={() => setIsFavorite(!isFavorite)}
@@ -834,6 +863,20 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
               className="max-h-full max-w-full cursor-pointer"
               onClick={togglePlay}
               onError={handleVideoError}
+              onLoadedMetadata={() => {
+                const video = videoRef.current
+                // Only set trimEnd once from video metadata - ignore subsequent calls
+                if (video && video.duration && video.duration !== Infinity && !isVideoDurationSetRef.current) {
+                  const videoDuration = video.duration
+                  setDuration(videoDuration)
+                  // Only update if trimEnd hasn't been set from metadata (or is 0)
+                  if (trimEnd === 0) {
+                    setTrimEnd(videoDuration)
+                    isVideoDurationSetRef.current = true
+                    console.log('[Editor] Set trimEnd to video duration:', videoDuration)
+                  }
+                }
+              }}
               playsInline
               muted // Video is muted, audio comes from Web Audio API
             />
@@ -1248,6 +1291,15 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
           </div>
         </div>
       )}
+
+      {/* Game Tag Editor Modal */}
+      <GameTagEditor
+        isOpen={isEditingGame}
+        onClose={() => setIsEditingGame(false)}
+        clip={clip}
+        currentGame={game || null}
+        onSave={(newGame) => setGame(newGame || '')}
+      />
     </div>
   )
 }

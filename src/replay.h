@@ -26,6 +26,10 @@ public:
 
     // Save the current buffer to file
     bool save_clip();
+    
+    // Set the current game for the next save operation
+    void set_current_game(const std::string& game_name) { current_game_ = game_name; }
+    const std::string& current_game() const { return current_game_; }
 
     // Check status
     bool is_initialized() const { return initialized_; }
@@ -55,6 +59,7 @@ private:
     bool save_pending_ = false;
     std::string last_error_;
     std::string last_saved_file_;
+    std::string current_game_;  // Game name for next save operation
     SaveCallback save_callback_;
 
     // Render thread (for periodic health checks - OBS handles frame production)

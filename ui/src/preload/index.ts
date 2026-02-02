@@ -88,6 +88,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     loadState: (clipId: string) => ipcRenderer.invoke('editor:loadState', clipId),
   },
 
+  // Games database
+  getGamesDatabase: () => ipcRenderer.invoke('games:getDatabase'),
+
   // Event listener
   on: (channel: string, callback: (data: unknown) => void) => {
     const listener = (_event: IpcRendererEvent, data: unknown) => callback(data)

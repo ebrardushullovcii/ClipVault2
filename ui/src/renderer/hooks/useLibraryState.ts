@@ -8,6 +8,7 @@ interface LibraryState {
   filterBy: 'all' | 'favorites' | 'recent'
   showFavoritesOnly: boolean
   selectedTag: string | null
+  selectedGame: string | null
   scrollPosition: number
 }
 
@@ -22,6 +23,7 @@ export const useLibraryState = () => {
     filterBy: 'all',
     showFavoritesOnly: false,
     selectedTag: null,
+    selectedGame: null,
     scrollPosition: 0,
   })
 
@@ -126,6 +128,10 @@ export const useLibraryState = () => {
     saveState({ selectedTag: value })
   }, [saveState])
 
+  const setSelectedGame = useCallback((value: string | null) => {
+    saveState({ selectedGame: value })
+  }, [saveState])
+
   return {
     state,
     scrollRef,
@@ -137,6 +143,7 @@ export const useLibraryState = () => {
     setFilterBy,
     setShowFavoritesOnly,
     setSelectedTag,
+    setSelectedGame,
     saveScrollPosition,
   }
 }

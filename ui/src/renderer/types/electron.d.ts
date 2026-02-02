@@ -13,6 +13,7 @@ export interface VideoMetadata {
 export interface ClipMetadata {
   favorite?: boolean
   tags?: string[]
+  game?: string
   trim?: {
     start: number
     end: number

@@ -600,15 +600,15 @@ ipcMain.handle('settings:get', async () => {
   try {
     const settingsPath = getSettingsPath()
     console.log('Settings path:', settingsPath)
-    
+
     if (!existsSync(settingsPath)) {
       console.log('Settings file not found, returning defaults')
       return defaultSettings
     }
-    
+
     console.log('Reading settings from:', settingsPath)
     const content = await readFile(settingsPath, 'utf-8')
-    
+
     try {
       return JSON.parse(content)
     } catch (parseError) {
@@ -619,6 +619,37 @@ ipcMain.handle('settings:get', async () => {
     console.error('Failed to read settings:', error)
     return defaultSettings
   }
+})
+
+// Load games database - tries multiple paths for dev and production
+ipcMain.handle('games:getDatabase', async () => {
+  const possiblePaths = [
+    // Development paths
+    join(process.cwd(), 'config', 'games_database.json'),
+    join(app.getAppPath(), '..', '..', 'config', 'games_database.json'),
+    // Production paths (packaged app)
+    join(process.resourcesPath, 'bin', 'config', 'games_database.json'),
+    join(process.resourcesPath, 'config', 'games_database.json'),
+    // Fallback to app directory
+    join(app.getAppPath(), 'config', 'games_database.json'),
+  ]
+
+  for (const dbPath of possiblePaths) {
+    try {
+      if (existsSync(dbPath)) {
+        console.log('[GamesDB] Loading from:', dbPath)
+        const content = await readFile(dbPath, 'utf-8')
+        const data = JSON.parse(content)
+        console.log('[GamesDB] Successfully loaded', data.games?.length || 0, 'games')
+        return { success: true, data }
+      }
+    } catch (error) {
+      console.log('[GamesDB] Failed to load from:', dbPath, '-', error)
+    }
+  }
+
+  console.error('[GamesDB] Could not find games_database.json in any location')
+  return { success: false, error: 'Games database not found', data: null }
 })
 
 // Save settings and restart backend
@@ -750,6 +781,16 @@ ipcMain.handle('audio:getDevices', async (_, type: 'output' | 'input') => {
   }
 })
 
+// Extract game name from filename (format: YYYY-MM-DD_HH-MM-SS_GameName.mp4)
+function extractGameFromFilename(filename: string): string {
+  const baseName = filename.replace('.mp4', '')
+  const parts = baseName.split('__')
+  if (parts.length > 1) {
+    return parts[parts.length - 1].replace(/_/g, ' ')
+  }
+  return ''
+}
+
 // Get list of clips
 ipcMain.handle('clips:getList', async () => {
   try {
@@ -771,9 +812,10 @@ ipcMain.handle('clips:getList', async () => {
         .map(async filename => {
           const filePath = join(getClipsPath(), filename)
           const stats = await stat(filePath)
-          const metadataPath = join(metadataDir, `${filename.replace('.mp4', '')}.json`)
+          const clipId = filename.replace('.mp4', '')
+          const metadataPath = join(metadataDir, `${clipId}.json`)
 
-          let metadata = null
+          let metadata: Record<string, unknown> | null = null
           try {
             if (existsSync(metadataPath)) {
               const content = await readFile(metadataPath, 'utf-8')
@@ -783,8 +825,11 @@ ipcMain.handle('clips:getList', async () => {
             console.error('Failed to read metadata:', e)
           }
 
+          // Game detection: only use metadata.game if it exists
+          // The UI will extract game from filename for display purposes if needed
+
           return {
-            id: filename.replace('.mp4', ''),
+            id: clipId,
             filename,
             path: filePath,
             size: stats.size,
@@ -805,15 +850,17 @@ ipcMain.handle('clips:getList', async () => {
 // Save clip metadata
 ipcMain.handle('clips:saveMetadata', async (_, clipId: string, metadata: unknown) => {
   try {
+    console.log('[METADATA] Saving metadata for clip:', clipId)
     const metadataDir = join(getClipsPath(), 'clips-metadata')
     if (!existsSync(metadataDir)) {
       await mkdir(metadataDir, { recursive: true })
     }
     const metadataPath = join(metadataDir, `${clipId}.json`)
     await writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8')
+    console.log('[METADATA] Saved to:', metadataPath)
     return true
   } catch (error) {
-    console.error('Failed to save metadata:', error)
+    console.error('[METADATA] Failed to save:', error)
     throw error
   }
 })
