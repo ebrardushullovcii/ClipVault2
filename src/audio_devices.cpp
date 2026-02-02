@@ -1,15 +1,12 @@
 #include "audio_devices.h"
 #include "logger.h"
 #include <windows.h>
-#include <mmsystem.h>
 #include <mmdeviceapi.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <propsys.h>
 #include <string>
 #include <vector>
-#include <map>
 
-#pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "uuid.lib")
 
 namespace clipvault {
@@ -19,16 +16,20 @@ class ComInitializer {
 public:
     ComInitializer() {
         HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        initialized_ = SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE;
+        // Only track that we need to uninitialize if CoInitializeEx actually succeeded
+        // RPC_E_CHANGED_MODE means it failed (different apartment model already set)
+        needs_uninit_ = SUCCEEDED(hr);
+        initialized_ = needs_uninit_ || hr == RPC_E_CHANGED_MODE;
     }
     ~ComInitializer() {
-        if (initialized_) {
+        if (needs_uninit_) {
             CoUninitialize();
         }
     }
     bool is_initialized() const { return initialized_; }
 private:
     bool initialized_ = false;
+    bool needs_uninit_ = false;
 };
 
 // Ensure each thread initializes COM before using audio devices
@@ -120,35 +121,6 @@ std::wstring get_device_id(IMMDevice* device) {
         return result;
     }
     return L"";
-}
-
-// Get device name using Windows Multimedia API (waveOut/waveIn)
-// This often returns better names than WASAPI for some devices
-std::map<std::wstring, std::wstring> get_wave_device_names() {
-    std::map<std::wstring, std::wstring> device_names;
-
-    // Get waveOut (output) devices
-    UINT num_outputs = waveOutGetNumDevs();
-    for (UINT i = 0; i < num_outputs; i++) {
-        WAVEOUTCAPSW caps;
-        if (waveOutGetDevCapsW(i, &caps, sizeof(caps)) == MMSYSERR_NOERROR) {
-            // Store with index as key for now
-            std::wstring key = L"waveout_" + std::to_wstring(i);
-            device_names[key] = caps.szPname;
-        }
-    }
-
-    // Get waveIn (input) devices
-    UINT num_inputs = waveInGetNumDevs();
-    for (UINT i = 0; i < num_inputs; i++) {
-        WAVEINCAPSW caps;
-        if (waveInGetDevCapsW(i, &caps, sizeof(caps)) == MMSYSERR_NOERROR) {
-            std::wstring key = L"wavein_" + std::to_wstring(i);
-            device_names[key] = caps.szPname;
-        }
-    }
-
-    return device_names;
 }
 
 std::vector<AudioDeviceInfo> enumerate_devices(EDataFlow direction) {

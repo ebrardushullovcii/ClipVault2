@@ -126,10 +126,15 @@ bool EncoderManager::create_video_encoder()
         LOG_INFO("    Encoder set to x264 only...");
         
         obs_data_t* settings = obs_api::data_create();
+        if (!settings) {
+            LOG_ERROR("    Failed to allocate x264 encoder settings");
+            last_error_ = "Failed to allocate x264 encoder settings";
+            return false;
+        }
         obs_api::data_set_string(settings, "rate_control", "CRF");
         obs_api::data_set_int(settings, "crf", quality.crf);
         obs_api::data_set_string(settings, "preset", quality.x264_preset);
-        
+
         video_encoder_ = obs_api::video_encoder_create("obs_x264", "video_encoder", settings, nullptr);
         obs_api::data_release(settings);
 
