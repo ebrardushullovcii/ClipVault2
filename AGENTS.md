@@ -6,7 +6,7 @@
 
 **ALL work must be done on branches. ALL changes must go through pull requests.**
 
-```
+```text
 1. Create branch from master: git checkout -b feature/your-feature
 2. Make changes on branch
 3. Commit changes (use conventional commits)
