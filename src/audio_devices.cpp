@@ -14,14 +14,28 @@
 
 namespace clipvault {
 
-static bool com_initialized = false;
-
-void initialize_com() {
-    if (!com_initialized) {
+// RAII helper for COM initialization per-thread
+class ComInitializer {
+public:
+    ComInitializer() {
         HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        if (SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE) {
-            com_initialized = true;
+        initialized_ = SUCCEEDED(hr) || hr == RPC_E_CHANGED_MODE;
+    }
+    ~ComInitializer() {
+        if (initialized_) {
+            CoUninitialize();
         }
+    }
+    bool is_initialized() const { return initialized_; }
+private:
+    bool initialized_ = false;
+};
+
+// Ensure each thread initializes COM before using audio devices
+void initialize_com() {
+    thread_local ComInitializer com_init;
+    if (!com_init.is_initialized()) {
+        LOG_ERROR("Failed to initialize COM for current thread");
     }
 }
 
@@ -31,6 +45,23 @@ public:
     ComPtr() : ptr_(nullptr) {}
     ComPtr(T* ptr) : ptr_(ptr) {}
     ~ComPtr() { if (ptr_) ptr_->Release(); }
+
+    // Delete copy operations to prevent double-Release
+    ComPtr(const ComPtr&) = delete;
+    ComPtr& operator=(const ComPtr&) = delete;
+
+    // Move semantics
+    ComPtr(ComPtr&& other) noexcept : ptr_(other.ptr_) {
+        other.ptr_ = nullptr;
+    }
+    ComPtr& operator=(ComPtr&& other) noexcept {
+        if (this != &other) {
+            if (ptr_) ptr_->Release();
+            ptr_ = other.ptr_;
+            other.ptr_ = nullptr;
+        }
+        return *this;
+    }
 
     T* operator->() const { return ptr_; }
     T* get() const { return ptr_; }

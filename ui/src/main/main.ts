@@ -720,9 +720,7 @@ const execFileAsync = promisify(execFile)
 
 ipcMain.handle('audio:getDevices', async (_, type: 'output' | 'input') => {
   try {
-    const backendPath = isDev
-      ? join(appDir, '..', '..', '..', 'bin', 'ClipVault.exe')
-      : join(process.resourcesPath, 'bin', 'ClipVault.exe')
+    const { backendPath } = getBackendPaths()
 
     if (!existsSync(backendPath)) {
       console.warn('Backend executable not found for audio device enumeration')

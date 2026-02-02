@@ -150,6 +150,10 @@ bool EncoderManager::create_video_encoder()
             LOG_INFO("    Trying " + std::string(nvenc_ids[i]) + "...");
             
             obs_data_t* settings = create_nvenc_settings(nvenc_ids[i], quality);
+            if (!settings) {
+                LOG_WARNING("    Failed to create NVENC settings for " + std::string(nvenc_ids[i]));
+                continue;
+            }
             video_encoder_ = obs_api::video_encoder_create(nvenc_ids[i], "video_encoder", settings, nullptr);
             obs_api::data_release(settings);
 
@@ -177,6 +181,10 @@ bool EncoderManager::create_video_encoder()
             LOG_INFO("    Trying " + std::string(nvenc_ids[i]) + "...");
             
             obs_data_t* settings = create_nvenc_settings(nvenc_ids[i], quality);
+            if (!settings) {
+                LOG_WARNING("    Failed to create NVENC settings for " + std::string(nvenc_ids[i]));
+                continue;
+            }
             video_encoder_ = obs_api::video_encoder_create(nvenc_ids[i], "video_encoder", settings, nullptr);
             obs_api::data_release(settings);
 
@@ -378,6 +386,10 @@ bool EncoderManager::try_next_nvenc_encoder()
         LOG_INFO("    Trying " + std::string(nvenc_ids[i]) + "...");
 
         obs_data_t* settings = create_nvenc_settings(nvenc_ids[i], quality);
+        if (!settings) {
+            LOG_WARNING("    Failed to create NVENC settings for " + std::string(nvenc_ids[i]));
+            continue;
+        }
         video_encoder_ = obs_api::video_encoder_create(nvenc_ids[i], "video_encoder", settings, nullptr);
         obs_api::data_release(settings);
 
