@@ -306,12 +306,15 @@ The most important test validates that recorded clips have **real content** (not
 
 ### Running the Test
 
-```powershell
-# Run after saving a clip with F9
-.\scripts\test-clipvault.ps1
+Content validation is built into the application. Verify clips manually using FFmpeg:
 
-# With custom parameters
-.\scripts\test-clipvault.ps1 -NumVideoFrames 30 -AudioSampleSeconds 5
+```powershell
+# Check clip has video content (not black)
+$clip = (Get-ChildItem "D:\Clips\ClipVault\*.mp4" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+ffmpeg -i $clip -vf "select=gt(scene\,0.1)" -vframes 1 -f null - 2>&1 | Select-String "frame="
+
+# Check clip has audio content (not silent)
+ffmpeg -i $clip -af "volumedetect" -f null - 2>&1 | Select-String "max_volume"
 ```
 
 ### What It Checks

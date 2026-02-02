@@ -155,9 +155,6 @@ ui/src/                 # Electron UI
 │   ├── stores/
 │   └── hooks/
 └── preload/           # IPC bridge
-
-ui/native/             # Native addons
-└── thumbnail-addon/   # Windows thumbnail cache
 ```
 
 ## Documentation

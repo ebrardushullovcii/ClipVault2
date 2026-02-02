@@ -30,15 +30,20 @@ src/
 ```cpp
 #pragma once
 
+// Corresponding header (for .cpp files)
+#include "my_class.h"
+
 // System includes
 #include <string>
 #include <vector>
 
 // Third-party includes
-#include <obs.h>
+#include <windows.h>
 
 // Project includes
-#include "types.h"
+#include <obs.h>
+
+#include "logger.h"
 
 namespace clipvault {
 
