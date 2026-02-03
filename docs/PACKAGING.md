@@ -61,6 +61,7 @@ The packaging configuration lives in `ui/package.json` under the `build` key.
 "build": {
   "appId": "com.clipvault.editor",
   "productName": "ClipVault",
+  "afterPack": "build/afterPack.js",
   "directories": { "output": "release" },
   "files": ["dist/**/*", "node_modules/**/*"],
   "extraResources": [
@@ -76,9 +77,22 @@ The packaging configuration lives in `ui/package.json` under the `build` key.
 }
 ```
 
+Note: the referenced build assets live under `ui/build/` (`afterPack.js`, `installer.nsh`, and `icon.ico`).
+
 ## Backend Startup (Packaged)
 
 The Electron main process spawns the bundled backend from `resources/bin/ClipVault.exe`.
+
+Backend path resolution and spawn details (implementation in `ui/src/main/main.ts`):
+
+- **Path resolution**: `getBackendPaths()` uses `process.resourcesPath/bin/ClipVault.exe` in production and falls back to `appDir/../../../bin/ClipVault.exe` in dev (where `appDir = dirname(app.getAppPath())`).
+- **Spawn arguments**: the backend is started with no CLI arguments (`spawn(backendPath, [], ...)`) and inherits the Electron process environment (no overrides).
+- **Process options**: `detached: true` with `stdio: ['ignore', 'pipe', 'pipe']` so stdout/stderr can be captured.
+- **Logging**: startup logs are appended to `clipvault.log` in the same bin folder, and stderr is mirrored to the console for visibility.
+- **Error handling**: missing backend path triggers an error dialog and aborts startup; spawn errors and exit events are logged and the backend handle is cleared.
+- **Retry/restart**: `restartBackend()` reuses `startBackend()` after shutdown when settings or UI actions request a restart.
+
+Reference: see `getBackendPaths()` and `startBackend()` in `ui/src/main/main.ts`.
 
 ## Troubleshooting
 

@@ -4,7 +4,7 @@ Electron-based user interface for browsing, editing, and exporting clips.
 
 ## Project Structure
 
-```
+```text
 ui/
 ├── src/
 │   ├── main/                    # Electron main process (Node.js)
