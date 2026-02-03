@@ -153,6 +153,17 @@ foreach ($tool in $FFmpegTools) {
     }
 }
 
+# Copy clip saved sound (notification)
+Write-Host "`n[Copy] Copying clip saved sound..."
+$ClipSoundSrc = Join-Path $ProjectRoot "ui/resources/bin/clip_saved.wav"
+$ClipSoundDest = Join-Path $DestDir "clip_saved.wav"
+if (Test-Path $ClipSoundSrc) {
+    Copy-Item $ClipSoundSrc $ClipSoundDest -Force
+    Write-Host "  Copied: clip_saved.wav" -ForegroundColor Gray
+} else {
+    Write-Host "  WARNING: clip_saved.wav not found in ui/resources/bin" -ForegroundColor Yellow
+}
+
 # Copy NVENC files (required for NVENC hardware encoding)
 Write-Host "`n[Copy] Copying NVENC files for hardware encoding..."
 
