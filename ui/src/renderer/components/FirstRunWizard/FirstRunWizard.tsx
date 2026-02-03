@@ -32,24 +32,30 @@ const qualityPresets = [
 ]
 
 const normalizeSettings = (value: AppSettings): AppSettings => {
-  const outputPath = value.output_path?.trim() ? value.output_path : DEFAULT_CLIPS_PATH
+  const outputPath = value.output_path?.trim()
+    ? value.output_path.trim()
+    : DEFAULT_CLIPS_PATH
+  const video = value.video ?? ({} as AppSettings['video'])
+  const audio = value.audio ?? ({} as AppSettings['audio'])
+  const ui = value.ui ?? {}
+  const monitor = value.video?.monitor
   return {
     ...value,
     output_path: outputPath,
     video: {
-      ...value.video,
-      monitor: Number.isFinite(value.video.monitor) ? value.video.monitor : 0,
+      ...video,
+      monitor: Number.isFinite(monitor) ? monitor : 0,
     },
     audio: {
-      ...value.audio,
-      system_audio_device_id: value.audio.system_audio_device_id ?? 'default',
-      microphone_device_id: value.audio.microphone_device_id ?? 'default',
+      ...audio,
+      system_audio_device_id: audio.system_audio_device_id ?? 'default',
+      microphone_device_id: audio.microphone_device_id ?? 'default',
     },
     ui: {
-      show_notifications: value.ui?.show_notifications ?? true,
-      minimize_to_tray: value.ui?.minimize_to_tray ?? true,
-      start_with_windows: value.ui?.start_with_windows ?? false,
-      first_run_completed: value.ui?.first_run_completed ?? false,
+      show_notifications: ui.show_notifications ?? true,
+      minimize_to_tray: ui.minimize_to_tray ?? true,
+      start_with_windows: ui.start_with_windows ?? false,
+      first_run_completed: ui.first_run_completed ?? false,
     },
   }
 }
@@ -207,6 +213,11 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
   }
 
   const selectedMonitor = monitors.find(monitor => monitor.id === settings.video.monitor)
+  const clipsPathLabelId = 'first-run-clips-path-label'
+  const clipsPathDisplayId = 'first-run-clips-path-display'
+  const monitorSelectId = 'first-run-monitor-select'
+  const monitorInfoId = 'first-run-monitor-info'
+  const qualityLabelId = 'first-run-quality-label'
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm">
@@ -285,9 +296,21 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                   </p>
                 </div>
                 <div className="space-y-3">
-                  <label className="text-sm font-medium text-text-secondary">Clips folder path</label>
+                  <label
+                    htmlFor={clipsPathDisplayId}
+                    id={clipsPathLabelId}
+                    className="text-sm font-medium text-text-secondary"
+                  >
+                    Clips folder path
+                  </label>
                   <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex-1 rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary">
+                    <div
+                      id={clipsPathDisplayId}
+                      role="textbox"
+                      aria-readonly="true"
+                      aria-labelledby={clipsPathLabelId}
+                      className="flex-1 rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary"
+                    >
                       {settings.output_path}
                     </div>
                     <button
@@ -326,10 +349,17 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                 </div>
                 <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
                   <div className="space-y-3">
-                    <label className="text-sm font-medium text-text-secondary">Monitor</label>
+                    <label
+                      htmlFor={monitorSelectId}
+                      className="text-sm font-medium text-text-secondary"
+                    >
+                      Monitor
+                    </label>
                     <select
+                      id={monitorSelectId}
                       className="w-full rounded-lg border border-border bg-background-tertiary px-3 py-2 text-sm text-text-primary"
                       value={settings.video.monitor}
+                      aria-describedby={selectedMonitor ? monitorInfoId : undefined}
                       onChange={event =>
                         setSettings(prev => ({
                           ...prev,
@@ -348,21 +378,28 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                       ))}
                     </select>
                     {selectedMonitor && (
-                      <div className="rounded-lg border border-border bg-background-secondary p-3 text-xs text-text-muted">
+                      <div
+                        id={monitorInfoId}
+                        className="rounded-lg border border-border bg-background-secondary p-3 text-xs text-text-muted"
+                      >
                         Selected monitor: {selectedMonitor.width}x{selectedMonitor.height} @
                         {settings.video.fps}fps
                       </div>
                     )}
                   </div>
                   <div className="space-y-3">
-                    <label className="text-sm font-medium text-text-secondary">Quality preset</label>
-                    <div className="grid gap-2">
+                    <label id={qualityLabelId} className="text-sm font-medium text-text-secondary">
+                      Quality preset
+                    </label>
+                    <div role="radiogroup" aria-labelledby={qualityLabelId} className="grid gap-2">
                       {qualityPresets.map(preset => {
                         const isActive = currentQuality === preset.id
                         return (
                           <button
                             key={preset.id}
                             type="button"
+                            role="radio"
+                            aria-checked={isActive}
                             onClick={() =>
                               setSettings(prev => ({
                                 ...prev,

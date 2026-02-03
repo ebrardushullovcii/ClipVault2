@@ -865,7 +865,7 @@ ipcMain.handle('settings:save', async (_, settings: unknown) => {
     const configDir = join(app.getPath('appData'), 'ClipVault')
     const normalized = normalizeSettings(settings, true)
 
-    if (typeof normalized.ui.first_run_completed !== 'boolean') {
+    if (normalized.ui.first_run_completed == null) {
       normalized.ui.first_run_completed = true
     }
 

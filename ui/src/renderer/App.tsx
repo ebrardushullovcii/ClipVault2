@@ -51,7 +51,7 @@ function App() {
     }
   }, [])
 
-  const handleFirstRunComplete = useCallback(async (settings: AppSettings) => {
+  const handleFirstRunFinish = useCallback(async (settings: AppSettings) => {
     try {
       await window.electronAPI.saveSettings(settings)
       await window.electronAPI.setStartup(settings.ui?.start_with_windows ?? false)
@@ -59,17 +59,6 @@ function App() {
       setShowFirstRun(false)
     } catch (error) {
       console.error('Failed to save first-run settings:', error)
-    }
-  }, [])
-
-  const handleFirstRunSkip = useCallback(async (settings: AppSettings) => {
-    try {
-      await window.electronAPI.saveSettings(settings)
-      await window.electronAPI.setStartup(settings.ui?.start_with_windows ?? false)
-      setFirstRunSettings(settings)
-      setShowFirstRun(false)
-    } catch (error) {
-      console.error('Failed to save first-run defaults:', error)
     }
   }, [])
 
@@ -289,8 +278,8 @@ function App() {
       {showFirstRun && firstRunSettings && (
         <FirstRunWizard
           initialSettings={firstRunSettings}
-          onComplete={handleFirstRunComplete}
-          onSkip={handleFirstRunSkip}
+          onComplete={handleFirstRunFinish}
+          onSkip={handleFirstRunFinish}
         />
       )}
 
