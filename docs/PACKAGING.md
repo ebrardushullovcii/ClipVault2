@@ -4,7 +4,7 @@ How ClipVault is packaged into a self-contained Electron app + bundled backend.
 
 ## Overview (Packaged Layout)
 
-```
+```text
 ui/release/win-unpacked/
 ├── ClipVault.exe              # Electron main executable
 ├── resources/
