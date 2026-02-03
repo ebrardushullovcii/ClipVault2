@@ -21,13 +21,3 @@ reviews:
     - "ui/src/**"
 chat:
   auto_reply: true
-categories:
-  snapshot:
-    paths: []
-  security:
-    paths: []
-  test_coverage:
-    paths: []
-knowledge:
-  base_path: .
-  use_website: true
