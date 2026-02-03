@@ -202,10 +202,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     // Check single instance (prevent multiple backends)
     if (!check_single_instance()) {
         LOG_INFO("Another instance of ClipVault is already running. Exiting.");
-        if (!g_background_mode) {
-            MessageBoxA(nullptr, "ClipVault is already running.\nCheck the system tray for the running instance.", 
-                        "ClipVault", MB_OK | MB_ICONINFORMATION);
-        }
         clipvault::Logger::instance().shutdown();
         return 0;
     }
