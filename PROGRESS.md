@@ -5,7 +5,7 @@
 
 ## Current Status Overview
 
-**Last Updated**: 2026-02-03 (bulk clip operations)
+**Last Updated**: 2026-02-03 (first run setup wizard)
 **Status**: ✅ Phase 1-3 COMPLETE - Phase 4 In Progress (bulk clip operations completed)
 **Architecture**: Independent Backend (C++) + Electron UI (React/TypeScript)
 **Packaging**: Single EXE with auto-starting backend
@@ -205,6 +205,17 @@ npm run dev
 **Files Modified**:
 - `ui/src/renderer/components/Library/Library.tsx` - selection state, bulk actions, modals, export queue
 - `ui/src/renderer/components/Library/ClipCard.tsx` - selection checkbox + click handling
+
+### 2026-02-03 - First Run Setup Wizard (COMPLETED ✅)
+
+- **Guided setup**: Four-step wizard for clips folder, monitor, audio, and startup defaults
+- **Safe defaults**: Pre-fills settings and guarantees a valid clips directory
+- **One-time**: Runs only on first launch, can be skipped, and stores `ui.first_run_completed`
+
+**Files Modified**:
+- `ui/src/renderer/components/FirstRunWizard/FirstRunWizard.tsx` - new wizard UI
+- `ui/src/renderer/App.tsx` - wizard routing + save hooks
+- `ui/src/main/main.ts` - settings normalization + clips dir creation
 
 ### 2026-02-03 - UI Polish Fixes (COMPLETED ✅)
 
@@ -636,10 +647,10 @@ None - all features working as expected.
 
 ### Onboarding & Setup
 
-- [ ] **13. First Run Setup Wizard** - Guide users through initial configuration
-      **Status**: Ready to implement
+- [x] **13. First Run Setup Wizard** - Guide users through initial configuration
+      **Status**: ✅ COMPLETED
       **Independent**: ✓ Yes
-      **Files**: `ui/src/renderer/components/FirstRunWizard/`, `ui/src/renderer/App.tsx`
+      **Files**: `ui/src/renderer/components/FirstRunWizard/`, `ui/src/renderer/App.tsx`, `ui/src/main/main.ts`
       **Implementation**:
   - Check `settings.first_run_completed` flag on app start
   - Multi-step modal overlay (4 steps + completion)
@@ -653,12 +664,12 @@ None - all features working as expected.
   **Purpose**: Prevent null/undefined issues by ensuring folder exists and settings are validated
 
   **Acceptance Criteria**:
-  - [ ] Appears on first launch (no settings file)
-  - [ ] Forces folder selection and creation
-  - [ ] Shows sensible defaults for all options
-  - [ ] Skip button available
-  - [ ] Settings properly saved and backend restarted
-  - [ ] Doesn't appear on subsequent launches
+  - [x] Appears on first launch (no settings file)
+  - [x] Forces folder selection and creation
+  - [x] Shows sensible defaults for all options
+  - [x] Skip button available
+  - [x] Settings properly saved and backend restarted
+  - [x] Doesn't appear on subsequent launches
 
 ### Library Management
 

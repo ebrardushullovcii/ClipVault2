@@ -389,14 +389,22 @@ function getClipsPath(): string {
     if (existsSync(settingsPath)) {
       const content = readFileSync(settingsPath, 'utf-8')
       const settings = JSON.parse(content)
-      if (settings.output_path && typeof settings.output_path === 'string') {
-        return settings.output_path
+      const normalized = normalizeSettings(settings, true)
+      if (normalized.output_path && typeof normalized.output_path === 'string') {
+        return normalized.output_path
       }
     }
   } catch (error) {
     console.error('Failed to read clips path from settings:', error)
   }
   return DEFAULT_CLIPS_PATH
+}
+
+async function ensureClipsDirectory(): Promise<void> {
+  const clipsDir = getClipsPath()
+  if (!existsSync(clipsDir)) {
+    await mkdir(clipsDir, { recursive: true })
+  }
 }
 
 // Configure FFmpeg path for bundled version
@@ -711,12 +719,15 @@ const defaultSettings = {
     fps: 60,
     encoder: 'auto',
     quality: 20,
+    monitor: 0,
   },
   audio: {
     sample_rate: 48000,
     bitrate: 160,
     system_audio_enabled: true,
     microphone_enabled: true,
+    system_audio_device_id: 'default',
+    microphone_device_id: 'default',
   },
   hotkey: {
     save_clip: 'F9',
@@ -725,7 +736,67 @@ const defaultSettings = {
     show_notifications: true,
     minimize_to_tray: true,
     start_with_windows: false,
+    first_run_completed: false,
   },
+  launcher: {
+    autostart_backend: true,
+    backend_mode: 'tray',
+    single_instance: true,
+  },
+}
+
+const normalizeSettings = (raw: unknown, fileExists: boolean) => {
+  const base = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const merged = {
+    ...defaultSettings,
+    ...base,
+    video: {
+      ...defaultSettings.video,
+      ...(base.video && typeof base.video === 'object' ? base.video : {}),
+    },
+    audio: {
+      ...defaultSettings.audio,
+      ...(base.audio && typeof base.audio === 'object' ? base.audio : {}),
+    },
+    hotkey: {
+      ...defaultSettings.hotkey,
+      ...(base.hotkey && typeof base.hotkey === 'object' ? base.hotkey : {}),
+    },
+    ui: {
+      ...defaultSettings.ui,
+      ...(base.ui && typeof base.ui === 'object' ? base.ui : {}),
+    },
+    launcher: {
+      ...defaultSettings.launcher,
+      ...(base.launcher && typeof base.launcher === 'object' ? base.launcher : {}),
+    },
+  }
+
+  const trimmedOutputPath =
+    typeof merged.output_path === 'string' ? merged.output_path.trim() : ''
+  merged.output_path = trimmedOutputPath || defaultSettings.output_path
+
+  if (!Number.isFinite(merged.video.monitor)) {
+    merged.video.monitor = 0
+  }
+
+  if (typeof merged.audio.system_audio_device_id !== 'string') {
+    merged.audio.system_audio_device_id = 'default'
+  }
+
+  if (typeof merged.audio.microphone_device_id !== 'string') {
+    merged.audio.microphone_device_id = 'default'
+  }
+
+  if (fileExists && typeof merged.ui.first_run_completed !== 'boolean') {
+    merged.ui.first_run_completed = true
+  }
+
+  if (!fileExists && typeof merged.ui.first_run_completed !== 'boolean') {
+    merged.ui.first_run_completed = false
+  }
+
+  return merged
 }
 
 // Get settings
@@ -734,23 +805,25 @@ ipcMain.handle('settings:get', async () => {
     const settingsPath = getSettingsPath()
     console.log('Settings path:', settingsPath)
 
-    if (!existsSync(settingsPath)) {
+    const fileExists = existsSync(settingsPath)
+    if (!fileExists) {
       console.log('Settings file not found, returning defaults')
-      return defaultSettings
+      return normalizeSettings(null, false)
     }
 
     console.log('Reading settings from:', settingsPath)
     const content = await readFile(settingsPath, 'utf-8')
 
     try {
-      return JSON.parse(content)
+      const parsed = JSON.parse(content)
+      return normalizeSettings(parsed, true)
     } catch (parseError) {
       console.error('JSON parse error, returning defaults:', parseError)
-      return defaultSettings
+      return normalizeSettings(null, false)
     }
   } catch (error) {
     console.error('Failed to read settings:', error)
-    return defaultSettings
+    return normalizeSettings(null, false)
   }
 })
 
@@ -790,13 +863,26 @@ ipcMain.handle('settings:save', async (_, settings: unknown) => {
   try {
     const settingsPath = getSettingsPath()
     const configDir = join(app.getPath('appData'), 'ClipVault')
+    const normalized = normalizeSettings(settings, true)
+
+    if (normalized.ui.first_run_completed == null) {
+      normalized.ui.first_run_completed = true
+    }
 
     // Ensure config directory exists
     if (!existsSync(configDir)) {
       await mkdir(configDir, { recursive: true })
     }
 
-    await writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8')
+      if (typeof normalized.output_path === 'string' && normalized.output_path.trim()) {
+        try {
+          await mkdir(normalized.output_path, { recursive: true })
+      } catch (mkdirError) {
+        console.error('Failed to create clips directory:', mkdirError)
+      }
+    }
+
+    await writeFile(settingsPath, JSON.stringify(normalized, null, 2), 'utf-8')
     console.log('Settings saved to:', settingsPath)
 
     // Restart backend to apply new settings
@@ -1953,6 +2039,12 @@ app.whenReady().then(async () => {
   // Start the backend
   console.log('Attempting to start backend...')
   startBackend()
+
+  try {
+    await ensureClipsDirectory()
+  } catch (error) {
+    console.error('Failed to ensure clips directory:', error)
+  }
 
   // Clean up orphaned cache files on startup
   setTimeout(async () => {

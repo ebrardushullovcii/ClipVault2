@@ -3,8 +3,9 @@ import { AppLayout } from './components/Layout/AppLayout'
 import { Library } from './components/Library/Library'
 import { Editor } from './components/Editor/Editor'
 import { Settings } from './components/Settings'
+import { FirstRunWizard } from './components/FirstRunWizard'
 import type { VideoMetadata } from './hooks/useVideoMetadata'
-import type { ClipInfo, ClipMetadata } from './types/electron'
+import type { AppSettings, ClipInfo, ClipMetadata } from './types/electron'
 
 type View = 'library' | 'settings'
 
@@ -20,6 +21,8 @@ function App() {
   const [selectedClip, setSelectedClip] = useState<ClipInfo | null>(null)
   const [selectedClipMetadata, setSelectedClipMetadata] = useState<VideoMetadata | null>(null)
   const [showEditor, setShowEditor] = useState(false)
+  const [showFirstRun, setShowFirstRun] = useState(false)
+  const [firstRunSettings, setFirstRunSettings] = useState<AppSettings | null>(null)
   // Navigation history for browser-like back/forward
   const [history, setHistory] = useState<HistoryEntry[]>([{ type: 'library' }])
   const [historyIndex, setHistoryIndex] = useState(0)
@@ -27,6 +30,37 @@ function App() {
   const libraryUpdateRef = useRef<((clipId: string, metadata: ClipMetadata) => void) | null>(null)
   // Ref to track if we're navigating programmatically
   const isNavigatingRef = useRef(false)
+
+  useEffect(() => {
+    let mounted = true
+    const loadSettings = async () => {
+      try {
+        const settings = await window.electronAPI.getSettings()
+        if (!mounted) return
+        setFirstRunSettings(settings)
+        setShowFirstRun(!settings.ui?.first_run_completed)
+      } catch (error) {
+        console.error('Failed to load settings for first run:', error)
+      }
+    }
+
+    void loadSettings()
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const handleFirstRunFinish = useCallback(async (settings: AppSettings) => {
+    try {
+      await window.electronAPI.saveSettings(settings)
+      await window.electronAPI.setStartup(settings.ui?.start_with_windows ?? false)
+      setFirstRunSettings(settings)
+      setShowFirstRun(false)
+    } catch (error) {
+      console.error('Failed to save first-run settings:', error)
+    }
+  }, [])
 
   // Add entry to history when opening a clip
   const addToHistory = useCallback((entry: HistoryEntry) => {
@@ -188,7 +222,7 @@ function App() {
     }
   }, [])
 
-  const hideHeader = showEditor || currentView === 'settings'
+  const hideHeader = showEditor || currentView === 'settings' || showFirstRun
 
   return (
     <AppLayout
@@ -208,7 +242,8 @@ function App() {
           display: 'flex',
           height: '100%',
           width: '100%',
-          visibility: showEditor || currentView === 'settings' ? 'hidden' : 'visible',
+          visibility:
+            showEditor || currentView === 'settings' || showFirstRun ? 'hidden' : 'visible',
         }}
       >
         <Library onOpenEditor={handleOpenEditor} onRegisterUpdate={handleRegisterLibraryUpdate} />
@@ -238,6 +273,14 @@ function App() {
             onSave={handleSaveMetadata}
           />
         </div>
+      )}
+
+      {showFirstRun && firstRunSettings && (
+        <FirstRunWizard
+          initialSettings={firstRunSettings}
+          onComplete={handleFirstRunFinish}
+          onSkip={handleFirstRunFinish}
+        />
       )}
 
       <style>{`
