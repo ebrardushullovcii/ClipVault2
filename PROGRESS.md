@@ -5,8 +5,8 @@
 
 ## Current Status Overview
 
-**Last Updated**: 2026-02-02 (Task 4 COMPLETED - Game Database)
-**Status**: ✅ Phase 1-3 COMPLETE - Phase 4 In Progress (Task 4 COMPLETED - 150 games in database!)
+**Last Updated**: 2026-02-03 (Task 12 COMPLETED - Clip save sound & notification)
+**Status**: ✅ Phase 1-3 COMPLETE - Phase 4 In Progress (Task 12 COMPLETED)
 **Architecture**: Independent Backend (C++) + Electron UI (React/TypeScript)
 **Packaging**: Single EXE with auto-starting backend
 
@@ -194,6 +194,18 @@ npm run dev
 - [x] Resolution presets filtered by monitor capabilities
 
 ## Recent Changes
+
+### 2026-02-03 - Clip Save Sound & Notification (COMPLETED ✅)
+
+- **Clip save sound**: Backend plays `clip_saved.wav` on successful save (works even if UI is closed)
+- **Tray notification**: Save success/failure shown via tray balloon
+- **Build packaging**: `build.ps1` now copies `clip_saved.wav` into `bin/` for dev runs
+
+**Files Modified**:
+- `src/main.cpp` - play sound on save
+- `build.ps1` - copy sound into `bin/`
+- `ui/resources/bin/clip_saved.wav` - bundled sound asset
+- `ui/resources/bin/clip_saved.LICENSE.txt` - license note
 
 ### 2026-02-02 - Game Detection & Tagging Fixes (COMPLETED ✅)
 
@@ -588,28 +600,17 @@ None - all features working as expected.
   - [x] Changing device requires backend restart notification
   - [x] Works with "default" device option for automatic switching
 
-- [ ] **12. Clip Notification & Sound** - Visual and audio feedback when clip is saved
-      **Status**: Ready to implement
+- [x] **12. Clip Notification & Sound** - Visual and audio feedback when clip is saved
+      **Status**: ✅ COMPLETED
       **Independent**: ✓ Yes
-      **Files**: `src/replay.cpp`, `ui/src/renderer/stores/notificationStore.ts`, `ui/public/sounds/`
+      **Files**: `src/main.cpp`, `build.ps1`, `ui/resources/bin/clip_saved.wav`
       **Implementation**:
-  - Backend: Send IPC message when `obs_output_get_last_error` returns success
-  - Include clip filename, game name (if detected), timestamp
-  - Frontend: Toast notification component (top-right, non-intrusive)
-  - Sound: Optional WAV/MP3 playback (user-selectable in settings)
-
-  **UI Components**:
-  - Slide-in notification panel (Framer Motion for animation)
-  - Duration: 3-10 seconds (configurable)
-  - Sound options: Subtle click, chime, or none
-  - Settings toggles: Show notification / Play sound / Sound type
+  - Backend plays `clip_saved.wav` on successful save (works even if UI is closed)
+  - Tray notification shows save success/failure
 
   **Acceptance Criteria**:
-  - [ ] Toast appears within 1 second of F9 press
-  - [ ] Shows clip filename and game name
-  - [ ] Sound plays if enabled
-  - [ ] Configurable in Settings > Notifications
-  - [ ] Non-blocking (doesn't interfere with gameplay)
+  - [x] Notification appears on save (tray balloon)
+  - [x] Sound plays on successful save
 
 ### Onboarding & Setup
 

@@ -1,0 +1,4 @@
+Source: OpenGameArt.org - "Interface Sounds" by Kenney
+File: confirmation_001.ogg (converted to clip_saved.wav)
+License: CC0 1.0 (Public Domain)
+Downloaded: 2026-02-03

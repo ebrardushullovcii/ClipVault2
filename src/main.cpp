@@ -10,6 +10,7 @@
 #include "game_detector.h"
 
 #include <windows.h>
+#include <mmsystem.h>
 #include <shellapi.h>
 #include <shlobj.h>
 #include <string>
@@ -93,6 +94,34 @@ bool create_directory_recursive(const std::string& path)
     return result == ERROR_SUCCESS || result == ERROR_ALREADY_EXISTS;
 }
 
+bool play_clip_sound(const std::string& sound_path)
+{
+    if (sound_path.empty()) {
+        return false;
+    }
+
+    DWORD attrs = GetFileAttributesA(sound_path.c_str());
+    if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        static bool logged_missing = false;
+        if (!logged_missing) {
+            LOG_WARNING("Clip sound not found: " + sound_path);
+            logged_missing = true;
+        }
+        return false;
+    }
+
+    if (!PlaySoundA(sound_path.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT)) {
+        static bool logged_failed = false;
+        if (!logged_failed) {
+            LOG_WARNING("Failed to play clip sound: " + sound_path);
+            logged_failed = true;
+        }
+        return false;
+    }
+
+    return true;
+}
+
 // Handle menu selections from tray
 void on_menu_action(int menu_id)
 {
@@ -163,6 +192,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     // Get exe directory for relative paths
     std::string exe_dir = get_exe_directory();
+    const std::string clip_sound_path = exe_dir + "\\clip_saved.wav";
 
     // Initialize logger
     std::string log_path = exe_dir + "\\clipvault.log";
@@ -382,8 +412,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         LOG_INFO("Hotkey registered - ready to save clips");
 
         // Set callback for when clip is saved
-        replay.set_save_callback([](const std::string& path, bool success) {
+        replay.set_save_callback([clip_sound_path](const std::string& path, bool success) {
             if (success) {
+                play_clip_sound(clip_sound_path);
                 clipvault::SystemTray::instance().show_notification("Clip Saved", "Saved to: " + path);
             } else {
                 clipvault::SystemTray::instance().show_notification("Save Failed", "Could not save clip");
@@ -430,8 +461,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         }
 
         // Set callback for when clip is saved (log only, no UI)
-        replay.set_save_callback([](const std::string& path, bool success) {
+        replay.set_save_callback([clip_sound_path](const std::string& path, bool success) {
             if (success) {
+                play_clip_sound(clip_sound_path);
                 LOG_INFO("Clip saved to: " + path);
             } else {
                 LOG_ERROR("Failed to save clip");

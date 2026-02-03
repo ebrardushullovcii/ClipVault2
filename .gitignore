@@ -89,3 +89,9 @@ node_modules/
 # UI build output
 ui/dist/
 dist/
+
+# Allow specific packaged assets under ui/resources/bin
+!ui/resources/bin/
+ui/resources/bin/*
+!ui/resources/bin/clip_saved.wav
+!ui/resources/bin/clip_saved.LICENSE.txt
