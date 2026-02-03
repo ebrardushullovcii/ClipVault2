@@ -82,75 +82,86 @@ bool CaptureManager::create_video_source()
     const char* capture_method_used = "none";
     
     // Get monitor index from config
-    int monitor_index = ConfigManager::instance().video().monitor;
+    const auto& video_cfg = ConfigManager::instance().video();
+    int monitor_index = video_cfg.monitor;
+    std::string capture_mode = video_cfg.capture_mode;
+    if (capture_mode != "game") {
+        capture_mode = "monitor";
+    }
     LOG_INFO("  Using monitor index: " + std::to_string(monitor_index));
-    
-    // Try monitor_capture with DXGI method first (most reliable for background capture)
-    obs_data_t* settings = obs_api::data_create();
-    obs_api::data_set_int(settings, "monitor", monitor_index);
-    obs_api::data_set_bool(settings, "capture_cursor", true);
-    obs_api::data_set_int(settings, "method", 1);  // 1 = DXGI (more reliable than WGC for background)
-    
-    video_source_ = obs_api::source_create("monitor_capture", "monitor_capture", settings, nullptr);
-    obs_api::data_release(settings);
-    
-    if (video_source_) {
-        capture_method_used = "monitor_capture";
-        LOG_INFO("  Using monitor_capture (DXGI method - most reliable)");
-    } else {
-        // Try monitor_capture with WGC method as fallback
-        settings = obs_api::data_create();
+    LOG_INFO("  Capture mode: " + capture_mode);
+
+    auto try_game_capture = [&]() -> bool {
+        obs_data_t* settings = obs_api::data_create();
+        obs_api::data_set_string(settings, "capture_mode", "any_fullscreen");
+        obs_api::data_set_bool(settings, "capture_cursor", true);
+        LOG_INFO("  Using game_capture (any_fullscreen mode)");
+        video_source_ = obs_api::source_create("game_capture", "game_capture", settings, nullptr);
+        obs_api::data_release(settings);
+
+        if (video_source_) {
+            capture_method_used = "game_capture";
+            return true;
+        }
+        return false;
+    };
+
+    auto try_monitor_capture = [&](int method, const char* label) -> bool {
+        obs_data_t* settings = obs_api::data_create();
         obs_api::data_set_int(settings, "monitor", monitor_index);
         obs_api::data_set_bool(settings, "capture_cursor", true);
-        obs_api::data_set_int(settings, "method", 0);  // 0 = WGC
-        
+        obs_api::data_set_int(settings, "method", method); // 1 = DXGI, 0 = WGC
+
         video_source_ = obs_api::source_create("monitor_capture", "monitor_capture", settings, nullptr);
         obs_api::data_release(settings);
-        
+
         if (video_source_) {
             capture_method_used = "monitor_capture";
-            LOG_INFO("  Using monitor_capture (WGC method)");
-        } else {
-            obs_api::data_release(settings);
-            
-            // Fallback to window_capture
-            settings = obs_api::data_create();
-            
-            HWND foreground = GetForegroundWindow();
-            if (foreground) {
-                char window_title[256];
-                GetWindowTextA(foreground, window_title, sizeof(window_title));
-                LOG_INFO("  Using window_capture: " + std::string(window_title));
-                obs_api::data_set_string(settings, "window", window_title);
-            } else {
-                LOG_INFO("  Using window_capture (no foreground window)");
-            }
-            
-            video_source_ = obs_api::source_create("window_capture", "window_capture", settings, nullptr);
-            
-            if (video_source_) {
-                capture_method_used = "window_capture";
-            }
+            LOG_INFO(std::string("  Using monitor_capture (") + label + ")");
+            return true;
         }
-        
+        return false;
+    };
+
+    auto try_window_capture = [&]() -> bool {
+        obs_data_t* settings = obs_api::data_create();
+
+        HWND foreground = GetForegroundWindow();
+        if (foreground) {
+            char window_title[256];
+            GetWindowTextA(foreground, window_title, sizeof(window_title));
+            LOG_INFO("  Using window_capture: " + std::string(window_title));
+            obs_api::data_set_string(settings, "window", window_title);
+        } else {
+            LOG_INFO("  Using window_capture (no foreground window)");
+        }
+
+        video_source_ = obs_api::source_create("window_capture", "window_capture", settings, nullptr);
         obs_api::data_release(settings);
+
+        if (video_source_) {
+            capture_method_used = "window_capture";
+            return true;
+        }
+        return false;
+    };
+
+    if (capture_mode == "game") {
+        if (!try_game_capture()) {
+            LOG_WARNING("  Game capture failed, falling back to monitor capture");
+        }
     }
 
     if (!video_source_) {
-        last_error_ = "Failed to create any capture source";
-        LOG_ERROR(last_error_);
-        
-        // Last resort - try game_capture
-        settings = obs_api::data_create();
-        obs_api::data_set_string(settings, "capture_mode", "any_fullscreen");
-        obs_api::data_set_bool(settings, "capture_cursor", true);
-        LOG_INFO("  Using game_capture (any_fullscreen mode - last resort)");
-        
-        video_source_ = obs_api::source_create("game_capture", "game_capture", settings, nullptr);
-        obs_api::data_release(settings);
-        
-        if (video_source_) {
-            capture_method_used = "game_capture";
+        if (!try_monitor_capture(1, "DXGI method - most reliable")) {
+            if (!try_monitor_capture(0, "WGC method")) {
+                if (!try_window_capture()) {
+                    if (capture_mode != "game") {
+                        LOG_INFO("  Using game_capture (any_fullscreen mode - last resort)");
+                        try_game_capture();
+                    }
+                }
+            }
         }
     }
 

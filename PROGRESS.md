@@ -5,7 +5,7 @@
 
 ## Current Status Overview
 
-**Last Updated**: 2026-02-03 (first run setup wizard)
+**Last Updated**: 2026-02-03 (game capture mode)
 **Status**: ✅ Phase 1-3 COMPLETE - Phase 4 In Progress (bulk clip operations completed)
 **Architecture**: Independent Backend (C++) + Electron UI (React/TypeScript)
 **Packaging**: Single EXE with auto-starting backend
@@ -194,6 +194,23 @@ npm run dev
 - [x] Resolution presets filtered by monitor capabilities
 
 ## Recent Changes
+
+### 2026-02-03 - Game Capture Mode (IMPLEMENTED, NEEDS TESTING)
+
+- **Capture mode setting**: Added Monitor vs Game capture selection in Settings > Video.
+- **Backend fallback**: Game capture tries hook-based mode first and falls back to monitor/window capture if unavailable.
+- **Config update**: New `video.capture_mode` field with default `monitor`.
+
+**Files Modified**:
+- `src/capture.cpp`
+- `src/config.h`
+- `src/config.cpp`
+- `config/settings.json`
+- `ui/src/main/main.ts`
+- `ui/src/preload/index.ts`
+- `ui/src/renderer/types/electron.d.ts`
+- `ui/src/renderer/components/Settings/Settings.tsx`
+- `ui/src/renderer/components/FirstRunWizard/FirstRunWizard.tsx`
 
 ### 2026-02-03 - Bulk Clip Operations (COMPLETED ✅)
 
@@ -754,7 +771,7 @@ None - all features working as expected.
   - [x] User can manually change game tag (requires UI work)
 
 - [ ] **16. Game Capture Mode** - Add hook-based game capture source (anti-cheat safe, no yellow border)
-      **Status**: Ready to implement
+      **Status**: Implemented - needs validation
       **Independent**: ✓ Yes
       **Files**: `src/capture.cpp`, `ui/src/renderer/components/Settings/Capture.tsx`
       **Implementation**: **Option A** - Optional "Game Mode" setting
@@ -794,12 +811,12 @@ None - all features working as expected.
   - ⚠️ Some games may block hooks - fallback handles this
 
   **Acceptance Criteria**:
-  - [ ] Setting available in Settings > Video
+  - [x] Setting available in Settings > Video
   - [ ] Game capture shows no yellow border
-  - [ ] Auto-fallback to monitor if game capture fails
+  - [x] Auto-fallback to monitor if game capture fails
   - [ ] Works with Valorant, Fortnite, CS2
   - [ ] Better performance than monitor capture (lower CPU/GPU usage)
-  - [ ] Default remains monitor capture (safe choice)
+  - [x] Default remains monitor capture (safe choice)
 
 ### Advanced Features
 

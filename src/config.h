@@ -13,6 +13,7 @@ struct VideoConfig {
     std::string encoder = "auto";
     int quality = 20;
     int monitor = 0;
+    std::string capture_mode = "monitor";
 };
 
 struct AudioConfig {

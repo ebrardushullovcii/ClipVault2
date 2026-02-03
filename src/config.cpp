@@ -4,6 +4,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <cctype>
 
 namespace clipvault {
 
@@ -177,6 +178,14 @@ bool ConfigManager::load(const std::string& filepath) {
         config_.video.monitor = extract_int(video_json, "monitor", config_.video.monitor);
         std::string encoder = extract_string(video_json, "encoder");
         if (!encoder.empty()) config_.video.encoder = encoder;
+        std::string capture_mode = extract_string(video_json, "capture_mode");
+        if (!capture_mode.empty()) {
+            std::transform(capture_mode.begin(), capture_mode.end(), capture_mode.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (capture_mode == "monitor" || capture_mode == "game") {
+                config_.video.capture_mode = capture_mode;
+            }
+        }
     }
 
     // Parse audio section
@@ -212,6 +221,7 @@ bool ConfigManager::load(const std::string& filepath) {
     LOG_INFO("  buffer_seconds: " + std::to_string(config_.buffer_seconds));
     LOG_INFO("  video: " + std::to_string(config_.video.width) + "x" + std::to_string(config_.video.height) + "@" + std::to_string(config_.video.fps) + "fps");
     LOG_INFO("  encoder: " + config_.video.encoder);
+    LOG_INFO("  capture_mode: " + config_.video.capture_mode);
 
     return true;
 }
@@ -234,7 +244,8 @@ bool ConfigManager::save(const std::string& filepath) {
     file << "        \"fps\": " << config_.video.fps << ",\n";
     file << "        \"encoder\": \"" << escape_json_string(config_.video.encoder) << "\",\n";
     file << "        \"quality\": " << config_.video.quality << ",\n";
-    file << "        \"monitor\": " << config_.video.monitor << "\n";
+    file << "        \"monitor\": " << config_.video.monitor << ",\n";
+    file << "        \"capture_mode\": \"" << escape_json_string(config_.video.capture_mode) << "\"\n";
     file << "    },\n";
     file << "    \"audio\": {\n";
     file << "        \"sample_rate\": " << config_.audio.sample_rate << ",\n";

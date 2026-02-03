@@ -720,6 +720,7 @@ const defaultSettings = {
     encoder: 'auto',
     quality: 20,
     monitor: 0,
+    capture_mode: 'monitor',
   },
   audio: {
     sample_rate: 48000,
@@ -778,6 +779,10 @@ const normalizeSettings = (raw: unknown, fileExists: boolean) => {
 
   if (!Number.isFinite(merged.video.monitor)) {
     merged.video.monitor = 0
+  }
+
+  if (merged.video.capture_mode !== 'monitor' && merged.video.capture_mode !== 'game') {
+    merged.video.capture_mode = defaultSettings.video.capture_mode
   }
 
   if (typeof merged.audio.system_audio_device_id !== 'string') {

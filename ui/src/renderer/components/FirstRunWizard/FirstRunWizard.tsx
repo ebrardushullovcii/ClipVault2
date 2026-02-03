@@ -10,6 +10,7 @@ const DEFAULT_VIDEO: AppSettings['video'] = {
   encoder: 'auto',
   quality: 20,
   monitor: 0,
+  capture_mode: 'monitor',
 }
 const DEFAULT_AUDIO: AppSettings['audio'] = {
   sample_rate: 48000,

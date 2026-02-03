@@ -22,6 +22,7 @@ interface AppSettings {
     encoder: 'auto' | 'nvenc' | 'x264'
     quality: number
     monitor: number
+    capture_mode: 'monitor' | 'game'
   }
   audio: {
     sample_rate: number
@@ -110,6 +111,19 @@ const allResolutionPresets = [
 
 // FPS options
 const fpsOptions = [30, 60, 120, 144]
+
+const captureModes = [
+  {
+    id: 'monitor',
+    label: 'Monitor Capture (Default)',
+    description: 'Full display capture, anti-cheat safe. May show a yellow border in some games.',
+  },
+  {
+    id: 'game',
+    label: 'Game Capture (Experimental)',
+    description: 'Hook-based capture with no yellow border. Falls back if blocked.',
+  },
+] as const
 
 // Calculate estimated file size
 const calculateEstimatedSize = (
@@ -585,6 +599,35 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   </div>
                 </div>
               )}
+
+              <div>
+                <label className="mb-3 block text-sm font-medium text-text-secondary">
+                  Capture Mode
+                </label>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {captureModes.map(mode => {
+                    const isActive = settings.video.capture_mode === mode.id
+                    return (
+                      <button
+                        key={mode.id}
+                        onClick={() => updateVideoSetting('capture_mode', mode.id)}
+                        className={`rounded-lg border p-4 text-left transition-all ${
+                          isActive
+                            ? 'border-accent-primary bg-accent-primary/10'
+                            : 'border-border bg-background-tertiary hover:border-accent-primary/50'
+                        }`}
+                      >
+                        <div
+                          className={`text-sm font-medium ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}
+                        >
+                          {mode.label}
+                        </div>
+                        <div className="mt-1 text-xs text-text-muted">{mode.description}</div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
 
               {/* Resolution & FPS */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

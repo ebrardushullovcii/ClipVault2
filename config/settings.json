@@ -7,7 +7,8 @@
         "fps": 60,
         "encoder": "auto",
         "quality": 20,
-        "monitor": 0
+        "monitor": 0,
+        "capture_mode": "monitor"
     },
     "audio": {
         "sample_rate": 48000,

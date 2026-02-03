@@ -11,6 +11,7 @@ interface AppSettings {
     encoder: 'auto' | 'nvenc' | 'x264'
     quality: number
     monitor: number
+    capture_mode: 'monitor' | 'game'
   }
   audio: {
     sample_rate: number
