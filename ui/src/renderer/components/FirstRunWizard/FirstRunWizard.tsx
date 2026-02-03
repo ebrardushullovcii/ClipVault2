@@ -3,6 +3,22 @@ import { FolderOpen, Monitor, Mic, Power, Sparkles } from 'lucide-react'
 import type { AppSettings, AudioDeviceInfo, MonitorInfo } from '../../types/electron'
 
 const DEFAULT_CLIPS_PATH = 'D:\\Clips\\ClipVault'
+const DEFAULT_VIDEO: AppSettings['video'] = {
+  width: 1920,
+  height: 1080,
+  fps: 60,
+  encoder: 'auto',
+  quality: 20,
+  monitor: 0,
+}
+const DEFAULT_AUDIO: AppSettings['audio'] = {
+  sample_rate: 48000,
+  bitrate: 160,
+  system_audio_enabled: true,
+  microphone_enabled: true,
+  system_audio_device_id: 'default',
+  microphone_device_id: 'default',
+}
 
 const qualityPresets = [
   {
@@ -35,21 +51,21 @@ const normalizeSettings = (value: AppSettings): AppSettings => {
   const outputPath = value.output_path?.trim()
     ? value.output_path.trim()
     : DEFAULT_CLIPS_PATH
-  const video = value.video ?? ({} as AppSettings['video'])
-  const audio = value.audio ?? ({} as AppSettings['audio'])
+  const video = { ...DEFAULT_VIDEO, ...(value.video ?? {}) }
+  const audio = { ...DEFAULT_AUDIO, ...(value.audio ?? {}) }
   const ui = value.ui ?? {}
-  const monitor = value.video?.monitor
+  const monitor = video.monitor
   return {
     ...value,
     output_path: outputPath,
     video: {
       ...video,
-      monitor: Number.isFinite(monitor) ? monitor : 0,
+      monitor: Number.isFinite(monitor) ? monitor : DEFAULT_VIDEO.monitor,
     },
     audio: {
       ...audio,
-      system_audio_device_id: audio.system_audio_device_id ?? 'default',
-      microphone_device_id: audio.microphone_device_id ?? 'default',
+      system_audio_device_id: audio.system_audio_device_id ?? DEFAULT_AUDIO.system_audio_device_id,
+      microphone_device_id: audio.microphone_device_id ?? DEFAULT_AUDIO.microphone_device_id,
     },
     ui: {
       show_notifications: ui.show_notifications ?? true,
@@ -218,6 +234,11 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
   const monitorSelectId = 'first-run-monitor-select'
   const monitorInfoId = 'first-run-monitor-info'
   const qualityLabelId = 'first-run-quality-label'
+  const systemAudioLabelId = 'first-run-system-audio-label'
+  const microphoneLabelId = 'first-run-microphone-label'
+  const startWithWindowsLabelId = 'first-run-start-windows-label'
+  const minimizeToTrayLabelId = 'first-run-minimize-tray-label'
+  const showNotificationsLabelId = 'first-run-show-notifications-label'
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm">
@@ -387,36 +408,43 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     )}
                   </div>
                   <div className="space-y-3">
-                    <label id={qualityLabelId} className="text-sm font-medium text-text-secondary">
+                    <div id={qualityLabelId} className="text-sm font-medium text-text-secondary">
                       Quality preset
-                    </label>
+                    </div>
                     <div role="radiogroup" aria-labelledby={qualityLabelId} className="grid gap-2">
                       {qualityPresets.map(preset => {
                         const isActive = currentQuality === preset.id
+                        const inputId = `first-run-quality-${preset.id}`
                         return (
-                          <button
+                          <label
                             key={preset.id}
-                            type="button"
-                            role="radio"
-                            aria-checked={isActive}
-                            onClick={() =>
-                              setSettings(prev => ({
-                                ...prev,
-                                video: { ...prev.video, quality: preset.quality },
-                              }))
-                            }
+                            htmlFor={inputId}
                             className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
                               isActive
                                 ? 'border-accent-primary bg-accent-primary/10 text-text-primary'
                                 : 'border-border bg-background-secondary text-text-muted hover:border-accent-primary'
                             }`}
                           >
+                            <input
+                              id={inputId}
+                              type="radio"
+                              name="first-run-quality"
+                              value={preset.id}
+                              checked={isActive}
+                              onChange={() =>
+                                setSettings(prev => ({
+                                  ...prev,
+                                  video: { ...prev.video, quality: preset.quality },
+                                }))
+                              }
+                              className="sr-only"
+                            />
                             <div>
                               <div className="font-semibold text-text-primary">{preset.label}</div>
                               <div className="text-xs text-text-muted">{preset.description}</div>
                             </div>
                             <div className="text-xs font-semibold text-text-muted">CQP {preset.quality}</div>
-                          </button>
+                          </label>
                         )
                       })}
                     </div>
@@ -437,13 +465,14 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                 <div className="grid gap-6 lg:grid-cols-2">
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <div>
+                      <div id={systemAudioLabelId}>
                         <div className="text-sm font-semibold text-text-primary">System audio</div>
                         <div className="text-xs text-text-muted">Capture game and desktop sound</div>
                       </div>
                       <label className="relative inline-flex cursor-pointer items-center">
                         <input
                           type="checkbox"
+                          aria-labelledby={systemAudioLabelId}
                           checked={settings.audio.system_audio_enabled}
                           onChange={event =>
                             setSettings(prev => ({
@@ -483,13 +512,14 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <div>
+                      <div id={microphoneLabelId}>
                         <div className="text-sm font-semibold text-text-primary">Microphone</div>
                         <div className="text-xs text-text-muted">Add your voice or team chat</div>
                       </div>
                       <label className="relative inline-flex cursor-pointer items-center">
                         <input
                           type="checkbox"
+                          aria-labelledby={microphoneLabelId}
                           checked={settings.audio.microphone_enabled}
                           onChange={event =>
                             setSettings(prev => ({
@@ -545,7 +575,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                 </div>
                 <div className="grid gap-4">
                   <div className="flex items-center justify-between rounded-lg border border-border bg-background-secondary p-4">
-                    <div>
+                    <div id={startWithWindowsLabelId}>
                       <div className="text-sm font-semibold text-text-primary">Start with Windows</div>
                       <div className="text-xs text-text-muted">
                         Launch ClipVault in the background when you log in.
@@ -554,6 +584,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     <label className="relative inline-flex cursor-pointer items-center">
                       <input
                         type="checkbox"
+                        aria-labelledby={startWithWindowsLabelId}
                         checked={settings.ui?.start_with_windows ?? false}
                         onChange={event =>
                           setSettings(prev => ({
@@ -571,7 +602,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                   </div>
 
                   <div className="flex items-center justify-between rounded-lg border border-border bg-background-secondary p-4">
-                    <div>
+                    <div id={minimizeToTrayLabelId}>
                       <div className="text-sm font-semibold text-text-primary">Minimize to tray</div>
                       <div className="text-xs text-text-muted">
                         Keep ClipVault running when you close the window.
@@ -580,6 +611,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     <label className="relative inline-flex cursor-pointer items-center">
                       <input
                         type="checkbox"
+                        aria-labelledby={minimizeToTrayLabelId}
                         checked={settings.ui?.minimize_to_tray ?? true}
                         onChange={event =>
                           setSettings(prev => ({
@@ -597,7 +629,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                   </div>
 
                   <div className="flex items-center justify-between rounded-lg border border-border bg-background-secondary p-4">
-                    <div>
+                    <div id={showNotificationsLabelId}>
                       <div className="text-sm font-semibold text-text-primary">Show save notifications</div>
                       <div className="text-xs text-text-muted">
                         Display a tray notification when a clip is saved.
@@ -606,6 +638,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     <label className="relative inline-flex cursor-pointer items-center">
                       <input
                         type="checkbox"
+                        aria-labelledby={showNotificationsLabelId}
                         checked={settings.ui?.show_notifications ?? true}
                         onChange={event =>
                           setSettings(prev => ({

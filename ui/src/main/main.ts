@@ -874,18 +874,9 @@ ipcMain.handle('settings:save', async (_, settings: unknown) => {
       await mkdir(configDir, { recursive: true })
     }
 
-    const trimmedOutputPath =
-      typeof normalized.output_path === 'string' ? normalized.output_path.trim() : ''
-
-    if (!trimmedOutputPath) {
-      normalized.output_path = defaultSettings.output_path
-    } else {
-      normalized.output_path = trimmedOutputPath
-    }
-
-    if (typeof normalized.output_path === 'string' && normalized.output_path.trim()) {
-      try {
-        await mkdir(normalized.output_path, { recursive: true })
+      if (typeof normalized.output_path === 'string' && normalized.output_path.trim()) {
+        try {
+          await mkdir(normalized.output_path, { recursive: true })
       } catch (mkdirError) {
         console.error('Failed to create clips directory:', mkdirError)
       }
