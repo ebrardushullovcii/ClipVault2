@@ -134,6 +134,98 @@ let tray: Tray | null = null
 let isQuitting = false
 let backendProcess: ReturnType<typeof spawn> | null = null
 
+type WindowState = {
+  bounds: Rectangle
+  isMaximized: boolean
+}
+
+const windowStatePath = join(app.getPath('userData'), 'window-state.json')
+const defaultWindowBounds = { width: 1400, height: 900 }
+const minWindowBounds = { width: 1000, height: 600 }
+
+function isBoundsVisible(bounds: Rectangle): boolean {
+  return screen.getAllDisplays().some(display => {
+    const area = display.workArea
+    return (
+      bounds.x + bounds.width > area.x &&
+      bounds.y + bounds.height > area.y &&
+      bounds.x < area.x + area.width &&
+      bounds.y < area.y + area.height
+    )
+  })
+}
+
+function readWindowState(): WindowState | null {
+  try {
+    if (!existsSync(windowStatePath)) {
+      return null
+    }
+    const raw = readFileSync(windowStatePath, 'utf-8')
+    const parsed = JSON.parse(raw) as WindowState
+    if (!parsed?.bounds) {
+      return null
+    }
+    return parsed
+  } catch (error) {
+    console.warn('Failed to read window state:', error)
+    return null
+  }
+}
+
+async function writeWindowState(state: WindowState): Promise<void> {
+  try {
+    await writeFile(windowStatePath, JSON.stringify(state))
+  } catch (error) {
+    console.warn('Failed to write window state:', error)
+  }
+}
+
+let windowStateSaveTimer: NodeJS.Timeout | null = null
+
+function scheduleWindowStateSave(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return
+  }
+  if (windowStateSaveTimer) {
+    clearTimeout(windowStateSaveTimer)
+  }
+  windowStateSaveTimer = setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return
+    }
+    if (mainWindow.isMinimized()) {
+      return
+    }
+    const isMaximized = mainWindow.isMaximized()
+    const bounds = isMaximized ? mainWindow.getNormalBounds() : mainWindow.getBounds()
+    const clampedBounds: Rectangle = {
+      x: bounds.x,
+      y: bounds.y,
+      width: Math.max(bounds.width, minWindowBounds.width),
+      height: Math.max(bounds.height, minWindowBounds.height),
+    }
+    void writeWindowState({ bounds: clampedBounds, isMaximized })
+  }, 300)
+}
+
+function saveWindowStateImmediate(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return
+  }
+  if (mainWindow.isMinimized()) {
+    return
+  }
+  const isMaximized = mainWindow.isMaximized()
+  const bounds = isMaximized ? mainWindow.getNormalBounds() : mainWindow.getBounds()
+  const clampedBounds: Rectangle = {
+    x: bounds.x,
+    y: bounds.y,
+    width: Math.max(bounds.width, minWindowBounds.width),
+    height: Math.max(bounds.height, minWindowBounds.height),
+  }
+  void writeWindowState({ bounds: clampedBounds, isMaximized })
+}
+
 // Backend paths
 const getBackendPaths = () => {
   const inProduction = !isDev
@@ -464,9 +556,19 @@ function createTray(): void {
 
 async function createWindow() {
   console.log('Creating main window...')
+  const savedWindowState = readWindowState()
+  const useSavedBounds = savedWindowState?.bounds && isBoundsVisible(savedWindowState.bounds)
+  const initialBounds = useSavedBounds
+    ? {
+        width: Math.max(savedWindowState.bounds.width, minWindowBounds.width),
+        height: Math.max(savedWindowState.bounds.height, minWindowBounds.height),
+        x: savedWindowState.bounds.x,
+        y: savedWindowState.bounds.y,
+      }
+    : { ...defaultWindowBounds }
+
   mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    ...initialBounds,
     minWidth: 1000,
     minHeight: 600,
     title: 'ClipVault Editor',
@@ -492,6 +594,15 @@ async function createWindow() {
       : {}),
   })
   console.log('Main window created, loading content...')
+
+  if (savedWindowState?.isMaximized) {
+    mainWindow.maximize()
+  }
+
+  mainWindow.on('resize', scheduleWindowStateSave)
+  mainWindow.on('move', scheduleWindowStateSave)
+  mainWindow.on('maximize', scheduleWindowStateSave)
+  mainWindow.on('unmaximize', scheduleWindowStateSave)
 
   // Load the app
   try {
@@ -545,6 +656,7 @@ async function createWindow() {
     if (!isQuitting) {
       event.preventDefault()
       console.log('Minimizing to tray instead of closing')
+      scheduleWindowStateSave()
       mainWindow?.hide()
     }
   })
@@ -1951,6 +2063,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (event) => {
   console.log('App is quitting...')
   isQuitting = true
+  saveWindowStateImmediate()
   stopClipsWatcher()
   if (tray) {
     tray.destroy()

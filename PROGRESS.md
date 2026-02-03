@@ -5,8 +5,8 @@
 
 ## Current Status Overview
 
-**Last Updated**: 2026-02-03 (Task 12 COMPLETED - Clip save sound & notification)
-**Status**: ✅ Phase 1-3 COMPLETE - Phase 4 In Progress (Task 12 COMPLETED)
+**Last Updated**: 2026-02-03 (UI polish fixes + clip save sound)
+**Status**: ✅ Phase 1-3 COMPLETE - Phase 4 In Progress (UI polish + clip save sound completed)
 **Architecture**: Independent Backend (C++) + Electron UI (React/TypeScript)
 **Packaging**: Single EXE with auto-starting backend
 
@@ -194,6 +194,17 @@ npm run dev
 - [x] Resolution presets filtered by monitor capabilities
 
 ## Recent Changes
+
+### 2026-02-03 - UI Polish Fixes (COMPLETED ✅)
+
+- **Export dropdown crash fixed**: added missing `Check` icon import used by size target dropdown
+- **Single-instance popup removed**: backend no longer shows the "already running" MessageBox
+- **Window state persistence**: editor window now restores last size/position/maximized state
+
+**Files Modified**:
+- `ui/src/renderer/components/Editor/Editor.tsx` - add `Check` import
+- `src/main.cpp` - remove single-instance MessageBox
+- `ui/src/main/main.ts` - save/restore window bounds in `window-state.json`
 
 ### 2026-02-03 - Clip Save Sound & Notification (COMPLETED ✅)
 
@@ -862,9 +873,7 @@ None - all features working as expected.
 
 ## Known Issues
 
-    - export with specific size crashes the app as soon as dropdown is clicked
-    - when you open the frontend i always get the pop up that the backend is running
-    - app doesn't open on the last opened screen or position
+    None - all known issues resolved.
 
 --
 
