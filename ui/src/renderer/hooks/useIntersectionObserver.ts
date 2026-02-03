@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface UseIntersectionObserverOptions {
   threshold?: number
@@ -6,9 +6,7 @@ interface UseIntersectionObserverOptions {
   triggerOnce?: boolean
 }
 
-export const useIntersectionObserver = (
-  options: UseIntersectionObserverOptions = {}
-) => {
+export const useIntersectionObserver = (options: UseIntersectionObserverOptions = {}) => {
   const { threshold = 0.1, rootMargin = '100px', triggerOnce = true } = options
   const [isVisible, setIsVisible] = useState(false)
   const elementRef = useRef<HTMLDivElement>(null)
@@ -22,12 +20,12 @@ export const useIntersectionObserver = (
     if (triggerOnce && hasTriggeredRef.current) return
 
     const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
+      entries => {
+        entries.forEach(entry => {
           if (entry.isIntersecting) {
             setIsVisible(true)
             hasTriggeredRef.current = true
-            
+
             // Unobserve after triggering if triggerOnce is true
             if (triggerOnce) {
               observer.unobserve(element)
@@ -75,7 +73,7 @@ class ThumbnailQueue {
         this.activeCount++
         // Add small delay between starts to prevent overwhelming the system
         await new Promise(resolve => setTimeout(resolve, 50))
-        
+
         task().finally(() => {
           this.activeCount--
           // Continue processing if there are more items
@@ -104,7 +102,7 @@ export const useLazyThumbnail = (
     rootMargin: '200px', // Start loading when within 200px of viewport
     triggerOnce: false, // Allow re-triggering for retries
   })
-  
+
   const hasEnqueuedRef = useRef(false)
   const retryCountRef = useRef(0)
   const maxRetries = 3
@@ -114,10 +112,14 @@ export const useLazyThumbnail = (
     // 1. Element is visible
     // 2. Not already enqueued OR shouldRetry is true
     // 3. Haven't exceeded max retries
-    if (isVisible && (!hasEnqueuedRef.current || shouldRetry) && retryCountRef.current < maxRetries) {
+    if (
+      isVisible &&
+      (!hasEnqueuedRef.current || shouldRetry) &&
+      retryCountRef.current < maxRetries
+    ) {
       hasEnqueuedRef.current = true
       retryCountRef.current++
-      
+
       // Add to queue with a staggered delay based on index
       thumbnailQueue.enqueue(async () => {
         await onGenerate(clipId, videoPath)

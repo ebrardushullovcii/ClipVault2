@@ -74,7 +74,7 @@ cd ui && npm run build:react && npx electron-builder --win --dir
 | [PLAN.md](PLAN.md) | Development roadmap |
 | [AGENTS.md](AGENTS.md) | Build commands, code style, agent rules |
 | [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md) | Step-by-step development process |
-| [CLAUDE.md](CLAUDE.md) | Claude AI context and guidelines |
+| [CLAUDE.md](CLAUDE.md) | Claude-specific notes (optional) |
 | [docs/BUILD.md](docs/BUILD.md) | Building from source |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design |
 | [docs/LIBOBS.md](docs/LIBOBS.md) | libobs API patterns |
@@ -116,7 +116,7 @@ Use `@coderabbitai` commands in PR comments:
 
 ## Configuration
 
-Edit `config/settings.json`:
+Settings live at `%APPDATA%\ClipVault\settings.json` (created on first run). The file `config/settings.json` is a template you can copy if needed:
 
 ```json
 {

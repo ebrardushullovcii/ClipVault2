@@ -1,4 +1,5 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback } from 'react'
+import type { FC } from 'react'
 import {
   Play,
   Pause,
@@ -21,12 +22,16 @@ import {
   ChevronRight,
   Star,
   Trash2,
-  Trash,
   Gamepad2,
 } from 'lucide-react'
 import { GameTagEditor } from '../GameTagEditor'
 import type { VideoMetadata } from '../../hooks/useVideoMetadata'
-import type { ClipInfo, ClipMetadata, AudioTrackUrls } from '../../types/electron'
+import type {
+  ClipInfo,
+  ClipMetadata,
+  AudioTrackUrls,
+  AudioTrackSetting,
+} from '../../types/electron'
 
 interface EditorProps {
   clip: ClipInfo
@@ -35,7 +40,22 @@ interface EditorProps {
   onSave?: (clipId: string, metadata: ClipMetadata) => void
 }
 
-export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => {
+const resolveAudioEnabled = (track?: AudioTrackSetting): boolean => {
+  if (typeof track === 'boolean') return track
+  return track?.enabled ?? true
+}
+
+const resolveAudioMuted = (track?: AudioTrackSetting): boolean => {
+  if (typeof track === 'boolean') return false
+  return track?.muted ?? false
+}
+
+const resolveAudioVolume = (track?: AudioTrackSetting): number => {
+  if (typeof track === 'boolean') return 0.7
+  return track?.volume ?? 0.7
+}
+
+export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => {
   const videoRef = useRef<HTMLVideoElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -58,10 +78,12 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
   // Audio track sources and volume
   const [audioTrack1Src, setAudioTrack1Src] = useState<string | null>(null)
   const [audioTrack2Src, setAudioTrack2Src] = useState<string | null>(null)
-  const [audioTrack1Volume, setAudioTrack1Volume] = useState(0.7)
-  const [audioTrack2Volume, setAudioTrack2Volume] = useState(0.7)
-  const [audioTrack1Muted, setAudioTrack1Muted] = useState(false)
-  const [audioTrack2Muted, setAudioTrack2Muted] = useState(false)
+  const initialTrack1 = clip.metadata?.audio?.track1
+  const initialTrack2 = clip.metadata?.audio?.track2
+  const [audioTrack1Volume, setAudioTrack1Volume] = useState(resolveAudioVolume(initialTrack1))
+  const [audioTrack2Volume, setAudioTrack2Volume] = useState(resolveAudioVolume(initialTrack2))
+  const [audioTrack1Muted, setAudioTrack1Muted] = useState(resolveAudioMuted(initialTrack1))
+  const [audioTrack2Muted, setAudioTrack2Muted] = useState(resolveAudioMuted(initialTrack2))
   const [isLoadingAudio, setIsLoadingAudio] = useState(false)
 
   // Trim markers (in seconds)
@@ -70,8 +92,8 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
   const [isDragging, setIsDragging] = useState<'start' | 'end' | 'playhead' | null>(null)
 
   // Audio tracks (for export selection)
-  const [audioTrack1, setAudioTrack1] = useState(clip.metadata?.audio?.track1 !== false)
-  const [audioTrack2, setAudioTrack2] = useState(clip.metadata?.audio?.track2 !== false)
+  const [audioTrack1, setAudioTrack1] = useState(resolveAudioEnabled(initialTrack1))
+  const [audioTrack2, setAudioTrack2] = useState(resolveAudioEnabled(initialTrack2))
   const [isFavorite, setIsFavorite] = useState(clip.metadata?.favorite || false)
   const [tags, setTags] = useState<string[]>(clip.metadata?.tags || [])
   const [newTag, setNewTag] = useState('')
@@ -132,12 +154,14 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
 
           // Apply audio settings
           if (clipMetadata.audio) {
-            setAudioTrack1(clipMetadata.audio.track1 !== false)
-            setAudioTrack2(clipMetadata.audio.track2 !== false)
-            setAudioTrack1Muted(clipMetadata.audio.track1?.muted || false)
-            setAudioTrack2Muted(clipMetadata.audio.track2?.muted || false)
-            setAudioTrack1Volume(clipMetadata.audio.track1?.volume ?? 0.7)
-            setAudioTrack2Volume(clipMetadata.audio.track2?.volume ?? 0.7)
+            const track1State = clipMetadata.audio.track1
+            const track2State = clipMetadata.audio.track2
+            setAudioTrack1(resolveAudioEnabled(track1State))
+            setAudioTrack2(resolveAudioEnabled(track2State))
+            setAudioTrack1Muted(resolveAudioMuted(track1State))
+            setAudioTrack2Muted(resolveAudioMuted(track2State))
+            setAudioTrack1Volume(resolveAudioVolume(track1State))
+            setAudioTrack2Volume(resolveAudioVolume(track2State))
           }
 
           // Apply favorite and tags
@@ -193,8 +217,16 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
             end: trimEnd,
           },
           audio: {
-            track1: audioTrack1,
-            track2: audioTrack2,
+            track1: {
+              enabled: audioTrack1,
+              muted: audioTrack1Muted,
+              volume: audioTrack1Volume,
+            },
+            track2: {
+              enabled: audioTrack2,
+              muted: audioTrack2Muted,
+              volume: audioTrack2Volume,
+            },
           },
           playheadPosition: currentTime,
           lastModified: new Date().toISOString(),
@@ -224,6 +256,10 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
     currentTime,
     audioTrack1,
     audioTrack2,
+    audioTrack1Muted,
+    audioTrack2Muted,
+    audioTrack1Volume,
+    audioTrack2Volume,
     isFavorite,
     tags,
     game,
@@ -232,7 +268,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
 
   // Close dropdown when clicking outside
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = () => {
       if (showSizeDropdown) {
         setShowSizeDropdown(false)
       }
@@ -243,7 +279,9 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
 
   // Initialize AudioContext
   useEffect(() => {
-    const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    const AudioContextClass =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
     if (AudioContextClass) {
       audioContextRef.current = new AudioContextClass()
     }
@@ -335,7 +373,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
         }
       })()
     }, 100)
-    
+
     return () => clearTimeout(timer)
   }, [clip.id, clip.path, metadata.audioTracks])
 
@@ -343,91 +381,102 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
   useEffect(() => {
     if (gainNode1Ref.current) {
       // If track is disabled, mute it completely (volume = 0)
-      gainNode1Ref.current.gain.value = (audioTrack1Muted || !audioTrack1) ? 0 : audioTrack1Volume
+      gainNode1Ref.current.gain.value = audioTrack1Muted || !audioTrack1 ? 0 : audioTrack1Volume
     }
   }, [audioTrack1Volume, audioTrack1Muted, audioTrack1])
 
   useEffect(() => {
     if (gainNode2Ref.current) {
       // If track is disabled, mute it completely (volume = 0)
-      gainNode2Ref.current.gain.value = (audioTrack2Muted || !audioTrack2) ? 0 : audioTrack2Volume
+      gainNode2Ref.current.gain.value = audioTrack2Muted || !audioTrack2 ? 0 : audioTrack2Volume
     }
   }, [audioTrack2Volume, audioTrack2Muted, audioTrack2])
 
   // Start audio playback from a specific time
-  const startAudioPlayback = useCallback((fromTime: number) => {
-    if (!audioContextRef.current) return
+  const startAudioPlayback = useCallback(
+    (fromTime: number) => {
+      if (!audioContextRef.current) return
 
-    // Stop any existing playback
-    if (sourceNode1Ref.current) {
-      try {
-        sourceNode1Ref.current.stop()
-      } catch {
-        // Ignore errors if already stopped
+      // Stop any existing playback
+      if (sourceNode1Ref.current) {
+        try {
+          sourceNode1Ref.current.stop()
+        } catch {
+          // Ignore errors if already stopped
+        }
+        sourceNode1Ref.current = null
       }
-      sourceNode1Ref.current = null
-    }
-    if (sourceNode2Ref.current) {
-      try {
-        sourceNode2Ref.current.stop()
-      } catch {
-        // Ignore errors if already stopped
+      if (sourceNode2Ref.current) {
+        try {
+          sourceNode2Ref.current.stop()
+        } catch {
+          // Ignore errors if already stopped
+        }
+        sourceNode2Ref.current = null
       }
-      sourceNode2Ref.current = null
-    }
 
-    // Create gain nodes if they don't exist
-    if (!gainNode1Ref.current) {
-      gainNode1Ref.current = audioContextRef.current.createGain()
-      gainNode1Ref.current.connect(audioContextRef.current.destination)
-      // Set gain to 0 if track is disabled or muted
-      gainNode1Ref.current.gain.value = (audioTrack1Muted || !audioTrack1) ? 0 : audioTrack1Volume
-    }
-    if (!gainNode2Ref.current) {
-      gainNode2Ref.current = audioContextRef.current.createGain()
-      gainNode2Ref.current.connect(audioContextRef.current.destination)
-      // Set gain to 0 if track is disabled or muted
-      gainNode2Ref.current.gain.value = (audioTrack2Muted || !audioTrack2) ? 0 : audioTrack2Volume
-    }
-
-    // Create and start source nodes for each track
-    if (audioBuffer1Ref.current && audioTrack1) {
-      const source = audioContextRef.current.createBufferSource()
-      source.buffer = audioBuffer1Ref.current
-      source.connect(gainNode1Ref.current)
-      source.start(0, fromTime)
-      sourceNode1Ref.current = source
-    }
-
-    if (audioBuffer2Ref.current && audioTrack2) {
-      const source = audioContextRef.current.createBufferSource()
-      source.buffer = audioBuffer2Ref.current
-      source.connect(gainNode2Ref.current)
-      source.start(0, fromTime)
-      sourceNode2Ref.current = source
-    }
-
-    // Record the start time for sync calculations
-    audioStartTimeRef.current = audioContextRef.current.currentTime
-    videoStartTimeRef.current = fromTime
-    isAudioPlayingRef.current = true
-
-    // Handle playback ending
-    const checkPlaybackEnd = () => {
-      if (!isAudioPlayingRef.current) return
-
-      const elapsed = audioContextRef.current!.currentTime - audioStartTimeRef.current
-      const currentAudioTime = videoStartTimeRef.current + elapsed
-
-      if (currentAudioTime >= duration) {
-        isAudioPlayingRef.current = false
-        setIsPlaying(false)
-      } else {
-        requestAnimationFrame(checkPlaybackEnd)
+      // Create gain nodes if they don't exist
+      if (!gainNode1Ref.current) {
+        gainNode1Ref.current = audioContextRef.current.createGain()
+        gainNode1Ref.current.connect(audioContextRef.current.destination)
+        // Set gain to 0 if track is disabled or muted
+        gainNode1Ref.current.gain.value = audioTrack1Muted || !audioTrack1 ? 0 : audioTrack1Volume
       }
-    }
-    requestAnimationFrame(checkPlaybackEnd)
-  }, [audioTrack1, audioTrack2, audioTrack1Muted, audioTrack2Muted, audioTrack1Volume, audioTrack2Volume, duration])
+      if (!gainNode2Ref.current) {
+        gainNode2Ref.current = audioContextRef.current.createGain()
+        gainNode2Ref.current.connect(audioContextRef.current.destination)
+        // Set gain to 0 if track is disabled or muted
+        gainNode2Ref.current.gain.value = audioTrack2Muted || !audioTrack2 ? 0 : audioTrack2Volume
+      }
+
+      // Create and start source nodes for each track
+      if (audioBuffer1Ref.current && audioTrack1) {
+        const source = audioContextRef.current.createBufferSource()
+        source.buffer = audioBuffer1Ref.current
+        source.connect(gainNode1Ref.current)
+        source.start(0, fromTime)
+        sourceNode1Ref.current = source
+      }
+
+      if (audioBuffer2Ref.current && audioTrack2) {
+        const source = audioContextRef.current.createBufferSource()
+        source.buffer = audioBuffer2Ref.current
+        source.connect(gainNode2Ref.current)
+        source.start(0, fromTime)
+        sourceNode2Ref.current = source
+      }
+
+      // Record the start time for sync calculations
+      audioStartTimeRef.current = audioContextRef.current.currentTime
+      videoStartTimeRef.current = fromTime
+      isAudioPlayingRef.current = true
+
+      // Handle playback ending
+      const checkPlaybackEnd = () => {
+        if (!isAudioPlayingRef.current) return
+
+        const elapsed = audioContextRef.current!.currentTime - audioStartTimeRef.current
+        const currentAudioTime = videoStartTimeRef.current + elapsed
+
+        if (currentAudioTime >= duration) {
+          isAudioPlayingRef.current = false
+          setIsPlaying(false)
+        } else {
+          requestAnimationFrame(checkPlaybackEnd)
+        }
+      }
+      requestAnimationFrame(checkPlaybackEnd)
+    },
+    [
+      audioTrack1,
+      audioTrack2,
+      audioTrack1Muted,
+      audioTrack2Muted,
+      audioTrack1Volume,
+      audioTrack2Volume,
+      duration,
+    ]
+  )
 
   // Stop audio playback
   const stopAudioPlayback = useCallback(() => {
@@ -721,7 +770,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
       const baseFilename = clip.filename.replace('.mp4', '')
       const exportFilename = `${baseFilename}_export_${timestamp}.mp4`
-      
+
       // Export to fixed location: ClipVault/exported-clips/
       const exportResult = await window.electronAPI.editor.exportClip({
         clipPath: clip.path,
@@ -767,7 +816,17 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
         setExportStatus('idle')
       }, 3000)
     }
-  }, [clip.path, clip.filename, trimStart, trimEnd, audioTrack1, audioTrack2, audioTrack1Volume, audioTrack2Volume, targetSizeMB])
+  }, [
+    clip.path,
+    clip.filename,
+    trimStart,
+    trimEnd,
+    audioTrack1,
+    audioTrack2,
+    audioTrack1Volume,
+    audioTrack2Volume,
+    targetSizeMB,
+  ])
 
   return (
     <div className="flex h-full flex-col bg-background-primary">
@@ -791,7 +850,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
 
         <div className="flex items-center gap-2">
           {/* Tags */}
-          <div className="flex items-center gap-1 mr-2">
+          <div className="mr-2 flex items-center gap-1">
             {tags.map(tag => (
               <span
                 key={tag}
@@ -810,7 +869,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                 onChange={e => setNewTag(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleAddTag()}
                 placeholder="+ tag"
-                className="input w-20 text-xs py-1"
+                className="input w-20 py-1 text-xs"
               />
             </div>
           </div>
@@ -851,7 +910,6 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
           >
             <Trash2 className="h-4 w-4" />
           </button>
-
         </div>
       </div>
 
@@ -869,7 +927,12 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
               onError={handleVideoError}
               onLoadedMetadata={() => {
                 const video = videoRef.current
-                if (video && video.duration && video.duration !== Infinity && !isVideoDurationSetRef.current) {
+                if (
+                  video &&
+                  video.duration &&
+                  video.duration !== Infinity &&
+                  !isVideoDurationSetRef.current
+                ) {
                   const videoDuration = video.duration
                   setDuration(videoDuration)
                   if (!isTrimEndFromMetadataRef.current) {
@@ -911,13 +974,13 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
 
               {/* Cut region - before trim start (grayed out) */}
               <div
-                className="absolute top-0 bottom-0 rounded-l-full bg-text-muted/20"
+                className="absolute bottom-0 top-0 rounded-l-full bg-text-muted/20"
                 style={{ left: '0%', width: `${(trimStart / duration) * 100}%` }}
               />
 
               {/* Cut region - after trim end (grayed out) */}
               <div
-                className="absolute top-0 bottom-0 rounded-r-full bg-text-muted/20"
+                className="absolute bottom-0 top-0 rounded-r-full bg-text-muted/20"
                 style={{ left: `${(trimEnd / duration) * 100}%`, right: '0%' }}
               />
 
@@ -939,7 +1002,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                   handlePlayheadDragStart()
                 }}
               >
-                <div className="absolute -left-1.5 top-1/2 -translate-y-1/2 h-3 w-3 rounded-full bg-white shadow-md" />
+                <div className="absolute -left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-white shadow-md" />
               </div>
 
               {/* Start trim marker - pin style extending above */}
@@ -951,7 +1014,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                   handleMarkerDragStart('start')
                 }}
               >
-                <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 h-4 w-4 rounded-full bg-accent-primary shadow-md" />
+                <div className="absolute -top-1.5 left-1/2 h-4 w-4 -translate-x-1/2 rounded-full bg-accent-primary shadow-md" />
               </div>
 
               {/* End trim marker - pin style extending above */}
@@ -963,7 +1026,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                   handleMarkerDragStart('end')
                 }}
               >
-                <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 h-4 w-4 rounded-full bg-accent-primary shadow-md" />
+                <div className="absolute -top-1.5 left-1/2 h-4 w-4 -translate-x-1/2 rounded-full bg-accent-primary shadow-md" />
               </div>
             </div>
 
@@ -1018,7 +1081,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
               >
                 <ChevronRight className="h-5 w-5" />
               </button>
-              <div className="w-px h-6 bg-border mx-2" />
+              <div className="mx-2 h-6 w-px bg-border" />
               <button
                 onClick={toggleFullscreen}
                 className="rounded-lg p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
@@ -1040,7 +1103,9 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
             </h3>
             <div className="space-y-2">
               {/* Track 1 - Desktop */}
-              <div className={`rounded-lg p-3 ${audioTrack1 ? 'bg-background-tertiary' : 'bg-background-tertiary/50'}`}>
+              <div
+                className={`rounded-lg p-3 ${audioTrack1 ? 'bg-background-tertiary' : 'bg-background-tertiary/50'}`}
+              >
                 <label className="flex cursor-pointer items-center gap-3">
                   <input
                     type="checkbox"
@@ -1048,7 +1113,11 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                     onChange={e => setAudioTrack1(e.target.checked)}
                     className="h-4 w-4 accent-accent-primary"
                   />
-                  <span className={`text-sm ${audioTrack1 ? 'text-text-secondary' : 'text-text-muted'}`}>Desktop Audio</span>
+                  <span
+                    className={`text-sm ${audioTrack1 ? 'text-text-secondary' : 'text-text-muted'}`}
+                  >
+                    Desktop Audio
+                  </span>
                 </label>
                 {audioTrack1Src && (
                   <div className="mt-2 flex items-center gap-2">
@@ -1056,7 +1125,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                       onClick={toggleAudioTrack1Mute}
                       disabled={!audioTrack1}
                       className={`rounded p-1 transition-colors hover:bg-background-primary ${
-                        audioTrack1 ? 'text-text-muted' : 'text-text-muted/50 cursor-not-allowed'
+                        audioTrack1 ? 'text-text-muted' : 'cursor-not-allowed text-text-muted/50'
                       }`}
                     >
                       {!audioTrack1 || audioTrack1Muted || audioTrack1Volume === 0 ? (
@@ -1080,7 +1149,9 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
               </div>
 
               {/* Track 2 - Microphone */}
-              <div className={`rounded-lg p-3 ${audioTrack2 ? 'bg-background-tertiary' : 'bg-background-tertiary/50'}`}>
+              <div
+                className={`rounded-lg p-3 ${audioTrack2 ? 'bg-background-tertiary' : 'bg-background-tertiary/50'}`}
+              >
                 <label className="flex cursor-pointer items-center gap-3">
                   <input
                     type="checkbox"
@@ -1088,7 +1159,11 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                     onChange={e => setAudioTrack2(e.target.checked)}
                     className="h-4 w-4 accent-accent-primary"
                   />
-                  <span className={`text-sm ${audioTrack2 ? 'text-text-secondary' : 'text-text-muted'}`}>Microphone</span>
+                  <span
+                    className={`text-sm ${audioTrack2 ? 'text-text-secondary' : 'text-text-muted'}`}
+                  >
+                    Microphone
+                  </span>
                 </label>
                 {audioTrack2Src && (
                   <div className="mt-2 flex items-center gap-2">
@@ -1096,7 +1171,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                       onClick={toggleAudioTrack2Mute}
                       disabled={!audioTrack2}
                       className={`rounded p-1 transition-colors hover:bg-background-primary ${
-                        audioTrack2 ? 'text-text-muted' : 'text-text-muted/50 cursor-not-allowed'
+                        audioTrack2 ? 'text-text-muted' : 'cursor-not-allowed text-text-muted/50'
                       }`}
                     >
                       {!audioTrack2 || audioTrack2Muted || audioTrack2Volume === 0 ? (
@@ -1120,7 +1195,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
               </div>
             </div>
             {(!audioTrack1 || !audioTrack2) && (
-              <p className="mt-2 text-xs text-text-warning">
+              <p className="text-text-warning mt-2 text-xs">
                 Disabled tracks are muted during editing and excluded from export
               </p>
             )}
@@ -1187,7 +1262,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
               </button>
               <div className="relative">
                 <button
-                  onClick={(e) => {
+                  onClick={e => {
                     e.stopPropagation()
                     setShowSizeDropdown(!showSizeDropdown)
                   }}
@@ -1200,8 +1275,8 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
                   <ChevronDown className="h-4 w-4" />
                 </button>
                 {showSizeDropdown && (
-                  <div 
-                    onClick={(e) => e.stopPropagation()}
+                  <div
+                    onClick={e => e.stopPropagation()}
                     className="absolute bottom-full right-0 z-50 mb-1 w-40 rounded-lg border border-border bg-background-secondary py-1 shadow-lg"
                   >
                     <button
@@ -1274,13 +1349,11 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
           <div className="w-80 rounded-xl border border-border bg-background-secondary p-6 shadow-2xl">
             <h3 className="mb-2 text-lg font-semibold text-text-primary">Delete Clip?</h3>
             <p className="mb-4 text-sm text-text-muted">
-              Are you sure you want to delete "{clip.filename}"? This action cannot be undone.
+              Are you sure you want to delete &quot;{clip.filename}&quot;? This action cannot be
+              undone.
             </p>
             <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="btn-secondary"
-              >
+              <button onClick={() => setShowDeleteConfirm(false)} className="btn-secondary">
                 Cancel
               </button>
               <button
@@ -1300,7 +1373,7 @@ export const Editor: React.FC<EditorProps> = ({ clip, metadata, onClose, onSave 
         onClose={() => setIsEditingGame(false)}
         clip={clip}
         currentGame={game || null}
-        onSave={(newGame) => setGame(newGame || '')}
+        onSave={newGame => setGame(newGame || '')}
       />
     </div>
   )

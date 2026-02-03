@@ -10,6 +10,14 @@ export interface VideoMetadata {
   audioTracks: number
 }
 
+export interface AudioTrackState {
+  enabled: boolean
+  muted?: boolean
+  volume?: number
+}
+
+export type AudioTrackSetting = boolean | AudioTrackState
+
 export interface ClipMetadata {
   favorite?: boolean
   tags?: string[]
@@ -19,9 +27,11 @@ export interface ClipMetadata {
     end: number
   }
   audio?: {
-    track1: boolean
-    track2: boolean
+    track1?: AudioTrackSetting
+    track2?: AudioTrackSetting
   }
+  playheadPosition?: number
+  lastModified?: string
 }
 
 export interface ClipInfo {
@@ -41,26 +51,7 @@ export interface AudioTrackUrls {
 }
 
 // Editor state for persistence (saved in clips-metadata folder)
-export interface EditorState {
-  trim: {
-    start: number
-    end: number
-  }
-  playheadPosition: number
-  audio: {
-    track1: {
-      enabled: boolean
-      muted: boolean
-      volume: number
-    }
-    track2: {
-      enabled: boolean
-      muted: boolean
-      volume: number
-    }
-  }
-  lastModified: string // ISO timestamp
-}
+export type EditorState = ClipMetadata
 
 export interface AppSettings {
   output_path: string
@@ -153,13 +144,16 @@ export interface ElectronAPI {
   getAudioDevices: (type: 'output' | 'input') => Promise<AudioDeviceInfo[]>
   setStartup: (enabled: boolean) => Promise<{ success: boolean }>
   getClipsList: () => Promise<ClipInfo[]>
-  saveClipMetadata: (clipId: string, metadata: unknown) => Promise<boolean>
-  getClipMetadata: (clipId: string) => Promise<unknown | null>
+  saveClipMetadata: (clipId: string, metadata: ClipMetadata) => Promise<boolean>
+  getClipMetadata: (clipId: string) => Promise<ClipMetadata | null>
   deleteClip: (clipId: string) => Promise<{ success: boolean }>
   generateThumbnail: (clipId: string, videoPath: string) => Promise<string>
+  getExistingThumbnails: () => Promise<{ [clipId: string]: string }>
   getVideoMetadata: (videoPath: string) => Promise<VideoMetadata>
   extractAudioTracks: (clipId: string, videoPath: string) => Promise<AudioTrackUrls>
-  getVideoFileUrl: (filename: string) => Promise<{ success: boolean; url?: string; path?: string; error?: string }>
+  getVideoFileUrl: (
+    filename: string
+  ) => Promise<{ success: boolean; url?: string; path?: string; error?: string }>
   showExportPreview: (filePath: string) => Promise<void>
   cleanupOrphanedCache: () => Promise<{ deletedCount: number; errors: string[] }>
   getCacheStats: () => Promise<{
@@ -176,7 +170,11 @@ export interface ElectronAPI {
   showSaveDialog: (options: Electron.SaveDialogOptions) => Promise<Electron.SaveDialogReturnValue>
   dialog: DialogAPI
   editor: EditorAPI
-  getGamesDatabase: () => Promise<{ success: boolean; data?: { games: GameEntry[] }; error?: string }>
+  getGamesDatabase: () => Promise<{
+    success: boolean
+    data?: { games: GameEntry[] }
+    error?: string
+  }>
   on: (channel: string, callback: (data: unknown) => void) => (() => void) | undefined
 }
 

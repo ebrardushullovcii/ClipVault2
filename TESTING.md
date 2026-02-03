@@ -17,7 +17,7 @@ scoop install ffmpeg
 ### Test: OBS submodule cloned
 
 ```powershell
-Test-Path "third_party/obs-studio/libobs/obs.h"
+Test-Path "third_party/obs-studio-src/libobs/obs.h"
 # Should return: True
 ```
 
@@ -190,14 +190,14 @@ ffprobe -show_entries format=duration $clip 2>&1 | Select-String "duration="
 Check log for:
 
 ```
-[INFO] Configuration loaded from: config/settings.json
+[INFO] Configuration loaded from: %APPDATA%\ClipVault\settings.json
 [INFO] Buffer duration: 120 seconds
 [INFO] Resolution: 1920x1080
 ```
 
 ### Test: Config changes take effect
 
-1. Edit `config/settings.json`, change `buffer_seconds` to 60
+1. Edit `%APPDATA%\ClipVault\settings.json`, change `buffer_seconds` to 60
 2. Restart app
 3. Check log shows `Buffer duration: 60 seconds`
 

@@ -2,6 +2,8 @@
 
 Step-by-step instructions for implementing ClipVault from scratch. Each step is independently testable.
 
+> **Note**: This is a historical walkthrough. For current build steps and architecture, start with `AGENTS.md`, `docs/BUILD.md`, and `PROGRESS.md`.
+
 ## Prerequisites
 
 - MinGW installed (`scoop install mingw`)
@@ -15,25 +17,25 @@ Step-by-step instructions for implementing ClipVault from scratch. Each step is 
 ```bash
 cd D:\Projects-Personal\ClipVault2
 git init
-git submodule add https://github.com/obsproject/obs-studio.git third_party/obs-studio
-cd third_party/obs-studio
+git submodule add https://github.com/obsproject/obs-studio.git third_party/obs-studio-src
+cd third_party/obs-studio-src
 git checkout 31.0.2  # Or latest stable
 ```
 
-**Verify**: `third_party/obs-studio/libobs/obs.h` exists.
+**Verify**: `third_party/obs-studio-src/libobs/obs.h` exists.
 
 ### Step 1.2: Build libobs
 
 Create `scripts/build-libobs.ps1`:
 
 ```powershell
-$obsDir = "third_party/obs-studio"
+$obsDir = "third_party/obs-studio-src"
 $buildDir = "third_party/obs-build"
 
 mkdir -Force $buildDir
 cd $buildDir
 
-cmake ../obs-studio `
+cmake ../obs-studio-src `
     -G "MinGW Makefiles" `
     -DCMAKE_BUILD_TYPE=Release `
     -DENABLE_UI=OFF `

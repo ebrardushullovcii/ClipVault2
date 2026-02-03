@@ -205,7 +205,7 @@ obs_add_data_path("./data/libobs/");
 // NVENC CQP 20 gives ~15Mbps at 1080p60, good quality/size balance
 obs_data_set_int(settings, "cqp", 20);
 
-// Must be called AFTER obs_reset_video or encoders won't initialize
+// Must be called BEFORE obs_reset_video or capture sources will be black
 obs_load_all_modules();
 ```
 
@@ -250,8 +250,7 @@ obs_source_release(source);  // Release when done
 - Reference phase/step if applicable: "Phase 1.3: Add capture sources"
 
 ### Branches
-- `main` - stable, working code
-- `dev` - development work
+- `master` - stable, working code
 - `feature/name` - specific features
 - `fix/name` - bug fixes
 

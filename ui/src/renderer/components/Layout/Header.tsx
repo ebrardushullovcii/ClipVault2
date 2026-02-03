@@ -1,4 +1,12 @@
-import { Video, Settings, FolderOpen, Library, RotateCcw, ArrowLeft, ArrowRight } from 'lucide-react'
+import {
+  Video,
+  Settings,
+  FolderOpen,
+  Library,
+  RotateCcw,
+  ArrowLeft,
+  ArrowRight,
+} from 'lucide-react'
 import { APP_VERSION } from '../../../constants/version'
 
 interface HeaderProps {
@@ -20,7 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   onGoForward,
   onRefresh,
   canGoBack,
-  canGoForward
+  canGoForward,
 }) => {
   const handleOpenFolder = async () => {
     try {
@@ -50,11 +58,11 @@ export const Header: React.FC<HeaderProps> = ({
 
       <div className="flex items-center gap-2">
         {/* Navigation buttons */}
-        <div className="flex items-center gap-1 mr-2">
+        <div className="mr-2 flex items-center gap-1">
           <button
             onClick={onGoBack}
             disabled={!canGoBack}
-            className="btn-secondary p-2 disabled:opacity-30 disabled:cursor-not-allowed"
+            className="btn-secondary p-2 disabled:cursor-not-allowed disabled:opacity-30"
             title="Go Back (Alt+Left or Mouse Back)"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -62,7 +70,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onGoForward}
             disabled={!canGoForward}
-            className="btn-secondary p-2 disabled:opacity-30 disabled:cursor-not-allowed"
+            className="btn-secondary p-2 disabled:cursor-not-allowed disabled:opacity-30"
             title="Go Forward (Alt+Right or Mouse Forward)"
           >
             <ArrowRight className="h-4 w-4" />
@@ -76,7 +84,7 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
-        <div className="w-px h-6 bg-border mx-2" />
+        <div className="mx-2 h-6 w-px bg-border" />
 
         {currentView !== 'library' && onNavigateToLibrary && (
           <button
@@ -94,10 +102,7 @@ export const Header: React.FC<HeaderProps> = ({
           <FolderOpen className="h-4 w-4" />
           Open Folder
         </button>
-        <button
-          onClick={onOpenSettings}
-          className="btn-secondary p-2"
-        >
+        <button onClick={onOpenSettings} className="btn-secondary p-2">
           <Settings className="h-4 w-4" />
         </button>
       </div>

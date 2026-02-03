@@ -28,9 +28,9 @@ This document outlines the complete development roadmap for ClipVault, split int
   1. `obs_startup()`
   2. `obs_add_data_path()` (with trailing slash!)
   3. `obs_add_module_path()`
-  4. `obs_reset_video()` (with `graphics_module = "libobs-d3d11"`)
-  5. `obs_reset_audio()`
-  6. `obs_load_all_modules()`
+  4. `obs_load_all_modules()` (must be before video/audio reset)
+  5. `obs_reset_video()` (with `graphics_module = "libobs-d3d11"`)
+  6. `obs_reset_audio()`
 - Implement clean shutdown
 
 **Verification**: App starts, logs "OBS initialized", shuts down cleanly.
@@ -80,7 +80,7 @@ This document outlines the complete development roadmap for ClipVault, split int
 
 ### 1.7 Configuration
 - Create `src/config.cpp` / `src/config.h`
-- Load settings from `config/settings.json`
+- Load settings from `%APPDATA%\ClipVault\settings.json` (template in `config/settings.json`)
 - Support: buffer duration, resolution, FPS, output path, hotkey
 - Create default config if missing
 
@@ -184,7 +184,7 @@ This document outlines the complete development roadmap for ClipVault, split int
 
 **Core Principle**: Never modify original MP4; store edits in sidecar JSON
 
-Sidecar file format: `{clipName}.clipvault.json`
+Sidecar file format: `clips-metadata/{clipId}.json`
 
 ```json
 {
@@ -415,11 +415,10 @@ ui/
 │   ├── index.html
 │   └── icons/
 │
-├── package.json
+├── package.json                 # Scripts + electron-builder config
 ├── tsconfig.json
 ├── vite.config.ts               # Vite + Electron plugin
 ├── tailwind.config.js           # Tailwind + custom theme
-├── electron-builder.json5       # Build + packaging config
 └── .env                         # Environment variables
 ```
 

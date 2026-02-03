@@ -1,6 +1,6 @@
 # AGENTS.md - ClipVault Agent Guidelines
 
-> **For LLM Agents**: Read this file first. See `AGENT_WORKFLOW.md` for the development process.
+> **For LLM Agents**: Read this file first. Claude should also read `CLAUDE.md` for Claude-specific notes. See `AGENT_WORKFLOW.md` for the development process.
 
 ## Branch & PR Workflow (CRITICAL)
 
@@ -61,6 +61,10 @@ Add relevant CodeRabbit suggestions to your implementation context.
 ```powershell
 # 1. Verify environment
 .\scripts\verify-env.ps1
+
+# 1b. Install UI deps (first-time or after cleanup)
+cd ui && npm install
+cd ..
 
 # 2. Check status
 Get-Content PROGRESS.md | Select-String "Current Status"
@@ -192,9 +196,10 @@ obs_source_release(source);
 obs_startup("en-US", config_path, nullptr);
 obs_add_data_path("./data/libobs/");  // Trailing slash!
 obs_add_module_path(plugin_bin, plugin_data);
-obs_reset_video(&ovi);  // AFTER modules
+obs_load_all_modules();               // MUST be before video/audio reset
+obs_post_load_modules();
+obs_reset_video(&ovi);                // AFTER modules
 obs_reset_audio(&oai);
-obs_load_all_modules();
 ```
 
 ## Project Structure

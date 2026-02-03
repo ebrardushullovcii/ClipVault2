@@ -29,7 +29,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings }) => {
         ))}
       </nav>
 
-      <div className="mt-auto border-t border-border p-4 space-y-2">
+      <div className="mt-auto space-y-2 border-t border-border p-4">
         <button
           onClick={onOpenSettings}
           className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium text-text-secondary transition-all duration-200 hover:bg-background-tertiary hover:text-text-primary"
@@ -38,7 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenSettings }) => {
           Settings
         </button>
 
-        <div className="text-xs text-text-muted pt-2">
+        <div className="pt-2 text-xs text-text-muted">
           <p>Storage</p>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-background-tertiary">
             <div className="h-full w-1/3 rounded-full bg-accent-primary" />

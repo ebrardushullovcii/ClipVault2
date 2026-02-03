@@ -7,14 +7,13 @@ Complete reference of all file paths used by ClipVault (Backend + UI).
 | Category | Path | Purpose | Created By |
 |----------|------|---------|------------|
 | **Clips (Main)** | `{settings.output_path}\*.mp4` | Main recorded clips | Backend (C++) |
-| **Metadata** | `{settings.output_path}\*.clipvault.json` | Clip metadata (tags, trim, etc.) | UI |
+| **Metadata** | `{settings.output_path}\clips-metadata\*.json` | Clip metadata (tags, trim, game, audio, playhead) | UI |
 | **Exports** | `{settings.output_path}\exported-clips\*.mp4` | User exported clips | UI |
 | **Thumbnails** | `%APPDATA%\ClipVault\thumbnails\*.jpg` | Clip thumbnails | UI |
 | **Audio Cache** | `%APPDATA%\ClipVault\thumbnails\audio\*.m4a` | Extracted audio tracks | UI |
 | **Config** | `%APPDATA%\ClipVault\settings.json` | App settings | Backend & UI |
 | **Backend Log** | `{backend_exe_dir}\clipvault.log` | Backend logs | Backend (C++) |
 | **Backend Log Backups** | `{backend_exe_dir}\clipvault.log.1-3` | Rotated log files | Backend (C++) |
-| **Editor State** | `{settings.output_path}\clips-metadata\*.editor.json` | Editor state (trim, playhead, audio) | UI |
 
 ---
 
@@ -30,10 +29,11 @@ Complete reference of all file paths used by ClipVault (Backend + UI).
   - **Naming format:** `%CCYY-%MM-%DD_%hh-%mm-%ss.mp4`
   - **Accessed by:** UI for library display, editing, export
 
-- `*.clipvault.json` - Per-clip metadata files
+- `clips-metadata\*.json` - Per-clip metadata files
   - **Created by:** UI (`ui/src/main/main.ts`)
-  - **Format:** `{clipId}.clipvault.json`
-  - **Contains:** Tags, trim points, favorite status, audio track settings
+  - **Format:** `{clipId}.json`
+  - **Contains:** Tags, trim points, favorite status, game tag, audio settings, playhead position
+  - **Legacy:** Old `*.clipvault.json` files in the clips root are migrated into `clips-metadata/` on startup
 
 - `exported-clips\*.mp4` - Exported clips with edits
   - **Created by:** UI export feature
@@ -64,18 +64,21 @@ config_.output_path = "D:\\Clips\\ClipVault"; // Default only
 
 ---
 
-### 1b. CLIPS METADATA DIRECTORY (Editor State)
+### 1b. CLIPS METADATA DIRECTORY (Tags + Editor State)
 
 **Base Path:** `{settings.output_path}\clips-metadata\`
 
 **Files:**
-- `*.editor.json` - Editor state for each clip
-  - **Created by:** UI when user edits a clip (`ui/src/main/main.ts:editor:saveState`)
-  - **Format:** `{clipId}.editor.json`
-  - **Contains:** Trim positions, playhead position, audio settings
+- `*.json` - Metadata + editor state for each clip
+  - **Created by:** UI when user edits a clip or changes metadata
+  - **Format:** `{clipId}.json`
+  - **Contains:** Tags, favorite, game, trim positions, playhead position, audio settings
   - **Example:**
     ```json
     {
+      "favorite": false,
+      "tags": ["ranked", "clutch"],
+      "game": "Valorant",
       "trim": { "start": 5.2, "end": 42.8 },
       "playheadPosition": 12.5,
       "audio": {
@@ -93,7 +96,7 @@ config_.output_path = "D:\\Clips\\ClipVault"; // Default only
 ```typescript
 // UI: ui/src/main/main.ts
 const metadataDir = join(getClipsPath(), 'clips-metadata')
-const statePath = join(metadataDir, `${clipId}.editor.json`)
+const metadataPath = join(metadataDir, `${clipId}.json`)
 
 // Editor component: ui/src/renderer/components/Editor/Editor.tsx
 // Load on mount: useEffect with window.electronAPI.editor.loadState()
@@ -359,8 +362,8 @@ clipvault://exported/{filename} → join(clipsPath, 'exported-clips')
 ### Manual (Not Implemented)
 
 - No UI for clearing cache yet
-- No "delete clip" functionality (user must manually delete from `D:\Clips\ClipVault`)
-- Cache cleanup only happens automatically for orphaned files
+- Clip deletion is available in the Library (including bulk delete), which removes metadata and cached assets
+- Cache cleanup also runs automatically for orphaned files
 
 ---
 

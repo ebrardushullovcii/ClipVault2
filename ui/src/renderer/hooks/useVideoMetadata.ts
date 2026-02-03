@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 
 export interface VideoMetadata {
   duration: number
@@ -13,7 +13,7 @@ export interface VideoMetadata {
 }
 
 interface MetadataCache {
-  [clipId: string]: VideoMetadata
+  [clipId: string]: VideoMetadata | undefined
 }
 
 interface UseVideoMetadataReturn {
@@ -30,7 +30,10 @@ const globalLoadingSet = new Set<string>()
 export const useVideoMetadata = (): UseVideoMetadataReturn => {
   const [metadata, setMetadata] = useState<MetadataCache>(globalMetadataCache)
 
-  const fetchMetadata = async (clipId: string, videoPath: string): Promise<VideoMetadata | undefined> => {
+  const fetchMetadata = async (
+    clipId: string,
+    videoPath: string
+  ): Promise<VideoMetadata | undefined> => {
     // Return cached metadata if available
     if (globalMetadataCache[clipId]) {
       return globalMetadataCache[clipId]
@@ -46,13 +49,13 @@ export const useVideoMetadata = (): UseVideoMetadataReturn => {
 
     try {
       const videoMetadata = await window.electronAPI.getVideoMetadata(videoPath)
-      
+
       // Store in global cache
       globalMetadataCache[clipId] = videoMetadata
-      
+
       // Update React state (this will trigger re-render)
       setMetadata({ ...globalMetadataCache })
-      
+
       return videoMetadata
     } catch (err) {
       console.error(`[VideoMetadata] Failed to fetch for ${clipId}:`, err)

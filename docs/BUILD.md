@@ -150,7 +150,7 @@ Missing module. Ensure `bin/obs-plugins/64bit/` contains the required DLLs.
 If the setup script fails, you can build libobs manually:
 
 ```powershell
-cd third_party/obs-studio
+cd third_party/obs-studio-src
 
 mkdir build
 cd build

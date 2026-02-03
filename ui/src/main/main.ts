@@ -1,17 +1,24 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, protocol, Menu, nativeImage, Tray, Rectangle, screen } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  shell,
+  protocol,
+  Menu,
+  nativeImage,
+  Tray,
+  Rectangle,
+  screen,
+} from 'electron'
 import { dirname, join, basename } from 'path'
 import { readFile, writeFile, readdir, stat, mkdir, unlink as fsUnlinkAsync } from 'fs/promises'
-import { unlink } from 'fs'
-import { unlink as fsUnlink } from 'fs'
-import { existsSync, createReadStream, readFileSync, createWriteStream } from 'fs'
+import { existsSync, readFileSync, createWriteStream } from 'fs'
 import ffmpeg from 'fluent-ffmpeg'
-import { spawn, execSync, execFile, ChildProcess } from 'child_process'
+import { spawn, execSync, execFile } from 'child_process'
 import { promisify } from 'util'
 import { cleanupOrphanedCache, getCacheStats, formatBytes } from './cleanup'
 import chokidar from 'chokidar'
-
-import * as nodePath from 'path'
-import * as nodeFs from 'fs'
 
 const thumbnailLogPath = join(app.getPath('userData'), 'thumbnail.log')
 
@@ -39,7 +46,12 @@ class ThumbnailWorkerManager {
     logThumbnail('Thumbnail generation: Optimized FFmpeg with input seeking')
   }
 
-  async extractThumbnail(videoPath: string, outputPath: string, width = 480, height = 270): Promise<{ success: boolean; error?: string; duration?: number }> {
+  async extractThumbnail(
+    videoPath: string,
+    outputPath: string,
+    width = 480,
+    height = 270
+  ): Promise<{ success: boolean; error?: string; duration?: number }> {
     const startTime = Date.now()
     try {
       // Skip if thumbnail already exists - this is the key optimization!
@@ -60,13 +72,16 @@ class ThumbnailWorkerManager {
         ffmpeg(videoPath)
           .inputOptions(['-ss', '0.5']) // Input seeking - fast!
           .outputOptions([
-            '-vframes', '1',           // Only 1 frame
-            '-q:v', '5',               // Good quality JPEG
-            '-vf', `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`
+            '-vframes',
+            '1', // Only 1 frame
+            '-q:v',
+            '5', // Good quality JPEG
+            '-vf',
+            `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`,
           ])
           .output(outputPath)
           .on('end', () => resolve())
-          .on('error', (err) => {
+          .on('error', err => {
             console.error('[ThumbnailWorker] FFmpeg error:', err.message)
             reject(err)
           })
@@ -106,9 +121,9 @@ const appDir = dirname(appPath)
 // Try multiple locations for dev vs production
 const dragIconPaths = [
   join(appDir, '..', '..', '..', '64x64.png'), // Dev mode
-  join(process.resourcesPath, '64x64.png'),    // Production - resources folder
+  join(process.resourcesPath, '64x64.png'), // Production - resources folder
   join(process.resourcesPath, 'app.asar', '64x64.png'), // Production - inside asar
-  join(app.getAppPath(), '64x64.png'),         // Alternative production path
+  join(app.getAppPath(), '64x64.png'), // Alternative production path
 ]
 
 const dragIconPath = dragIconPaths.find(p => existsSync(p)) || dragIconPaths[0]
@@ -117,7 +132,7 @@ const dragIconPath = dragIconPaths.find(p => existsSync(p)) || dragIconPaths[0]
 app.disableHardwareAcceleration()
 
 // Handle uncaught errors to prevent crashes
-process.on('uncaughtException', (error) => {
+process.on('uncaughtException', error => {
   console.error('Uncaught Exception:', error)
 })
 
@@ -266,14 +281,14 @@ function startBackend(): boolean {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
-    backendProc.stdout.on('data', (data) => {
+    backendProc.stdout.on('data', data => {
       const text = data.toString().trim()
       if (text) {
         logStream.write(`[STDOUT] ${text}\n`)
       }
     })
 
-    backendProc.stderr.on('data', (data) => {
+    backendProc.stderr.on('data', data => {
       const text = data.toString().trim()
       if (text) {
         logStream.write(`[STDERR] ${text}\n`)
@@ -281,7 +296,7 @@ function startBackend(): boolean {
       }
     })
 
-    backendProc.on('error', (error) => {
+    backendProc.on('error', error => {
       console.error('Backend spawn error:', error)
       logStream.write(`[ERROR] Spawn error: ${error}\n`)
       logStream.end()
@@ -318,8 +333,8 @@ function killBackend(): boolean {
   if (!backendProcess) {
     // Try to find and kill any existing ClipVault.exe processes (backend only)
     try {
-      execSync('taskkill /F /IM ClipVault.exe /FI "WINDOWTITLE eq ClipVault"', { 
-        stdio: 'ignore' 
+      execSync('taskkill /F /IM ClipVault.exe /FI "WINDOWTITLE eq ClipVault"', {
+        stdio: 'ignore',
       })
       console.log('Killed existing backend processes')
       return true
@@ -344,10 +359,10 @@ function killBackend(): boolean {
 async function restartBackend(): Promise<boolean> {
   console.log('Restarting backend...')
   killBackend()
-  
+
   // Wait a moment for the process to fully terminate
   await new Promise(resolve => setTimeout(resolve, 1000))
-  
+
   return startBackend()
 }
 
@@ -384,12 +399,10 @@ function getClipsPath(): string {
   return DEFAULT_CLIPS_PATH
 }
 
-
-
 // Configure FFmpeg path for bundled version
 // In dev mode, look in project root bin folder
 // In production, look in resources/bin
-const ffmpegPath = isDev 
+const ffmpegPath = isDev
   ? join(appDir, '..', '..', '..', 'bin', 'ffmpeg.exe')
   : join(process.resourcesPath, 'bin', 'ffmpeg.exe')
 const ffprobePath = isDev
@@ -413,7 +426,11 @@ if (existsSync(ffprobePath)) {
   console.warn('FFprobe not found at:', ffprobePath)
 }
 
-console.log('Config:', { clipsPath: getClipsPath(), thumbnailsPath, userData: app.getPath('userData') })
+console.log('Config:', {
+  clipsPath: getClipsPath(),
+  thumbnailsPath,
+  userData: app.getPath('userData'),
+})
 
 // Check if running in startup mode (no window, just backend)
 const isStartupMode = process.argv.includes('--startup')
@@ -429,7 +446,7 @@ if (!gotTheLock) {
   // When a second instance tries to run, focus the existing window AND ensure backend is running
   app.on('second-instance', (_, commandLine) => {
     console.log('Second instance detected, focusing existing window and checking backend')
-    
+
     // If no window exists (startup mode), create one
     if (!mainWindow && !commandLine.includes('--startup')) {
       console.log('Second instance: Creating window (was in startup mode)')
@@ -441,13 +458,13 @@ if (!gotTheLock) {
       mainWindow.show()
       mainWindow.focus()
     }
-    
+
     // Try to start backend again (in case it was stopped)
     const inProduction = !isDev
     const backendPath = inProduction
       ? join(process.resourcesPath, 'bin', 'ClipVault.exe')
       : join(appDir, '..', '..', '..', 'bin', 'ClipVault.exe')
-    
+
     if (existsSync(backendPath)) {
       try {
         console.log('Second instance: Spawning backend from:', backendPath)
@@ -501,34 +518,36 @@ function createTray(): void {
 
   tray = new Tray(icon || nativeImage.createEmpty())
   tray.setToolTip('ClipVault Editor')
-  tray.setContextMenu(Menu.buildFromTemplate([
-    {
-      label: 'Open ClipVault',
-      click: () => {
-        if (mainWindow) {
-          mainWindow.show()
-          mainWindow.focus()
-        }
-      }
-    },
-    {
-      label: 'Open Clips Folder',
-      click: async () => {
-        const clipsFolder = getClipsPath()
-        if (!existsSync(clipsFolder)) {
-          await mkdir(clipsFolder, { recursive: true })
-        }
-        await shell.openPath(clipsFolder)
-      }
-    },
-    { type: 'separator' },
-    {
-      label: 'Exit',
-      click: () => {
-        app.quit()
-      }
-    }
-  ]))
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: 'Open ClipVault',
+        click: () => {
+          if (mainWindow) {
+            mainWindow.show()
+            mainWindow.focus()
+          }
+        },
+      },
+      {
+        label: 'Open Clips Folder',
+        click: async () => {
+          const clipsFolder = getClipsPath()
+          if (!existsSync(clipsFolder)) {
+            await mkdir(clipsFolder, { recursive: true })
+          }
+          await shell.openPath(clipsFolder)
+        },
+      },
+      { type: 'separator' },
+      {
+        label: 'Exit',
+        click: () => {
+          app.quit()
+        },
+      },
+    ])
+  )
 
   tray.on('click', () => {
     if (mainWindow) {
@@ -611,9 +630,11 @@ async function createWindow() {
       console.log('Loaded dev URL, opening devtools...')
       mainWindow.webContents.openDevTools()
     } else {
-      await mainWindow.loadFile(isDev
-        ? join(appDir, '..', 'renderer', 'index.html')
-        : join(process.resourcesPath, 'app.asar', 'dist', 'renderer', 'index.html'))
+      await mainWindow.loadFile(
+        isDev
+          ? join(appDir, '..', 'renderer', 'index.html')
+          : join(process.resourcesPath, 'app.asar', 'dist', 'renderer', 'index.html')
+      )
       console.log('Loaded production HTML file')
     }
   } catch (error) {
@@ -641,7 +662,7 @@ async function createWindow() {
     mainWindow?.show()
     mainWindow?.focus()
   })
-  
+
   // Fallback: Show window after 2 seconds even if ready-to-show doesn't fire
   setTimeout(() => {
     if (mainWindow && !mainWindow.isVisible()) {
@@ -652,7 +673,7 @@ async function createWindow() {
   }, 2000)
 
   // Minimize to tray instead of closing
-  mainWindow.on('close', (event) => {
+  mainWindow.on('close', event => {
     if (!isQuitting) {
       event.preventDefault()
       console.log('Minimizing to tray instead of closing')
@@ -661,7 +682,7 @@ async function createWindow() {
     }
   })
 
-  mainWindow.on('page-title-updated', (event) => {
+  mainWindow.on('page-title-updated', event => {
     event.preventDefault()
   })
 
@@ -769,19 +790,19 @@ ipcMain.handle('settings:save', async (_, settings: unknown) => {
   try {
     const settingsPath = getSettingsPath()
     const configDir = join(app.getPath('appData'), 'ClipVault')
-    
+
     // Ensure config directory exists
     if (!existsSync(configDir)) {
       await mkdir(configDir, { recursive: true })
     }
-    
+
     await writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8')
     console.log('Settings saved to:', settingsPath)
-    
+
     // Restart backend to apply new settings
     console.log('Settings saved, restarting backend...')
     const restarted = await restartBackend()
-    
+
     return { success: true, restarted }
   } catch (error) {
     console.error('Failed to save settings:', error)
@@ -805,7 +826,7 @@ ipcMain.handle('settings:setStartup', async (_, enabled: boolean) => {
   try {
     const exePath = process.execPath
     const keyName = 'ClipVault'
-    
+
     if (enabled) {
       // Add to registry Run key with --startup flag (no window, backend only)
       const { exec } = require('child_process')
@@ -831,7 +852,7 @@ ipcMain.handle('settings:setStartup', async (_, enabled: boolean) => {
         }
       })
     }
-    
+
     return { success: true }
   } catch (error) {
     console.error('Failed to set startup:', error)
@@ -1035,8 +1056,11 @@ ipcMain.handle('editor:saveState', async (_, clipId: string, state: unknown) => 
     }
     const statePath = join(metadataDir, `${clipId}.json`)
     // Merge with existing metadata if any
-    const existingContent = existsSync(statePath) ? JSON.parse(await readFile(statePath, 'utf-8')) : {}
-    const existingObj = typeof existingContent === 'object' && existingContent !== null ? existingContent : {}
+    const existingContent = existsSync(statePath)
+      ? JSON.parse(await readFile(statePath, 'utf-8'))
+      : {}
+    const existingObj =
+      typeof existingContent === 'object' && existingContent !== null ? existingContent : {}
     const stateObj = typeof state === 'object' && state !== null ? state : {}
     const mergedState = { ...existingObj, ...stateObj } as Record<string, unknown>
     await writeFile(statePath, JSON.stringify(mergedState, null, 2), 'utf-8')
@@ -1088,7 +1112,7 @@ ipcMain.handle('dialog:openFolder', async () => {
   if (!mainWindow) return { canceled: true }
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openDirectory'],
-    title: 'Select Clips Folder'
+    title: 'Select Clips Folder',
   })
   return result
 })
@@ -1143,7 +1167,6 @@ ipcMain.handle('clips:generateThumbnail', async (_, clipId: string, videoPath: s
 
     if (worker.isAvailable()) {
       logThumbnail(`Windows API: ${thumbnailFilename}`)
-      const startTime = Date.now()
 
       try {
         const result = await worker.extractThumbnail(videoPath, thumbnailPath, 480, 270)
@@ -1168,16 +1191,19 @@ ipcMain.handle('clips:generateThumbnail', async (_, clipId: string, videoPath: s
       ffmpeg(videoPath)
         .inputOptions(['-ss', '0.5']) // Input seeking - fast!
         .outputOptions([
-          '-vframes', '1',
-          '-q:v', '5',
-          '-vf', 'scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2'
+          '-vframes',
+          '1',
+          '-q:v',
+          '5',
+          '-vf',
+          'scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2',
         ])
         .output(thumbnailPath)
         .on('end', () => {
           logThumbnail(`FFmpeg success: ${thumbnailFilename} in ${Date.now() - ffStartTime}ms`)
           resolve(`clipvault://thumb/${encodeURIComponent(thumbnailFilename)}`)
         })
-        .on('error', (err) => {
+        .on('error', err => {
           logThumbnail(`FFmpeg error: ${thumbnailFilename} - ${err}`)
           reject(err)
         })
@@ -1193,17 +1219,17 @@ ipcMain.handle('clips:generateThumbnail', async (_, clipId: string, videoPath: s
 ipcMain.handle('video:getFileUrl', async (_, filename: string) => {
   try {
     const filePath = join(getClipsPath(), filename)
-    
+
     if (!existsSync(filePath)) {
       console.error('Video file not found:', filePath)
       return { success: false, error: 'File not found' }
     }
-    
+
     // Return the file:// URL which the renderer can use directly
     // Note: webSecurity is disabled in the window, so file:// URLs work
     const fileUrl = `file:///${filePath.replace(/\\/g, '/')}`
     console.log('Returning video file URL:', fileUrl)
-    
+
     return { success: true, url: fileUrl, path: filePath }
   } catch (error) {
     console.error('Error getting video file URL:', error)
@@ -1273,70 +1299,79 @@ async function preGenerateThumbnails() {
     if (useWorker) {
       logThumbnail(`Pre-generation: using Windows Thumbnail Cache for ${videoFiles.length} clips`)
     } else {
-      logThumbnail(`Pre-generation: Worker not available, using FFmpeg for ${videoFiles.length} clips`)
+      logThumbnail(
+        `Pre-generation: Worker not available, using FFmpeg for ${videoFiles.length} clips`
+      )
     }
 
     for (let i = 0; i < videoFiles.length; i += batchSize) {
       const batch = videoFiles.slice(i, i + batchSize)
 
-      await Promise.all(batch.map(async (filename) => {
-        const clipId = filename.replace('.mp4', '')
-        const thumbnailFilename = `${clipId}.jpg`
-        const thumbnailPath = join(thumbnailsPath, thumbnailFilename)
+      await Promise.all(
+        batch.map(async filename => {
+          const clipId = filename.replace('.mp4', '')
+          const thumbnailFilename = `${clipId}.jpg`
+          const thumbnailPath = join(thumbnailsPath, thumbnailFilename)
 
-        if (existsSync(thumbnailPath)) {
-          skipped++
-          return
-        }
-
-        const videoPath = join(clipsDir, filename)
-
-        if (useWorker) {
-          try {
-            const result = await worker.extractThumbnail(videoPath, thumbnailPath, 480, 270)
-            if (result.success && existsSync(thumbnailPath)) {
-              windowsGenerated++
-              generated++
-              logThumbnail(`Pre-gen Windows: ${thumbnailFilename} in ${result.duration || 0}ms`)
-              return
-            } else {
-              logThumbnail(`Pre-gen Windows failed: ${thumbnailFilename}`)
-            }
-          } catch (error) {
-            logThumbnail(`Pre-gen Windows error: ${thumbnailFilename} - ${error}`)
+          if (existsSync(thumbnailPath)) {
+            skipped++
+            return
           }
-        }
 
-        await new Promise<void>((resolve) => {
-          const ffStartTime = Date.now()
-          ffmpeg(videoPath)
-            .inputOptions(['-ss', '0.5']) // Input seeking - fast!
-            .outputOptions([
-              '-vframes', '1',
-              '-q:v', '5',
-              '-vf', 'scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2'
-            ])
-            .output(thumbnailPath)
-            .on('end', () => {
-              ffmpegGenerated++
-              generated++
-              logThumbnail(`Pre-gen: ${thumbnailFilename} in ${Date.now() - ffStartTime}ms`)
-              resolve()
-            })
-            .on('error', (err) => {
-              logThumbnail(`Pre-gen error: ${thumbnailFilename} - ${err}`)
-              resolve()
-            })
-            .run()
+          const videoPath = join(clipsDir, filename)
+
+          if (useWorker) {
+            try {
+              const result = await worker.extractThumbnail(videoPath, thumbnailPath, 480, 270)
+              if (result.success && existsSync(thumbnailPath)) {
+                windowsGenerated++
+                generated++
+                logThumbnail(`Pre-gen Windows: ${thumbnailFilename} in ${result.duration || 0}ms`)
+                return
+              } else {
+                logThumbnail(`Pre-gen Windows failed: ${thumbnailFilename}`)
+              }
+            } catch (error) {
+              logThumbnail(`Pre-gen Windows error: ${thumbnailFilename} - ${error}`)
+            }
+          }
+
+          await new Promise<void>(resolve => {
+            const ffStartTime = Date.now()
+            ffmpeg(videoPath)
+              .inputOptions(['-ss', '0.5']) // Input seeking - fast!
+              .outputOptions([
+                '-vframes',
+                '1',
+                '-q:v',
+                '5',
+                '-vf',
+                'scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2',
+              ])
+              .output(thumbnailPath)
+              .on('end', () => {
+                ffmpegGenerated++
+                generated++
+                logThumbnail(`Pre-gen: ${thumbnailFilename} in ${Date.now() - ffStartTime}ms`)
+                resolve()
+              })
+              .on('error', err => {
+                logThumbnail(`Pre-gen error: ${thumbnailFilename} - ${err}`)
+                resolve()
+              })
+              .run()
+          })
         })
-      }))
+      )
 
       if (i + batchSize < videoFiles.length) {
         await new Promise(r => setTimeout(r, 100))
       }
     }
-    
-    logThumbnail(`Pre-generation complete: ${generated} generated (${windowsGenerated} Windows, ${ffmpegGenerated} FFmpeg), ${skipped} skipped`)
+
+    logThumbnail(
+      `Pre-generation complete: ${generated} generated (${windowsGenerated} Windows, ${ffmpegGenerated} FFmpeg), ${skipped} skipped`
+    )
   } catch (error) {
     logThumbnail(`Pre-generation error: ${error}`)
   }
@@ -1362,16 +1397,14 @@ function startClipsWatcher() {
   logThumbnail(`Starting clips watcher on: ${clipsDir}`)
 
   // Track files being written (recording in progress)
-  const pendingFiles = new Map<string, { size: number; checkCount: number }>()
-
   clipsWatcher = chokidar.watch(clipsDir, {
     ignored: /(^|[\/\\])\../, // Ignore hidden files
     persistent: true,
     ignoreInitial: true, // Don't fire for existing files
     awaitWriteFinish: {
       stabilityThreshold: 1000, // Wait 1s for file size to stabilize (recording complete)
-      pollInterval: 200
-    }
+      pollInterval: 200,
+    },
   })
 
   clipsWatcher.on('add', async (filePath: string) => {
@@ -1403,13 +1436,16 @@ function startClipsWatcher() {
         ffmpeg(filePath)
           .inputOptions(['-ss', '0.5']) // Input seeking - fast!
           .outputOptions([
-            '-vframes', '1',
-            '-q:v', '5',
-            '-vf', 'scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2'
+            '-vframes',
+            '1',
+            '-q:v',
+            '5',
+            '-vf',
+            'scale=480:270:force_original_aspect_ratio=decrease,pad=480:270:(ow-iw)/2:(oh-ih)/2',
           ])
           .output(thumbnailPath)
           .on('end', () => resolve())
-          .on('error', (err) => reject(err))
+          .on('error', err => reject(err))
           .run()
       })
 
@@ -1422,7 +1458,7 @@ function startClipsWatcher() {
     }
   })
 
-  clipsWatcher.on('error', (error) => {
+  clipsWatcher.on('error', error => {
     console.error('[ClipsWatcher] Error:', error)
     logThumbnail(`[Watcher] Error: ${error}`)
   })
@@ -1574,11 +1610,11 @@ function createExportPreviewWindow(filePath: string) {
         } else {
           console.warn('Drag icon not found at:', dragIconPath)
         }
-        
+
         // Use webContents.startDrag for native file drag (required for external apps like Discord)
         exportPreviewWindow?.webContents.startDrag({
           file: data as string,
-          icon: dragIcon || nativeImage.createEmpty()
+          icon: dragIcon || nativeImage.createEmpty(),
         })
       } catch (error) {
         console.error('Error starting drag:', error)
@@ -1597,232 +1633,241 @@ ipcMain.handle('export:showPreview', async (_, filePath: string) => {
   return { success: true }
 })
 
-  // Extract audio tracks from video file
-   ipcMain.handle('audio:extractTracks', async (_, clipId: string, videoPath: string) => {
-     try {
-       // Ensure audio cache directory exists
-       const audioCachePath = join(thumbnailsPath, 'audio')
-       if (!existsSync(audioCachePath)) {
-         await mkdir(audioCachePath, { recursive: true })
-       }
+// Extract audio tracks from video file
+ipcMain.handle('audio:extractTracks', async (_, clipId: string, videoPath: string) => {
+  try {
+    // Ensure audio cache directory exists
+    const audioCachePath = join(thumbnailsPath, 'audio')
+    if (!existsSync(audioCachePath)) {
+      await mkdir(audioCachePath, { recursive: true })
+    }
 
-       const track1Path = join(audioCachePath, `${clipId}_track1.m4a`)
-       const track2Path = join(audioCachePath, `${clipId}_track2.m4a`)
+    const track1Path = join(audioCachePath, `${clipId}_track1.m4a`)
+    const track2Path = join(audioCachePath, `${clipId}_track2.m4a`)
 
-       const results: { track1?: string; track2?: string; error?: string } = {}
+    const results: { track1?: string; track2?: string; error?: string } = {}
 
-       // Check if already cached
-       const track1Exists = existsSync(track1Path)
-       const track2Exists = existsSync(track2Path)
+    // Check if already cached
+    const track1Exists = existsSync(track1Path)
+    const track2Exists = existsSync(track2Path)
 
-       if (track1Exists) {
-         results.track1 = `clipvault://audio/${encodeURIComponent(`${clipId}_track1.m4a`)}`
-       }
-       if (track2Exists) {
-         results.track2 = `clipvault://audio/${encodeURIComponent(`${clipId}_track2.m4a`)}`
-       }
+    if (track1Exists) {
+      results.track1 = `clipvault://audio/${encodeURIComponent(`${clipId}_track1.m4a`)}`
+    }
+    if (track2Exists) {
+      results.track2 = `clipvault://audio/${encodeURIComponent(`${clipId}_track2.m4a`)}`
+    }
 
-       if (track1Exists && track2Exists) {
-         return results
-       }
+    if (track1Exists && track2Exists) {
+      return results
+    }
 
-       // Get video metadata to check audio tracks
-       const metadata = await new Promise<ffmpeg.FfprobeData>((resolve, reject) => {
-         ffmpeg.ffprobe(videoPath, (err, data) => {
-           if (err) reject(err)
-           else resolve(data)
-         })
-       })
+    // Get video metadata to check audio tracks
+    const metadata = await new Promise<ffmpeg.FfprobeData>((resolve, reject) => {
+      ffmpeg.ffprobe(videoPath, (err, data) => {
+        if (err) reject(err)
+        else resolve(data)
+      })
+    })
 
-       const audioStreams = metadata.streams.filter(s => s.codec_type === 'audio')
+    const audioStreams = metadata.streams.filter(s => s.codec_type === 'audio')
 
-       // Extract track 1 if not cached and exists
-       if (!track1Exists && audioStreams.length >= 1) {
-         await new Promise<void>((resolve, reject) => {
-           ffmpeg(videoPath)
-             .outputOptions(['-map 0:a:0', '-c:a aac', '-b:a 128k'])
-             .save(track1Path)
-             .on('end', () => resolve())
-             .on('error', err => reject(err))
-         })
-         results.track1 = `clipvault://audio/${encodeURIComponent(`${clipId}_track1.m4a`)}`
-       }
+    // Extract track 1 if not cached and exists
+    if (!track1Exists && audioStreams.length >= 1) {
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(videoPath)
+          .outputOptions(['-map 0:a:0', '-c:a aac', '-b:a 128k'])
+          .save(track1Path)
+          .on('end', () => resolve())
+          .on('error', err => reject(err))
+      })
+      results.track1 = `clipvault://audio/${encodeURIComponent(`${clipId}_track1.m4a`)}`
+    }
 
-       // Extract track 2 if not cached and exists
-       if (!track2Exists && audioStreams.length >= 2) {
-         await new Promise<void>((resolve, reject) => {
-           ffmpeg(videoPath)
-             .outputOptions(['-map 0:a:1', '-c:a aac', '-b:a 128k'])
-             .save(track2Path)
-             .on('end', () => resolve())
-             .on('error', err => reject(err))
-         })
-         results.track2 = `clipvault://audio/${encodeURIComponent(`${clipId}_track2.m4a`)}`
-       }
+    // Extract track 2 if not cached and exists
+    if (!track2Exists && audioStreams.length >= 2) {
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(videoPath)
+          .outputOptions(['-map 0:a:1', '-c:a aac', '-b:a 128k'])
+          .save(track2Path)
+          .on('end', () => resolve())
+          .on('error', err => reject(err))
+      })
+      results.track2 = `clipvault://audio/${encodeURIComponent(`${clipId}_track2.m4a`)}`
+    }
 
-       return results
-     } catch (error) {
-       console.error('Failed to extract audio tracks:', error)
-       return { error: String(error) }
-     }
-   })
+    return results
+  } catch (error) {
+    console.error('Failed to extract audio tracks:', error)
+    return { error: String(error) }
+  }
+})
 
-   // Export clip with trim and audio track selection
-   ipcMain.handle(
-      'editor:exportClip',
-      async (
-        _,
-        params: {
-          clipPath: string
-          exportFilename: string
-          trimStart: number
-          trimEnd: number
-          audioTrack1: boolean
-          audioTrack2: boolean
-          audioTrack1Volume?: number
-          audioTrack2Volume?: number
-          targetSizeMB?: number | 'original'
+// Export clip with trim and audio track selection
+ipcMain.handle(
+  'editor:exportClip',
+  async (
+    _,
+    params: {
+      clipPath: string
+      exportFilename: string
+      trimStart: number
+      trimEnd: number
+      audioTrack1: boolean
+      audioTrack2: boolean
+      audioTrack1Volume?: number
+      audioTrack2Volume?: number
+      targetSizeMB?: number | 'original'
+    }
+  ) => {
+    try {
+      const {
+        clipPath,
+        exportFilename,
+        trimStart,
+        trimEnd,
+        audioTrack1,
+        audioTrack2,
+        audioTrack1Volume,
+        audioTrack2Volume,
+        targetSizeMB = 'original',
+      } = params
+      const duration = trimEnd - trimStart
+      const vol1 = audioTrack1Volume ?? 1.0
+      const vol2 = audioTrack2Volume ?? 1.0
+
+      // Create exported-clips directory if it doesn't exist
+      const exportedClipsPath = join(getClipsPath(), 'exported-clips')
+      if (!existsSync(exportedClipsPath)) {
+        await mkdir(exportedClipsPath, { recursive: true })
+      }
+
+      // Build full output path
+      const outputPath = join(exportedClipsPath, exportFilename)
+
+      // Calculate video bitrate if target size is specified
+      let videoBitrate: number | null = null
+      let useTargetSize = false
+      if (typeof targetSizeMB === 'number' && targetSizeMB > 0 && duration > 0) {
+        // Formula: target_size_mb * 8192 kb / duration_sec - audio_overhead
+        // Leave ~15% overhead for container and audio
+        const targetSizeKB = targetSizeMB * 8192 * 0.85
+        const totalBitrate = Math.floor(targetSizeKB / duration)
+        const audioBitrate = 128 // AAC audio bitrate
+        videoBitrate = Math.max(totalBitrate - audioBitrate, 500) // Minimum 500kbps
+        useTargetSize = true
+        console.log(
+          `Target size: ${targetSizeMB}MB, Duration: ${duration}s, Video bitrate: ${videoBitrate}kbps`
+        )
+      }
+
+      return new Promise((resolve, reject) => {
+        const command = ffmpeg(clipPath).seekInput(trimStart).duration(duration)
+
+        // Configure video encoding based on target size
+        if (useTargetSize && videoBitrate) {
+          // Use H.264 with target bitrate for size-constrained export
+          // Note: Don't use -crf with -b:v - they conflict (CRF overrides bitrate)
+          command.videoCodec('libx264')
+          command.outputOptions([
+            '-b:v',
+            `${videoBitrate}k`,
+            '-maxrate',
+            `${Math.floor(videoBitrate * 1.5)}k`,
+            '-bufsize',
+            `${videoBitrate * 2}k`,
+            '-preset',
+            'fast',
+            '-pix_fmt',
+            'yuv420p',
+          ])
+        } else {
+          // Original quality - just copy video stream
+          command.videoCodec('copy')
         }
-      ) => {
-        try {
-          const { clipPath, exportFilename, trimStart, trimEnd, audioTrack1, audioTrack2, audioTrack1Volume, audioTrack2Volume, targetSizeMB = 'original' } = params
-          const duration = trimEnd - trimStart
-          const vol1 = audioTrack1Volume ?? 1.0
-          const vol2 = audioTrack2Volume ?? 1.0
 
-          // Create exported-clips directory if it doesn't exist
-          const exportedClipsPath = join(getClipsPath(), 'exported-clips')
-          if (!existsSync(exportedClipsPath)) {
-            await mkdir(exportedClipsPath, { recursive: true })
+        // Map audio tracks based on options
+        if (audioTrack1 && audioTrack2) {
+          // Mix both tracks with volume adjustment
+          const filter = `[0:a:0]volume=${vol1}[a0];[0:a:1]volume=${vol2}[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=3[aout]`
+          command.outputOptions([
+            '-map 0:v:0',
+            '-filter_complex',
+            filter,
+            '-map',
+            '[aout]',
+            '-c:a aac',
+            '-b:a 128k',
+            '-ac 2',
+          ])
+        } else if (audioTrack1) {
+          // Only track 1 with volume
+          if (vol1 < 1.0) {
+            command.outputOptions(['-map 0:v:0', '-map 0:a:0', '-filter:a:0', `volume=${vol1}`])
+          } else {
+            command.outputOptions(['-map 0:v:0', '-map 0:a:0'])
           }
-
-          // Build full output path
-          const outputPath = join(exportedClipsPath, exportFilename)
-
-          // Calculate video bitrate if target size is specified
-          let videoBitrate: number | null = null
-          let useTargetSize = false
-          if (typeof targetSizeMB === 'number' && targetSizeMB > 0 && duration > 0) {
-            // Formula: target_size_mb * 8192 kb / duration_sec - audio_overhead
-            // Leave ~15% overhead for container and audio
-            const targetSizeKB = targetSizeMB * 8192 * 0.85
-            const totalBitrate = Math.floor(targetSizeKB / duration)
-            const audioBitrate = 128 // AAC audio bitrate
-            videoBitrate = Math.max(totalBitrate - audioBitrate, 500) // Minimum 500kbps
-            useTargetSize = true
-            console.log(`Target size: ${targetSizeMB}MB, Duration: ${duration}s, Video bitrate: ${videoBitrate}kbps`)
+        } else if (audioTrack2) {
+          // Only track 2 with volume
+          if (vol2 < 1.0) {
+            command.outputOptions(['-map 0:v:0', '-map 0:a:1', '-filter:a:0', `volume=${vol2}`])
+          } else {
+            command.outputOptions(['-map 0:v:0', '-map 0:a:1'])
           }
+        } else {
+          // No audio - video only
+          command.noAudio()
+        }
 
-          return new Promise((resolve, reject) => {
-            const command = ffmpeg(clipPath)
-              .seekInput(trimStart)
-              .duration(duration)
-
-            // Configure video encoding based on target size
-            if (useTargetSize && videoBitrate) {
-              // Use H.264 with target bitrate for size-constrained export
-              // Note: Don't use -crf with -b:v - they conflict (CRF overrides bitrate)
-              command.videoCodec('libx264')
-              command.outputOptions([
-                '-b:v', `${videoBitrate}k`,
-                '-maxrate', `${Math.floor(videoBitrate * 1.5)}k`,
-                '-bufsize', `${videoBitrate * 2}k`,
-                '-preset', 'fast',
-                '-pix_fmt', 'yuv420p'
-              ])
-            } else {
-              // Original quality - just copy video stream
-              command.videoCodec('copy')
+        command
+          .on('progress', progress => {
+            if (mainWindow && progress.percent) {
+              mainWindow.webContents.send('export:progress', { percent: progress.percent })
             }
-
-            // Map audio tracks based on options
-            if (audioTrack1 && audioTrack2) {
-              // Mix both tracks with volume adjustment
-              const filter = `[0:a:0]volume=${vol1}[a0];[0:a:1]volume=${vol2}[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=3[aout]`
-              command.outputOptions([
-                '-map 0:v:0',
-                '-filter_complex', filter,
-                '-map', '[aout]',
-                '-c:a aac',
-                '-b:a 128k',
-                '-ac 2'
-              ])
-            } else if (audioTrack1) {
-              // Only track 1 with volume
-              if (vol1 < 1.0) {
-                command.outputOptions([
-                  '-map 0:v:0',
-                  '-map 0:a:0',
-                  '-filter:a:0', `volume=${vol1}`
-                ])
-              } else {
-                command.outputOptions(['-map 0:v:0', '-map 0:a:0'])
-              }
-            } else if (audioTrack2) {
-              // Only track 2 with volume
-              if (vol2 < 1.0) {
-                command.outputOptions([
-                  '-map 0:v:0',
-                  '-map 0:a:1',
-                  '-filter:a:0', `volume=${vol2}`
-                ])
-              } else {
-                command.outputOptions(['-map 0:v:0', '-map 0:a:1'])
-              }
-            } else {
-              // No audio - video only
-              command.noAudio()
-            }
-
-            command
-              .on('progress', progress => {
-                if (mainWindow && progress.percent) {
-                  mainWindow.webContents.send('export:progress', { percent: progress.percent })
-                }
-              })
-              .on('end', () => {
-                resolve({ success: true, filePath: outputPath })
-              })
-              .on('error', err => {
-                console.error('Export error:', err)
-                reject(err)
-              })
-              .save(outputPath)
           })
-        } catch (error) {
-          console.error('Failed to export clip:', error)
-          throw error
-        }
-      }
-    )
+          .on('end', () => {
+            resolve({ success: true, filePath: outputPath })
+          })
+          .on('error', err => {
+            console.error('Export error:', err)
+            reject(err)
+          })
+          .save(outputPath)
+      })
+    } catch (error) {
+      console.error('Failed to export clip:', error)
+      throw error
+    }
+  }
+)
 
-    // Clean up orphaned cache files (thumbnails/audio for clips that no longer exist)
-    ipcMain.handle('cleanup:orphans', async () => {
-      try {
-        console.log('[Main] Cleaning up orphaned cache files...')
-        const result = await cleanupOrphanedCache(getClipsPath(), thumbnailsPath)
-        return result
-      } catch (error) {
-        console.error('Failed to cleanup orphans:', error)
-        return { deletedCount: 0, errors: [String(error)] }
-      }
-    })
+// Clean up orphaned cache files (thumbnails/audio for clips that no longer exist)
+ipcMain.handle('cleanup:orphans', async () => {
+  try {
+    console.log('[Main] Cleaning up orphaned cache files...')
+    const result = await cleanupOrphanedCache(getClipsPath(), thumbnailsPath)
+    return result
+  } catch (error) {
+    console.error('Failed to cleanup orphans:', error)
+    return { deletedCount: 0, errors: [String(error)] }
+  }
+})
 
-    // Get cache storage statistics
-    ipcMain.handle('cleanup:stats', async () => {
-      try {
-        const stats = await getCacheStats(thumbnailsPath)
-        return {
-          ...stats,
-          thumbnailSizeFormatted: formatBytes(stats.thumbnailSize),
-          audioSizeFormatted: formatBytes(stats.audioSize),
-          totalSizeFormatted: formatBytes(stats.totalSize)
-        }
-      } catch (error) {
-        console.error('Failed to get cache stats:', error)
-        return null
-      }
-    })
+// Get cache storage statistics
+ipcMain.handle('cleanup:stats', async () => {
+  try {
+    const stats = await getCacheStats(thumbnailsPath)
+    return {
+      ...stats,
+      thumbnailSizeFormatted: formatBytes(stats.thumbnailSize),
+      audioSizeFormatted: formatBytes(stats.audioSize),
+      totalSizeFormatted: formatBytes(stats.totalSize),
+    }
+  } catch (error) {
+    console.error('Failed to get cache stats:', error)
+    return null
+  }
+})
 
 // App lifecycle
 app.whenReady().then(async () => {
@@ -1985,13 +2030,13 @@ app.whenReady().then(async () => {
   setTimeout(() => {
     try {
       const { backendLogPath } = getBackendPaths()
-      const checkOutput = execSync(
-        'tasklist /NH /FO CSV /FI "IMAGENAME eq ClipVault.exe"',
-        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }
-      )
+      const checkOutput = execSync('tasklist /NH /FO CSV /FI "IMAGENAME eq ClipVault.exe"', {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      })
       const isRunning = checkOutput.includes('ClipVault.exe')
       console.log('Backend verification after spawn:', isRunning ? 'running' : 'not running')
-      
+
       // Check if log file was created
       if (existsSync(backendLogPath)) {
         console.log('Backend log file exists:', backendLogPath)
@@ -2011,11 +2056,11 @@ app.whenReady().then(async () => {
     ignoreInitial: true, // Don't fire events for existing files on startup
     awaitWriteFinish: {
       stabilityThreshold: 500, // Wait 500ms after file size stops changing
-      pollInterval: 100
-    }
+      pollInterval: 100,
+    },
   })
 
-  clipsWatcher.on('add', (filePath) => {
+  clipsWatcher.on('add', filePath => {
     // Only notify for .mp4 files
     if (filePath.endsWith('.mp4')) {
       console.log('[Watcher] New clip detected:', filePath)
@@ -2026,7 +2071,7 @@ app.whenReady().then(async () => {
     }
   })
 
-  clipsWatcher.on('unlink', (filePath) => {
+  clipsWatcher.on('unlink', filePath => {
     // Notify when a clip is deleted
     if (filePath.endsWith('.mp4')) {
       console.log('[Watcher] Clip deleted:', filePath)
@@ -2036,7 +2081,7 @@ app.whenReady().then(async () => {
     }
   })
 
-  clipsWatcher.on('error', (error) => {
+  clipsWatcher.on('error', error => {
     console.error('[Watcher] Error watching clips folder:', error)
   })
 
@@ -2060,7 +2105,7 @@ app.on('window-all-closed', () => {
 })
 
 // Handle app quit
-app.on('before-quit', (event) => {
+app.on('before-quit', _event => {
   console.log('App is quitting...')
   isQuitting = true
   saveWindowStateImmediate()
