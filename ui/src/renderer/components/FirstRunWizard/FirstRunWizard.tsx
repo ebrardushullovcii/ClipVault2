@@ -304,15 +304,14 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     Clips folder path
                   </label>
                   <div className="flex flex-wrap items-center gap-3">
-                    <div
+                    <input
                       id={clipsPathDisplayId}
-                      role="textbox"
-                      aria-readonly="true"
+                      type="text"
+                      readOnly
                       aria-labelledby={clipsPathLabelId}
+                      value={settings.output_path}
                       className="flex-1 rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary"
-                    >
-                      {settings.output_path}
-                    </div>
+                    />
                     <button
                       type="button"
                       onClick={handleBrowseFolder}

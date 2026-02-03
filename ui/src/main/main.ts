@@ -772,9 +772,9 @@ const normalizeSettings = (raw: unknown, fileExists: boolean) => {
     },
   }
 
-  if (!merged.output_path || typeof merged.output_path !== 'string') {
-    merged.output_path = defaultSettings.output_path
-  }
+  const trimmedOutputPath =
+    typeof merged.output_path === 'string' ? merged.output_path.trim() : ''
+  merged.output_path = trimmedOutputPath || defaultSettings.output_path
 
   if (!Number.isFinite(merged.video.monitor)) {
     merged.video.monitor = 0
@@ -874,7 +874,16 @@ ipcMain.handle('settings:save', async (_, settings: unknown) => {
       await mkdir(configDir, { recursive: true })
     }
 
-    if (normalized.output_path) {
+    const trimmedOutputPath =
+      typeof normalized.output_path === 'string' ? normalized.output_path.trim() : ''
+
+    if (!trimmedOutputPath) {
+      normalized.output_path = defaultSettings.output_path
+    } else {
+      normalized.output_path = trimmedOutputPath
+    }
+
+    if (typeof normalized.output_path === 'string' && normalized.output_path.trim()) {
       try {
         await mkdir(normalized.output_path, { recursive: true })
       } catch (mkdirError) {
