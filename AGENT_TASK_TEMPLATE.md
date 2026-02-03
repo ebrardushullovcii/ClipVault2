@@ -1,10 +1,10 @@
 ## Context Files (READ IN ORDER)
 
-1. **CLAUDE.md** - Read this first for project overview
-2. **PROGRESS.md** - Check "Current Status" section for active tasks
-3. **AGENTS.md** - Build commands and code conventions (CRITICAL)
-4. **AGENT_WORKFLOW.md** - Step-by-step development process
-5. **PLAN.md** - Static roadmap if relevant to this feature
+1. **AGENTS.md** - Agent rules, build commands, code conventions (CRITICAL)
+2. **PROGRESS.md** - Check "Current Status Overview" for active tasks
+3. **AGENT_WORKFLOW.md** - Step-by-step development process
+4. **PLAN.md** - Static roadmap if relevant to this feature
+5. **CLAUDE.md** - Claude-specific notes (only if you're Claude)
 
 ## Rules (STRICT)
 
@@ -29,4 +29,4 @@ Before saying you're done:
 
 ## Questions?
 
-Ask if anything is unclear before starting work.
+Call out anything unclear before starting work.

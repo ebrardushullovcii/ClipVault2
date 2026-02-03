@@ -24,7 +24,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onRefresh,
   canGoBack,
   canGoForward,
-  hideHeader = false
+  hideHeader = false,
 }) => {
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background-primary">

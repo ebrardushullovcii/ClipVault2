@@ -25,7 +25,7 @@
 - [x] 120-second replay buffer in memory
 - [x] F9 global hotkey (low-level keyboard hook)
 - [x] System tray with custom PNG icon (64x64-2.png)
-- [x] JSON configuration (config/settings.json)
+- [x] JSON configuration (`%APPDATA%\\ClipVault\\settings.json`, template in `config/settings.json`)
 - [x] File logging with rotation
 - [x] Single instance protection (Windows mutex)
 
@@ -419,7 +419,7 @@ Without game: 2026-02-02_16-49-32.mp4
   - Saves playhead position
   - Saves audio track settings (enabled, muted, volume for both tracks)
   - Debounced saves (500ms delay) to avoid excessive disk writes
-  - Saves to `{clipsPath}/clips-metadata/{clipId}.editor.json`
+- Saves to `{clipsPath}/clips-metadata/{clipId}.json`
 
 - **Editor State Auto-Load**: Restores editor state when reopening a clip
   - Loads saved trim positions and restores them in the UI

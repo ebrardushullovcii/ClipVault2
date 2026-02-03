@@ -24,7 +24,6 @@
   },
   "dependencies": {
     "chokidar": "^3.6.0",
-    "electron-store": "^8.1.0",
     "fluent-ffmpeg": "^2.1.2",
     "zustand": "^4.4.7"
   },
@@ -44,10 +43,10 @@
     "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
-    "framer-motion": "^10.16.16",
     "lucide-react": "^0.294.0",
     "postcss": "^8.4.32",
     "prettier": "^3.8.1",
+    "prettier-plugin-tailwindcss": "^0.7.2",
     "rcedit": "^4.0.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

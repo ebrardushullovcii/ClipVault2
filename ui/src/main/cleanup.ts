@@ -3,9 +3,9 @@
  * Handles permanent deletion (bypassing recycle bin) and cache management
  */
 
-import { unlink, readdir, stat, rmdir } from 'fs/promises'
+import { unlink, readdir, stat } from 'fs/promises'
 import { existsSync } from 'fs'
-import { join, basename, extname } from 'path'
+import { join, basename } from 'path'
 
 /**
  * Permanently delete a file (bypasses recycle bin on Windows)
@@ -16,7 +16,7 @@ export async function permanentDelete(filePath: string): Promise<boolean> {
     if (!existsSync(filePath)) {
       return true // Already deleted
     }
-    
+
     await unlink(filePath)
     console.log(`[Cleanup] Permanently deleted: ${filePath}`)
     return true
@@ -31,12 +31,9 @@ export async function permanentDelete(filePath: string): Promise<boolean> {
  * - Thumbnail (.jpg)
  * - Audio tracks (.m4a)
  */
-export async function deleteClipCache(
-  clipId: string,
-  thumbnailsPath: string
-): Promise<boolean> {
+export async function deleteClipCache(clipId: string, thumbnailsPath: string): Promise<boolean> {
   let success = true
-  
+
   try {
     // Delete thumbnail
     const thumbnailPath = join(thumbnailsPath, `${clipId}.jpg`)
@@ -44,22 +41,22 @@ export async function deleteClipCache(
       const thumbDeleted = await permanentDelete(thumbnailPath)
       if (!thumbDeleted) success = false
     }
-    
+
     // Delete audio cache files
     const audioCachePath = join(thumbnailsPath, 'audio')
     const track1Path = join(audioCachePath, `${clipId}_track1.m4a`)
     const track2Path = join(audioCachePath, `${clipId}_track2.m4a`)
-    
+
     if (existsSync(track1Path)) {
       const t1Deleted = await permanentDelete(track1Path)
       if (!t1Deleted) success = false
     }
-    
+
     if (existsSync(track2Path)) {
       const t2Deleted = await permanentDelete(track2Path)
       if (!t2Deleted) success = false
     }
-    
+
     return success
   } catch (error) {
     console.error(`[Cleanup] Error deleting cache for clip ${clipId}:`, error)
@@ -76,24 +73,22 @@ export async function cleanupOrphanedCache(
   thumbnailsPath: string
 ): Promise<{ deletedCount: number; errors: string[] }> {
   const result = { deletedCount: 0, errors: [] as string[] }
-  
+
   try {
     // Get list of valid clip IDs from the clips directory
     // Clip IDs are the full filename without .mp4 extension
     // e.g., "VALORANT__2025-10-12__20-52-36.mp4" -> "VALORANT__2025-10-12__20-52-36"
     const clipFiles = await readdir(clipsPath)
     const validClipIds = new Set(
-      clipFiles
-        .filter(f => f.endsWith('.mp4'))
-        .map(f => basename(f, '.mp4')) // Full clip ID = filename without .mp4
+      clipFiles.filter(f => f.endsWith('.mp4')).map(f => basename(f, '.mp4')) // Full clip ID = filename without .mp4
     )
-    
+
     // Clean up orphaned thumbnails
     if (existsSync(thumbnailsPath)) {
       const thumbFiles = await readdir(thumbnailsPath)
       for (const thumbFile of thumbFiles) {
         if (!thumbFile.endsWith('.jpg')) continue
-        
+
         const clipId = basename(thumbFile, '.jpg')
         if (!validClipIds.has(clipId)) {
           const thumbPath = join(thumbnailsPath, thumbFile)
@@ -107,14 +102,14 @@ export async function cleanupOrphanedCache(
         }
       }
     }
-    
+
     // Clean up orphaned audio cache
     const audioCachePath = join(thumbnailsPath, 'audio')
     if (existsSync(audioCachePath)) {
       const audioFiles = await readdir(audioCachePath)
       for (const audioFile of audioFiles) {
         if (!audioFile.endsWith('.m4a')) continue
-        
+
         // Extract clip ID from filename like "{clipId}_track1.m4a"
         // The clip ID contains multiple underscores, so we need to remove only the last part
         const clipId = audioFile.replace(/_track[12]\.m4a$/, '')
@@ -130,7 +125,7 @@ export async function cleanupOrphanedCache(
         }
       }
     }
-    
+
     console.log(`[Cleanup] Orphaned cache cleanup complete. Deleted ${result.deletedCount} files.`)
     return result
   } catch (error) {
@@ -156,9 +151,9 @@ export async function getCacheStats(thumbnailsPath: string): Promise<{
     thumbnailSize: 0,
     audioCount: 0,
     audioSize: 0,
-    totalSize: 0
+    totalSize: 0,
   }
-  
+
   try {
     // Calculate thumbnails
     if (existsSync(thumbnailsPath)) {
@@ -172,7 +167,7 @@ export async function getCacheStats(thumbnailsPath: string): Promise<{
         }
       }
     }
-    
+
     // Calculate audio cache
     const audioCachePath = join(thumbnailsPath, 'audio')
     if (existsSync(audioCachePath)) {
@@ -186,7 +181,7 @@ export async function getCacheStats(thumbnailsPath: string): Promise<{
         }
       }
     }
-    
+
     stats.totalSize = stats.thumbnailSize + stats.audioSize
     return stats
   } catch (error) {
@@ -203,5 +198,5 @@ export function formatBytes(bytes: number): string {
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
 }

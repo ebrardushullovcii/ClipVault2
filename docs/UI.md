@@ -2,257 +2,68 @@
 
 Electron-based user interface for browsing, editing, and exporting clips.
 
-## Architecture
+## Project Structure
 
-```
+```text
 ui/
 ├── src/
 │   ├── main/                    # Electron main process (Node.js)
-│   │   ├── main.ts              # App entry, window management
-│   │   ├── ipc-handlers.ts      # IPC handlers (backend communication)
-│   │   └── preload.ts           # Preload script (secure IPC bridge)
-│   │
+│   │   ├── main.ts              # App entry, window management, IPC handlers
+│   │   ├── cleanup.ts           # Cache cleanup utilities
+│   │   └── tsconfig.json
+│   ├── preload/                 # Secure IPC bridge
+│   │   └── index.ts
 │   ├── renderer/                # React UI (Chromium)
-│   │   ├── components/
-│   │   │   ├── Library/         # Clip browser
-│   │   │   ├── Editor/          # Video editor
-│   │   │   ├── Export/          # Export dialog
-│   │   │   └── Common/          # Shared components
-│   │   ├── stores/              # Zustand state stores
-│   │   ├── hooks/               # Custom React hooks
-│   │   ├── utils/               # Helper functions
+│   │   ├── components/          # Library, Editor, Settings, shared UI
+│   │   ├── hooks/               # useLibraryState, thumbnails, metadata, etc.
+│   │   ├── stores/              # Zustand stores (e.g., gameTagEditorStore)
+│   │   ├── styles/              # Global styles
+│   │   ├── types/               # Shared TypeScript types
+│   │   ├── utils/               # Helper utilities
 │   │   └── App.tsx              # Root component
-│   │
-│   └── preload/                 # Preload script
-│       └── index.ts             # Exposed IPC APIs
-│
-├── package.json
+│   └── constants/               # Shared constants
+├── package.json                 # Build + electron-builder config
 ├── vite.config.ts
-├── electron-builder.json5
-└── tsconfig.json
+└── tailwind.config.js
 ```
 
-## Communication
+## Process Model
 
-### Backend (C++) ↔ UI (Electron)
+- **Electron main** starts the UI, registers the custom protocol, and spawns the C++ backend.
+- **Renderer** uses `window.electronAPI` (from preload) to call IPC handlers.
+- **Backend** runs as a separate process (tray icon + recorder) and is managed by the main process.
 
-**Protocol**: Named pipes or custom protocol
+## IPC & Protocols
 
-When UI launches, it spawns the C++ backend:
-```typescript
-// In main.ts
-const backendPath = path.join(process.resourcesPath, 'bin/ClipVault.exe');
-const backend = spawn(backendPath, ['--ipc']);
-```
+The renderer talks to the main process via IPC. The main process exposes a curated API in `preload/index.ts`.
 
-UI communicates via:
-- **clipvault:// protocol** - Opens specific clips: `clipvault://open?file=path.mp4`
-- **HTTP API** - Backend serves localhost API for status/commands
-- **IPC** - Direct process communication
+Common IPC channels:
+- `clips:list`, `clips:scan`, `clips:delete`
+- `clips:saveMetadata`, `clips:getMetadata`
+- `editor:saveState`, `editor:loadState`
+- `ffmpeg:thumbnail`, `ffmpeg:trim`, `ffmpeg:info`
+- `settings:get`, `settings:set`
 
-### API Endpoints
+Custom protocol:
+- `clipvault://` is used to safely load clips, thumbnails, audio cache, and exports without exposing raw paths.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/status` | GET | Get backend status (running, recording) |
-| `/api/clips` | GET | List saved clips |
-| `/api/clips/:name` | GET | Get clip metadata |
-| `/api/settings` | GET/POST | Get/update settings |
-| `/api/save` | POST | Trigger manual save |
+## Key Views
 
-## Views
-
-### Library View
-
-Displays all saved clips in a grid with:
-- Thumbnail (first frame)
-- Duration, resolution, FPS
-- Tags and favorite indicator
-- Date created, file size
-
-**Controls**:
-- Search bar (filter by name, tags)
-- Sort dropdown (date, size, name, favorites)
-- Filter buttons (all, favorites, recent)
-
-### Editor View
-
-For editing individual clips:
-
-**Timeline**:
-- Scrubber for seeking
-- Trim markers (start/end) with drag handles
-- Current time / total time display
-
-**Audio Controls**:
-- Track 1 toggle (desktop audio)
-- Track 2 toggle (microphone)
-- Volume sliders per track
-
-**Metadata**:
-- Tags input (add/remove)
-- Notes textarea
-- Favorite toggle
-
-### Export View
-
-**Settings**:
-- Trim points (use current or full)
-- Audio track selection
-- Presets: Discord, YouTube, Original
-
-**Progress**:
-- FFmpeg progress bar
-- Cancel button
-- "Open folder" on completion
+- **Library**: Grid/list browsing, search/sort/filter, multi-select bulk actions.
+- **Editor**: Trim points, audio track toggles, volume, tags/favorite/game, export.
+- **Settings**: Recording quality, resolution/FPS, audio device selection, startup behavior.
 
 ## State Management
 
-Zustand stores for state management:
+- Lightweight Zustand store for specific UI flows (`gameTagEditorStore.ts`).
+- Component state + custom hooks (`useLibraryState`, `useThumbnails`, etc.) for most UI state.
 
-| Store | Purpose |
-|-------|---------|
-| `clipStore.ts` | Library clips list, scanning |
-| `editorStore.ts` | Current clip, trim points, audio state |
-| `exportStore.ts` | Export settings, progress |
-| `uiStore.ts` | Theme, modals, notifications |
-
-## IPC Handlers
-
-Main process handlers available to renderer:
-
-```typescript
-// File operations
-ipcRenderer.invoke('clips:list', dir)
-ipcRenderer.invoke('clips:scan')
-ipcRenderer.invoke('clips:getMetadata', filename)
-ipcRenderer.invoke('clips:delete', filename)
-
-// FFmpeg operations
-ipcRenderer.invoke('ffmpeg:thumbnail', input, output, time)
-ipcRenderer.invoke('ffmpeg:trim', input, output, start, end, audioTracks)
-ipcRenderer.invoke('ffmpeg:info', file)
-
-// Settings
-ipcRenderer.invoke('settings:get')
-ipcRenderer.invoke('settings:set', newSettings)
-```
-
-## Backend Communication
-
-### Starting Backend
-
-```typescript
-// In src/main/main.ts
-async function startBackend() {
-  const backendExe = path.join(process.resourcesPath, 'bin/ClipVault.exe');
-  const backend = spawn(backendExe, ['--ui', '--port', '28645'], {
-    detached: true,
-    stdio: 'pipe'
-  });
-
-  // Wait for backend to be ready
-  await waitForUrl('http://localhost:28645/api/status');
-}
-```
-
-### Single Instance
-
-If another instance launches, focus existing window:
-
-```typescript
-// In main.ts
-app.requestSingleInstanceLock([...commandLine]);
-
-app.on('second-instance', (event, commandLine) => {
-  // Focus existing window
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-  }
-});
-```
-
-## Styling
-
-- **Framework**: Tailwind CSS
-- **Theme**: Dark mode by default
-- **Color palette**: Custom accent color (cyan/teal)
-- **Animations**: Framer Motion for transitions
-
-### Tailwind Config
-
-```javascript
-// tailwind.config.js
-module.exports = {
-  darkMode: 'class',
-  theme: {
-    extend: {
-      colors: {
-        accent: {
-          50: '#ecfeff',
-          100: '#cffafe',
-          // ...
-          500: '#06b6d4',  // Main accent
-          600: '#0891b2',
-        }
-      }
-    }
-  }
-}
-```
-
-## Development
-
-### Running Dev Server
+## Build & Dev
 
 ```powershell
 cd ui
-npm run dev
-```
-
-### Building React
-
-```powershell
-npm run build:react
-```
-
-### Electron Packaging
-
-```powershell
+npm run dev          # Dev mode
+npm run build:react  # Build renderer
+npm run build:electron
 npx electron-builder --win --dir
 ```
-
-Output: `release/win-unpacked/`
-
-## Troubleshooting
-
-### UI doesn't connect to backend
-
-Check backend is running:
-```powershell
-curl http://localhost:28645/api/status
-```
-
-### Clips not appearing
-
-1. Check output path in settings
-2. Verify backend has file permissions
-3. Check logs: `resources/bin/clipvault.log`
-
-### Export fails
-
-1. Check FFmpeg is bundled: `resources/bin/ffmpeg.exe`
-2. Verify disk space
-3. Check export format compatibility
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|----------|--------|
-| `Space` | Play/Pause |
-| `J` / `L` | Seek backward/forward |
-| `I` / `O` | Set trim start/end |
-| `F` | Toggle favorite |
-| `Ctrl+E` | Export |
-| `F12` | Developer tools |

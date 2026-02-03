@@ -23,13 +23,13 @@ export const useVirtualization = (config: VirtualizationConfig) => {
     const rowCount = Math.ceil(itemCount / gridCols)
     const scrollRow = Math.floor(scrollTop / itemHeight)
     const visibleRows = Math.ceil(containerHeight / itemHeight)
-    
+
     const startRow = Math.max(0, scrollRow - overscan)
     const endRow = Math.min(rowCount, scrollRow + visibleRows + overscan)
-    
+
     const startIndex = startRow * gridCols
     const endIndex = Math.min(itemCount, endRow * gridCols)
-    
+
     return { startIndex, endIndex, startRow, endRow, rowCount }
   }, [scrollTop, containerHeight, itemHeight, overscan, gridCols, itemCount])
 

@@ -84,7 +84,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   editor: {
     exportClip: (params: ExportParams) => ipcRenderer.invoke('editor:exportClip', params),
-    saveState: (clipId: string, state: unknown) => ipcRenderer.invoke('editor:saveState', clipId, state),
+    saveState: (clipId: string, state: unknown) =>
+      ipcRenderer.invoke('editor:saveState', clipId, state),
     loadState: (clipId: string) => ipcRenderer.invoke('editor:loadState', clipId),
   },
 
@@ -113,6 +114,30 @@ interface VideoMetadata {
   audioTracks: number
 }
 
+interface AudioTrackState {
+  enabled: boolean
+  muted?: boolean
+  volume?: number
+}
+
+type AudioTrackSetting = boolean | AudioTrackState
+
+interface ClipMetadata {
+  favorite?: boolean
+  tags?: string[]
+  game?: string
+  trim?: {
+    start: number
+    end: number
+  }
+  audio?: {
+    track1?: AudioTrackSetting
+    track2?: AudioTrackSetting
+  }
+  playheadPosition?: number
+  lastModified?: string
+}
+
 // Type for clip info (matches main process)
 interface ClipInfo {
   id: string
@@ -121,7 +146,7 @@ interface ClipInfo {
   size: number
   createdAt: string
   modifiedAt: string
-  metadata: unknown | null
+  metadata: ClipMetadata | null
 }
 
 interface ExportParams {
@@ -147,27 +172,7 @@ interface AudioTrackUrls {
   error?: string
 }
 
-// Editor state for persistence
-interface EditorState {
-  trim: {
-    start: number
-    end: number
-  }
-  playheadPosition: number
-  audio: {
-    track1: {
-      enabled: boolean
-      muted: boolean
-      volume: number
-    }
-    track2: {
-      enabled: boolean
-      muted: boolean
-      volume: number
-    }
-  }
-  lastModified: string
-}
+type EditorState = ClipMetadata
 
 interface AudioDeviceInfo {
   id: string
@@ -194,13 +199,15 @@ declare global {
       saveSettings: (settings: AppSettings) => Promise<{ success: boolean }>
       setStartup: (enabled: boolean) => Promise<{ success: boolean }>
       getClipsList: () => Promise<ClipInfo[]>
-      saveClipMetadata: (clipId: string, metadata: unknown) => Promise<boolean>
-      getClipMetadata: (clipId: string) => Promise<unknown | null>
+      saveClipMetadata: (clipId: string, metadata: ClipMetadata) => Promise<boolean>
+      getClipMetadata: (clipId: string) => Promise<ClipMetadata | null>
       generateThumbnail: (clipId: string, videoPath: string) => Promise<string>
       getExistingThumbnails: () => Promise<{ [clipId: string]: string }>
       getVideoMetadata: (videoPath: string) => Promise<VideoMetadata>
       extractAudioTracks: (clipId: string, videoPath: string) => Promise<AudioTrackUrls>
-      getVideoFileUrl: (filename: string) => Promise<{ success: boolean; url?: string; path?: string; error?: string }>
+      getVideoFileUrl: (
+        filename: string
+      ) => Promise<{ success: boolean; url?: string; path?: string; error?: string }>
       cleanupOrphanedCache: () => Promise<{ deletedCount: number; errors: string[] }>
       getCacheStats: () => Promise<{
         thumbnailCount: number

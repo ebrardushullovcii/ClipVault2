@@ -306,9 +306,10 @@ obs_add_data_path("./data/libobs");   // WRONG
 1. obs_startup
 2. obs_add_data_path
 3. obs_add_module_path
-4. obs_reset_video (REQUIRES graphics_module)
-5. obs_reset_audio
-6. obs_load_all_modules
+4. obs_load_all_modules (must be before video/audio reset)
+5. obs_post_load_modules
+6. obs_reset_video (REQUIRES graphics_module)
+7. obs_reset_audio
 
 ### Mistake 7: Not Setting last_error_
 **Symptom**: "Failed to initialize" with no details

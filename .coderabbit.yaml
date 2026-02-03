@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 language: en
 early_access: false
 reviews:
@@ -15,13 +16,10 @@ reviews:
     - "!**/.git/**"
     - "!**/third_party/**"
     - "!**/bin/**"
-    - "!ui/node_modules/**"
-    - "!ui/release/**"
-    - ".coderabbit.yaml"
-    - "package.json"
-    - "package-lock.json"
-    - "ui/package.json"
-    - "ui/package-lock.json"
+    - "**/.coderabbit.yaml"
+    - "**/package.json"
+    - "**/package-lock.json"
+    - "**/*.md"
     - "src/**"
     - "ui/src/**"
 chat:

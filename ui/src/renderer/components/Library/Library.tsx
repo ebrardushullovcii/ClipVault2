@@ -22,11 +22,13 @@ import { GameTagEditor } from '../GameTagEditor'
 import { useThumbnails } from '../../hooks/useThumbnails'
 import { useVideoMetadata, type VideoMetadata } from '../../hooks/useVideoMetadata'
 import { useLibraryState } from '../../hooks/useLibraryState'
-import type { ClipInfo, ClipMetadata } from '../../types/electron'
+import type { ClipInfo, ClipMetadata, AudioTrackSetting } from '../../types/electron'
 
 export interface LibraryProps {
   onOpenEditor: (clip: ClipInfo, metadata: VideoMetadata) => void
-  onRegisterUpdate: ((updateFn: (clipId: string, metadata: ClipMetadata) => void) => void) | undefined
+  onRegisterUpdate:
+    | ((updateFn: (clipId: string, metadata: ClipMetadata) => void) => void)
+    | undefined
 }
 
 // Constants for virtualization
@@ -35,6 +37,11 @@ const LIST_CARD_HEIGHT = 88
 const GRID_GAP = 16
 const LIST_GAP = 16
 const OVERSCAN_ROWS = 2
+
+const resolveAudioEnabled = (track?: AudioTrackSetting): boolean => {
+  if (typeof track === 'boolean') return track
+  return track?.enabled ?? true
+}
 
 export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate }) => {
   const [clips, setClips] = useState<ClipInfo[]>([])
@@ -68,7 +75,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
   const [gamesList, setGamesList] = useState<string[]>([])
   const [gamesLoading, setGamesLoading] = useState(false)
   const [gameSearchQuery, setGameSearchQuery] = useState('')
-  
+
   // Use persistent state
   const {
     state: libraryState,
@@ -87,7 +94,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
 
   const { thumbnails, generateThumbnail } = useThumbnails()
   const { metadata, fetchMetadata } = useVideoMetadata()
-  
+
   // Track filenames currently being processed to avoid re-processing on re-renders
   const processingFilesRef = useRef<Set<string>>(new Set())
   // Track retry attempts for each filename
@@ -115,17 +122,17 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
 
     const unsubscribeNew = window.electronAPI.on('clips:new', (data: unknown) => {
       const { filename } = data as { filename: string }
-      
+
       // Skip if already processing this file
       if (processingFilesRef.current.has(filename)) {
         console.log(`[Library] Skipping duplicate processing for ${filename}`)
         return
       }
-      
+
       // Mark as processing
       processingFilesRef.current.add(filename)
       retryAttemptsRef.current.set(filename, 0)
-      
+
       // Immediately add placeholder to show something to the user
       const newClip: ClipInfo = {
         id: filename.replace('.mp4', ''),
@@ -137,28 +144,28 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
         metadata: null,
       }
       setClips(prev => [newClip, ...prev])
-      
+
       // Attempt 1: Wait 3 seconds for file to be fully written
       setTimeout(() => {
         console.log(`[Library] Attempt 1: Refreshing clip data for ${filename}...`)
         retryAttemptsRef.current.set(filename, 1)
         refreshClipData(filename, 1)
       }, 3000)
-      
+
       // Attempt 2: Wait 6 seconds total (3s additional)
       setTimeout(() => {
         console.log(`[Library] Attempt 2: Refreshing clip data for ${filename}...`)
         retryAttemptsRef.current.set(filename, 2)
         refreshClipData(filename, 2)
       }, 6000)
-      
+
       // Attempt 3: Wait 15 seconds total (9s additional after attempt 2)
       // This is the FINAL attempt - stop after this regardless of result
       setTimeout(() => {
         console.log(`[Library] Attempt 3 (FINAL): Refreshing clip data for ${filename}...`)
         retryAttemptsRef.current.set(filename, 3)
         refreshClipData(filename, 3)
-        
+
         // Clean up tracking after final attempt
         setTimeout(() => {
           processingFilesRef.current.delete(filename)
@@ -181,38 +188,48 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
       unsubscribeRemoved?.()
     }
   }, [isRestored])
-  
+
   // Refresh data for a specific clip
-  const refreshClipData = useCallback(async (filename: string, attempt?: number) => {
-    try {
-      // Reload the entire clips list to get updated file info
-      const clipList = await window.electronAPI.getClipsList()
-      const updatedClip = clipList.find(c => c.filename === filename)
-      
-      if (updatedClip) {
-        // Update the clip in state with real data
-        setClips(prev => prev.map(clip => 
-          clip.filename === filename ? updatedClip : clip
-        ))
-        
-        // Trigger thumbnail generation
-        if (updatedClip.path && updatedClip.size > 0) {
-          console.log(`[Library] Attempt ${attempt || '?'}: Generating thumbnail for ${filename}...`)
-          generateThumbnail(updatedClip.id, updatedClip.path)
-            .then(() => console.log(`[Library] Thumbnail generated for ${filename}`))
-            .catch(err => console.error(`[Library] Failed to generate thumbnail for ${filename}:`, err))
-          
-          // Fetch video metadata (duration, resolution, etc.)
-          console.log(`[Library] Attempt ${attempt || '?'}: Fetching metadata for ${filename}...`)
-          fetchMetadata(updatedClip.id, updatedClip.path)
-            .then(() => console.log(`[Library] Metadata fetched for ${filename}`))
-            .catch(err => console.error(`[Library] Failed to fetch metadata for ${filename}:`, err))
+  const refreshClipData = useCallback(
+    async (filename: string, attempt?: number) => {
+      try {
+        // Reload the entire clips list to get updated file info
+        const clipList = await window.electronAPI.getClipsList()
+        const updatedClip = clipList.find(c => c.filename === filename)
+
+        if (updatedClip) {
+          // Update the clip in state with real data
+          setClips(prev => prev.map(clip => (clip.filename === filename ? updatedClip : clip)))
+
+          // Trigger thumbnail generation
+          if (updatedClip.path && updatedClip.size > 0) {
+            console.log(
+              `[Library] Attempt ${attempt || '?'}: Generating thumbnail for ${filename}...`
+            )
+            generateThumbnail(updatedClip.id, updatedClip.path)
+              .then(() => console.log(`[Library] Thumbnail generated for ${filename}`))
+              .catch(err =>
+                console.error(`[Library] Failed to generate thumbnail for ${filename}:`, err)
+              )
+
+            // Fetch video metadata (duration, resolution, etc.)
+            console.log(`[Library] Attempt ${attempt || '?'}: Fetching metadata for ${filename}...`)
+            fetchMetadata(updatedClip.id, updatedClip.path)
+              .then(() => console.log(`[Library] Metadata fetched for ${filename}`))
+              .catch(err =>
+                console.error(`[Library] Failed to fetch metadata for ${filename}:`, err)
+              )
+          }
         }
+      } catch (err) {
+        console.error(
+          `[Library] Attempt ${attempt || '?'}: Failed to refresh clip data for ${filename}:`,
+          err
+        )
       }
-    } catch (err) {
-      console.error(`[Library] Attempt ${attempt || '?'}: Failed to refresh clip data for ${filename}:`, err)
-    }
-  }, [generateThumbnail, fetchMetadata])
+    },
+    [generateThumbnail, fetchMetadata]
+  )
 
   const loadClips = useCallback(async () => {
     try {
@@ -230,11 +247,11 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
 
   // Handle metadata updates from Editor (real-time updates!) - defined first
   const handleMetadataUpdate = useCallback((clipId: string, newMetadata: ClipMetadata) => {
-    setClips(prev => prev.map(clip =>
-      clip.id === clipId
-        ? { ...clip, metadata: { ...clip.metadata, ...newMetadata } }
-        : clip
-    ))
+    setClips(prev =>
+      prev.map(clip =>
+        clip.id === clipId ? { ...clip, metadata: { ...clip.metadata, ...newMetadata } } : clip
+      )
+    )
   }, [])
 
   // Handle editing game tag
@@ -243,30 +260,33 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
   }, [])
 
   // Handle saving game tag
-  const handleSaveGame = useCallback(async (game: string | null) => {
-    if (!editingGameClip) return
+  const handleSaveGame = useCallback(
+    async (game: string | null) => {
+      if (!editingGameClip) return
 
-    try {
-      const newMetadata: ClipMetadata = {
-        ...(editingGameClip.metadata ?? {}),
-        game: game || undefined,
+      try {
+        const newMetadata: ClipMetadata = {
+          ...(editingGameClip.metadata ?? {}),
+          game: game || undefined,
+        }
+
+        // Save to backend
+        await window.electronAPI.saveClipMetadata(editingGameClip.id, newMetadata)
+
+        // Update local state
+        setClips(prev =>
+          prev.map(clip =>
+            clip.id === editingGameClip.id ? { ...clip, metadata: newMetadata } : clip
+          )
+        )
+      } catch (error) {
+        console.error('[Library] Failed to update game tag:', error)
       }
 
-      // Save to backend
-      await window.electronAPI.saveClipMetadata(editingGameClip.id, newMetadata)
-
-      // Update local state
-      setClips(prev => prev.map(clip =>
-        clip.id === editingGameClip.id
-          ? { ...clip, metadata: newMetadata }
-          : clip
-      ))
-    } catch (error) {
-      console.error('[Library] Failed to update game tag:', error)
-    }
-
-    setEditingGameClip(null)
-  }, [editingGameClip])
+      setEditingGameClip(null)
+    },
+    [editingGameClip]
+  )
 
   // Register update function with parent App (runs after handleMetadataUpdate is defined)
   useEffect(() => {
@@ -366,18 +386,28 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
         case 'name':
           comparison = a.filename.localeCompare(b.filename)
           break
-        case 'favorite':
+        case 'favorite': {
           const aFav = a.metadata?.favorite ? 1 : 0
           const bFav = b.metadata?.favorite ? 1 : 0
           comparison = bFav - aFav
           break
+        }
       }
       // Reverse if ascending
       return libraryState.sortDirection === 'asc' ? -comparison : comparison
     })
 
     return result
-  }, [clips, libraryState.searchQuery, libraryState.sortBy, libraryState.sortDirection, libraryState.filterBy, libraryState.showFavoritesOnly, libraryState.selectedTag, libraryState.selectedGame])
+  }, [
+    clips,
+    libraryState.searchQuery,
+    libraryState.sortBy,
+    libraryState.sortDirection,
+    libraryState.filterBy,
+    libraryState.showFavoritesOnly,
+    libraryState.selectedTag,
+    libraryState.selectedGame,
+  ])
 
   const clearSelection = useCallback(() => {
     setSelectedClipIds(new Set())
@@ -487,12 +517,10 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null
+      const target = event.target
       const isTypingField =
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          (target as HTMLElement).isContentEditable)
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
 
       if (isTypingField) {
         return
@@ -640,7 +668,9 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
     if (failed.length > 0) {
       showBulkMessage(`Failed to update ${failed.length} clips`)
     } else {
-      showBulkMessage(bulkTagMode === 'add' ? 'Tag added to selection' : 'Tag removed from selection')
+      showBulkMessage(
+        bulkTagMode === 'add' ? 'Tag added to selection' : 'Tag removed from selection'
+      )
     }
     clearSelection()
   }, [bulkTagMode, bulkTagValue, clearSelection, selectedClips, showBulkMessage])
@@ -699,7 +729,9 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
     if (failed.length > 0) {
       showBulkMessage(`Failed to update ${failed.length} clips`)
     } else {
-      showBulkMessage(bulkGameMode === 'add' ? 'Game tag added to selection' : 'Game tag removed from selection')
+      showBulkMessage(
+        bulkGameMode === 'add' ? 'Game tag added to selection' : 'Game tag removed from selection'
+      )
     }
     clearSelection()
   }, [bulkGameMode, bulkGameValue, clearSelection, selectedClips, showBulkMessage])
@@ -781,8 +813,8 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
       const trimStart = clip.metadata?.trim?.start ?? 0
       const trimEndDefault = clip.metadata?.trim?.end ?? clipMetadata.duration
       const trimEnd = Math.max(trimEndDefault, trimStart + 0.01)
-      const audioTrack1 = clip.metadata?.audio?.track1 ?? true
-      const audioTrack2 = clip.metadata?.audio?.track2 ?? true
+      const audioTrack1 = resolveAudioEnabled(clip.metadata?.audio?.track1)
+      const audioTrack2 = resolveAudioEnabled(clip.metadata?.audio?.track2)
 
       const baseFilename = clip.filename.replace('.mp4', '')
       const timestamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15)
@@ -898,11 +930,14 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
     return () => window.removeEventListener('resize', updateHeight)
   }, [])
 
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const newScrollTop = e.currentTarget.scrollTop
-    setScrollTop(newScrollTop)
-    saveScrollPosition()
-  }, [saveScrollPosition])
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const newScrollTop = e.currentTarget.scrollTop
+      setScrollTop(newScrollTop)
+      saveScrollPosition()
+    },
+    [saveScrollPosition]
+  )
 
   // Calculate visible range for virtualization
   const isGrid = libraryState.viewMode === 'grid'
@@ -913,7 +948,10 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
 
   // Calculate which rows are visible
   const visibleStartRow = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN_ROWS)
-  const visibleEndRow = Math.min(totalRows, Math.ceil((scrollTop + containerHeight) / rowHeight) + OVERSCAN_ROWS)
+  const visibleEndRow = Math.min(
+    totalRows,
+    Math.ceil((scrollTop + containerHeight) / rowHeight) + OVERSCAN_ROWS
+  )
   const visibleStartIndex = visibleStartRow * cols
   const visibleEndIndex = Math.min(filteredAndSortedClips.length, visibleEndRow * cols)
 
@@ -1130,7 +1168,9 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
                           setShowExportSizeDropdown(false)
                         }}
                         className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors hover:bg-background-tertiary ${
-                          bulkTargetSizeMB === option.value ? 'text-accent-primary' : 'text-text-secondary'
+                          bulkTargetSizeMB === option.value
+                            ? 'text-accent-primary'
+                            : 'text-text-secondary'
                         }`}
                       >
                         {option.label}
@@ -1223,15 +1263,15 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
         >
           Favorites
         </button>
-        
+
         {/* Tag Filter Dropdown */}
         {allTags.length > 0 && (
           <>
-            <div className="h-6 w-px bg-border mx-2" />
+            <div className="mx-2 h-6 w-px bg-border" />
             <div className="relative">
               <select
                 value={libraryState.selectedTag || ''}
-                onChange={(e) => {
+                onChange={e => {
                   const value = e.target.value
                   setSelectedTag(value || null)
                 }}
@@ -1243,7 +1283,9 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
               >
                 <option value="">All Tags</option>
                 {allTags.map(tag => (
-                  <option key={tag} value={tag}>{tag} ({tagCounts[tag]})</option>
+                  <option key={tag} value={tag}>
+                    {tag} ({tagCounts[tag]})
+                  </option>
                 ))}
               </select>
               {libraryState.selectedTag && (
@@ -1260,18 +1302,18 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
         )}
 
         {/* Game Filter Dropdown - Always visible */}
-        <div className="h-6 w-px bg-border mx-2" />
+        <div className="mx-2 h-6 w-px bg-border" />
         <div className="relative flex items-center">
           {allGames.length > 0 ? (
             <>
-              <Gamepad2 className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-text-muted pointer-events-none" />
+              <Gamepad2 className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-text-muted" />
               <select
                 value={libraryState.selectedGame || ''}
-                onChange={(e) => {
+                onChange={e => {
                   const value = e.target.value
                   setSelectedGame(value || null)
                 }}
-                className={`cursor-pointer appearance-none rounded-md pl-7 pr-8 py-1.5 text-sm font-medium transition-all ${
+                className={`cursor-pointer appearance-none rounded-md py-1.5 pl-7 pr-8 text-sm font-medium transition-all ${
                   libraryState.selectedGame
                     ? 'bg-accent-primary text-background-primary'
                     : 'bg-background-secondary text-text-muted hover:bg-background-tertiary hover:text-text-primary'
@@ -1279,7 +1321,9 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
               >
                 <option value="">All Games</option>
                 {allGames.map(game => (
-                  <option key={game} value={game}>{game} ({gameCounts[game]})</option>
+                  <option key={game} value={game}>
+                    {game} ({gameCounts[game]})
+                  </option>
                 ))}
               </select>
               {libraryState.selectedGame && (
@@ -1305,7 +1349,9 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
                 }}
                 disabled={clips.length === 0}
                 className="flex items-center gap-1 rounded-md bg-background-secondary px-2 py-1 text-xs text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-                title={clips.length === 0 ? "No clips available to tag" : "Add game to the first clip"}
+                title={
+                  clips.length === 0 ? 'No clips available to tag' : 'Add game to the first clip'
+                }
               >
                 <Plus className="h-3 w-3" />
                 Add Game
@@ -1316,11 +1362,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
       </div>
 
       {/* Content */}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-6"
-      >
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-6">
         {loading ? (
           <div className="flex h-full items-center justify-center">
             <div className="flex flex-col items-center gap-4 text-text-muted">
@@ -1353,42 +1395,40 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
         ) : (
           <>
             {/* Spacer for rows above visible range */}
-            {visibleStartRow > 0 && (
-              <div style={{ height: visibleStartRow * rowHeight }} />
-            )}
-            
+            {visibleStartRow > 0 && <div style={{ height: visibleStartRow * rowHeight }} />}
+
             {/* Visible clips grid */}
             <div
               className={`grid gap-4 ${
-                isGrid
-                  ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-                  : 'grid-cols-1'
+                isGrid ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1'
               }`}
             >
-              {filteredAndSortedClips.slice(visibleStartIndex, visibleEndIndex).map((clip, index) => {
-                const clipIndex = visibleStartIndex + index
-                return (
-                  <ClipCard
-                    key={clip.id}
-                    clip={clip}
-                    clipIndex={clipIndex}
-                    viewMode={libraryState.viewMode}
-                    formatFileSize={formatFileSize}
-                    formatDate={formatDate}
-                    thumbnailUrl={thumbnails[clip.id]}
-                    metadata={metadata[clip.id]}
-                    isSelected={selectedClipIds.has(clip.id)}
-                    showSelection={selectionActive}
-                    onGenerateThumbnail={generateThumbnail}
-                    onFetchMetadata={fetchMetadata}
-                    onCardClick={handleCardClick}
-                    onToggleSelect={handleToggleSelect}
-                    onEditGame={handleEditGame}
-                  />
-                )
-              })}
+              {filteredAndSortedClips
+                .slice(visibleStartIndex, visibleEndIndex)
+                .map((clip, index) => {
+                  const clipIndex = visibleStartIndex + index
+                  return (
+                    <ClipCard
+                      key={clip.id}
+                      clip={clip}
+                      clipIndex={clipIndex}
+                      viewMode={libraryState.viewMode}
+                      formatFileSize={formatFileSize}
+                      formatDate={formatDate}
+                      thumbnailUrl={thumbnails[clip.id]}
+                      metadata={metadata[clip.id]}
+                      isSelected={selectedClipIds.has(clip.id)}
+                      showSelection={selectionActive}
+                      onGenerateThumbnail={generateThumbnail}
+                      onFetchMetadata={fetchMetadata}
+                      onCardClick={handleCardClick}
+                      onToggleSelect={handleToggleSelect}
+                      onEditGame={handleEditGame}
+                    />
+                  )
+                })}
             </div>
-            
+
             {/* Spacer for rows below visible range */}
             {visibleEndRow < totalRows && (
               <div style={{ height: (totalRows - visibleEndRow) * rowHeight }} />

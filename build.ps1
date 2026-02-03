@@ -57,7 +57,7 @@ if ($Setup) {
     }
 
     # Clone OBS if not present
-    $ObsDir = Join-Path $ThirdParty "obs-studio"
+    $ObsDir = Join-Path $ThirdParty "obs-studio-src"
     if (!(Test-Path $ObsDir)) {
         Write-Host "Cloning OBS Studio (this may take a while)..."
         git clone --depth 1 --branch 30.0.0 https://github.com/obsproject/obs-studio.git $ObsDir

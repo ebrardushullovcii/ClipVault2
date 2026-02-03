@@ -83,12 +83,14 @@ third_party/*.zip
 # Node modules (UI dependencies)
 ui/node_modules/
 ui/node_modules/.package-lock.json
-ui/package-lock.json
 node_modules/
+bun.lock
 
 # UI build output
 ui/dist/
 dist/
+ui/release/
+ui/build/
 
 # Allow specific packaged assets under ui/resources/bin
 !ui/resources/bin/

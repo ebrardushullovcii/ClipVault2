@@ -155,9 +155,9 @@ obs_output_set_audio_encoder(replay, audio_enc_2, 1);  // Index 1
 1. `obs_startup()`
 2. `obs_add_data_path()`
 3. `obs_add_module_path()`
-4. `obs_reset_video()` ← Video FIRST
-5. `obs_reset_audio()` ← Audio SECOND
-6. `obs_load_all_modules()` ← Modules LAST
+4. `obs_load_all_modules()` ← Modules BEFORE video/audio reset
+5. `obs_reset_video()` ← Video FIRST
+6. `obs_reset_audio()` ← Audio SECOND
 
 ---
 
@@ -272,5 +272,5 @@ If none of the above fixes your issue:
 1. Check `clipvault.log` for detailed error messages
 2. Run with verbose logging enabled
 3. Verify all files are present (DLLs, data, plugins)
-4. Compare your code against AGENT.md examples
+4. Compare your code against AGENTS.md examples
 5. Re-read LIBOBS.md for API usage patterns

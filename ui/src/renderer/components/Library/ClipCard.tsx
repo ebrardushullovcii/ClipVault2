@@ -1,5 +1,15 @@
 import React, { useEffect, useRef, useState, memo } from 'react'
-import { Play, Clock, HardDrive, Film, Maximize, Gamepad2, Plus, CheckSquare, Square } from 'lucide-react'
+import {
+  Play,
+  Clock,
+  HardDrive,
+  Film,
+  Maximize,
+  Gamepad2,
+  Plus,
+  CheckSquare,
+  Square,
+} from 'lucide-react'
 import type { VideoMetadata } from '../../hooks/useVideoMetadata'
 import type { ClipInfo } from '../../types/electron'
 
@@ -17,305 +27,317 @@ interface ClipCardProps {
   onFetchMetadata: (clipId: string, videoPath: string) => Promise<VideoMetadata | undefined>
   onOpenEditor?: (clip: ClipInfo, metadata: VideoMetadata) => void
   onCardClick?: (clip: ClipInfo, index: number, event: React.MouseEvent<HTMLDivElement>) => void
-  onToggleSelect?: (clip: ClipInfo, index: number, event: React.MouseEvent<HTMLButtonElement>) => void
+  onToggleSelect?: (
+    clip: ClipInfo,
+    index: number,
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => void
   onEditGame?: (clip: ClipInfo) => void
 }
 
-export const ClipCard: React.FC<ClipCardProps> = memo(({
-  clip,
-  viewMode,
-  formatFileSize,
-  formatDate,
-  thumbnailUrl,
-  metadata,
-  clipIndex,
-  isSelected = false,
-  showSelection = false,
-  onGenerateThumbnail,
-  onFetchMetadata,
-  onOpenEditor,
-  onCardClick,
-  onToggleSelect,
-  onEditGame,
-}) => {
-  const cardRef = useRef<HTMLDivElement>(null)
-  const [isVisible, setIsVisible] = useState(false)
-  const hasAttemptedRef = useRef(false)
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
-  const observerRef = useRef<IntersectionObserver | null>(null)
-  const retryCountRef = useRef(0)
-  const maxRetries = 3
-  
-  // Lazy loading with intersection observer
-  useEffect(() => {
-    const element = cardRef.current
-    if (!element) return
+export const ClipCard: React.FC<ClipCardProps> = memo(
+  ({
+    clip,
+    viewMode,
+    formatFileSize,
+    formatDate,
+    thumbnailUrl,
+    metadata,
+    clipIndex,
+    isSelected = false,
+    showSelection = false,
+    onGenerateThumbnail,
+    onFetchMetadata,
+    onOpenEditor,
+    onCardClick,
+    onToggleSelect,
+    onEditGame,
+  }) => {
+    const cardRef = useRef<HTMLDivElement>(null)
+    const [isVisible, setIsVisible] = useState(false)
+    const hasAttemptedRef = useRef(false)
+    const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const observerRef = useRef<IntersectionObserver | null>(null)
+    const retryCountRef = useRef(0)
+    const maxRetries = 3
 
-    // If we already have both thumbnail and metadata, don't observe
-    if (thumbnailUrl && metadata) {
-      setIsVisible(true)
-      return
-    }
+    // Lazy loading with intersection observer
+    useEffect(() => {
+      const element = cardRef.current
+      if (!element) return
 
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          // Trigger if:
-          // 1. Element is intersecting
-          // 2. Haven't exceeded max retries
-          // 3. Either hasn't attempted yet, or thumbnail is still missing (retry)
-          if (entry.isIntersecting && retryCountRef.current < maxRetries) {
-            const shouldRetry = hasAttemptedRef.current && !thumbnailUrl
-            
-            if (!hasAttemptedRef.current || shouldRetry) {
-              setIsVisible(true)
-              hasAttemptedRef.current = true
-              retryCountRef.current++
-              
-              // Load thumbnail and metadata
-              timeoutRef.current = setTimeout(async () => {
-                try {
-                  // Check again at call time in case props updated
-                  if (!thumbnailUrl) {
-                    await onGenerateThumbnail(clip.id, clip.path)
+      // If we already have both thumbnail and metadata, don't observe
+      if (thumbnailUrl && metadata) {
+        setIsVisible(true)
+        return
+      }
+
+      observerRef.current = new IntersectionObserver(
+        entries => {
+          entries.forEach(entry => {
+            // Trigger if:
+            // 1. Element is intersecting
+            // 2. Haven't exceeded max retries
+            // 3. Either hasn't attempted yet, or thumbnail is still missing (retry)
+            if (entry.isIntersecting && retryCountRef.current < maxRetries) {
+              const shouldRetry = hasAttemptedRef.current && !thumbnailUrl
+
+              if (!hasAttemptedRef.current || shouldRetry) {
+                setIsVisible(true)
+                hasAttemptedRef.current = true
+                retryCountRef.current++
+
+                // Load thumbnail and metadata
+                timeoutRef.current = setTimeout(async () => {
+                  try {
+                    // Check again at call time in case props updated
+                    if (!thumbnailUrl) {
+                      await onGenerateThumbnail(clip.id, clip.path)
+                    }
+                    if (!metadata) {
+                      await onFetchMetadata(clip.id, clip.path)
+                    }
+                  } catch (error) {
+                    // Log error but allow retry on next visibility
+                    console.error(`[ClipCard] Failed to load for ${clip.id}:`, error)
                   }
-                  if (!metadata) {
-                    await onFetchMetadata(clip.id, clip.path)
-                  }
-                } catch (error) {
-                  // Log error but allow retry on next visibility
-                  console.error(`[ClipCard] Failed to load for ${clip.id}:`, error)
+                }, Math.random() * 100) // Slightly longer stagger
+
+                // Keep observing for retries until we have the thumbnail
+                if (thumbnailUrl && metadata && observerRef.current) {
+                  observerRef.current.unobserve(element)
                 }
-              }, Math.random() * 100) // Slightly longer stagger
-              
-              // Keep observing for retries until we have the thumbnail
-              if (thumbnailUrl && metadata && observerRef.current) {
-                observerRef.current.unobserve(element)
               }
             }
-          }
-        })
-      },
-      {
-        threshold: 0,
-        rootMargin: '200px', // Larger margin to catch cards earlier
+          })
+        },
+        {
+          threshold: 0,
+          rootMargin: '200px', // Larger margin to catch cards earlier
+        }
+      )
+
+      observerRef.current.observe(element)
+
+      return () => {
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current)
+        }
+        if (observerRef.current) {
+          observerRef.current.disconnect()
+        }
       }
-    )
+    }, [clip.id, clip.path, thumbnailUrl, metadata, onGenerateThumbnail, onFetchMetadata])
 
-    observerRef.current.observe(element)
-
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
+    const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+      if (onCardClick) {
+        onCardClick(clip, clipIndex ?? 0, event)
+        return
       }
-      if (observerRef.current) {
-        observerRef.current.disconnect()
+      if (onOpenEditor) {
+        // Allow clicking even without full metadata - Editor will load it
+        const fallbackMetadata: VideoMetadata = metadata || {
+          duration: 0,
+          width: 1920,
+          height: 1080,
+          fps: 60,
+          bitrate: 0,
+          size: clip.size,
+          format: 'mp4',
+          videoCodec: 'h264',
+          audioTracks: 2,
+        }
+        onOpenEditor(clip, fallbackMetadata)
       }
     }
-  }, [clip.id, clip.path, thumbnailUrl, metadata, onGenerateThumbnail, onFetchMetadata])
 
-  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (onCardClick) {
-      onCardClick(clip, clipIndex ?? 0, event)
-      return
-    }
-    if (onOpenEditor) {
-      // Allow clicking even without full metadata - Editor will load it
-      const fallbackMetadata: VideoMetadata = metadata || {
-        duration: 0,
-        width: 1920,
-        height: 1080,
-        fps: 60,
-        bitrate: 0,
-        size: clip.size,
-        format: 'mp4',
-        videoCodec: 'h264',
-        audioTracks: 2
+    const handleToggleSelect = (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation()
+      if (onToggleSelect) {
+        onToggleSelect(clip, clipIndex ?? 0, event)
       }
-      onOpenEditor(clip, fallbackMetadata)
     }
-  }
 
-  const handleToggleSelect = (event: React.MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation()
-    if (onToggleSelect) {
-      onToggleSelect(clip, clipIndex ?? 0, event)
+    const handleGameClick = (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (onEditGame) {
+        onEditGame(clip)
+      }
     }
-  }
 
-  const handleGameClick = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (onEditGame) {
-      onEditGame(clip)
+    const isGrid = viewMode === 'grid'
+    const selectionLabel = isSelected ? 'Deselect clip' : 'Select clip'
+
+    const formatDuration = (seconds: number): string => {
+      const mins = Math.floor(seconds / 60)
+      const secs = Math.floor(seconds % 60)
+      return `${mins}:${secs.toString().padStart(2, '0')}`
     }
-  }
 
-  const isGrid = viewMode === 'grid'
-  const selectionLabel = isSelected ? 'Deselect clip' : 'Select clip'
-
-  const formatDuration = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60)
-    const secs = Math.floor(seconds % 60)
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
-
-  return (
-    <div
-      ref={cardRef}
-      onClick={handleClick}
-      className={`card group cursor-pointer overflow-hidden ${
-        isSelected ? 'ring-2 ring-accent-primary' : ''
-      } ${
-        isGrid ? '' : 'flex items-center gap-4 p-4'
-      }`}
-    >
-      {/* Thumbnail */}
+    return (
       <div
-        className={`relative overflow-hidden bg-background-tertiary ${
-          isGrid ? 'aspect-video' : 'aspect-video w-48 rounded-lg'
-        }`}
+        ref={cardRef}
+        onClick={handleClick}
+        className={`card group cursor-pointer overflow-hidden ${
+          isSelected ? 'ring-2 ring-accent-primary' : ''
+        } ${isGrid ? '' : 'flex items-center gap-4 p-4'}`}
       >
-        {/* Selection checkbox */}
-        <button
-          type="button"
-          onClick={handleToggleSelect}
-          aria-label={selectionLabel}
-          className={`absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border bg-black/60 text-white transition-opacity ${
-            showSelection || isSelected
-              ? 'opacity-100 pointer-events-auto'
-              : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
-          }`}
-          title={selectionLabel}
-        >
-          {isSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
-        </button>
-
-        {/* Thumbnail image or placeholder */}
-        {thumbnailUrl ? (
-          <img
-            src={thumbnailUrl}
-            alt={clip.filename}
-            className="h-full w-full object-cover"
-            loading="lazy"
-            onError={(e) => {
-              // Silently handle thumbnail load errors - will show placeholder
-              (e.target as HTMLImageElement).style.display = 'none'
-            }}
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Film className={`h-12 w-12 ${isVisible ? 'text-text-muted animate-pulse' : 'text-text-muted/50'}`} />
-          </div>
-        )}
-
-        {/* Play overlay on hover */}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-primary">
-            <Play className="ml-1 h-6 w-6 text-background-primary" />
-          </div>
-        </div>
-
-        {/* Duration badge */}
-        <div className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1 text-xs font-medium text-white">
-          {metadata ? formatDuration(metadata.duration) : '...'}
-        </div>
-
-        {/* Resolution badge */}
-        {metadata && (
-          <div className="absolute left-2 top-2 flex items-center gap-1 rounded bg-black/70 px-2 py-1 text-xs font-medium text-white">
-            <Maximize className="h-3 w-3" />
-            {metadata.width >= 1920 ? '1080p' : `${metadata.height}p`}
-          </div>
-        )}
-      </div>
-
-      {/* Info */}
-      <div className={`${isGrid ? 'p-4' : 'flex-1'}`}>
-        <h3
-          className={`truncate font-medium text-text-primary ${
-            isGrid ? 'mb-2 text-sm' : 'mb-1 text-base'
+        {/* Thumbnail */}
+        <div
+          className={`relative overflow-hidden bg-background-tertiary ${
+            isGrid ? 'aspect-video' : 'aspect-video w-48 rounded-lg'
           }`}
         >
-          {clip.filename.replace('.mp4', '')}
-        </h3>
+          {/* Selection checkbox */}
+          <button
+            type="button"
+            onClick={handleToggleSelect}
+            aria-label={selectionLabel}
+            className={`absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border bg-black/60 text-white transition-opacity ${
+              showSelection || isSelected
+                ? 'pointer-events-auto opacity-100'
+                : 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100'
+            }`}
+            title={selectionLabel}
+          >
+            {isSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+          </button>
 
-        <div className={`flex items-center gap-3 text-xs text-text-muted ${isGrid ? '' : 'gap-6'}`}>
-          <span className="flex items-center gap-1">
-            <HardDrive className="h-3 w-3" />
-            {formatFileSize(clip.size)}
-          </span>
-          <span className="flex items-center gap-1">
-            <Clock className="h-3 w-3" />
-            {formatDate(clip.createdAt)}
-          </span>
-          {metadata && (
-            <span className="flex items-center gap-1">
-              <span className="h-1 w-1 rounded-full bg-text-muted" />
-              {Math.round(metadata.fps)}fps
-            </span>
-          )}
-        </div>
-
-        {/* Game tag - always visible */}
-        <div className="mt-2">
-          {clip.metadata?.game ? (
-            <button
-              onClick={handleGameClick}
-              className="inline-flex items-center gap-1 rounded bg-purple-500/10 px-2 py-1 text-xs text-purple-400 transition-colors hover:bg-purple-500/20"
-              title="Click to edit game"
-            >
-              <Gamepad2 className="h-3 w-3" />
-              {clip.metadata.game}
-            </button>
+          {/* Thumbnail image or placeholder */}
+          {thumbnailUrl ? (
+            <img
+              src={thumbnailUrl}
+              alt={clip.filename}
+              className="h-full w-full object-cover"
+              loading="lazy"
+              onError={e => {
+                // Silently handle thumbnail load errors - will show placeholder
+                ;(e.target as HTMLImageElement).style.display = 'none'
+              }}
+            />
           ) : (
-            <button
-              onClick={handleGameClick}
-              className="inline-flex items-center gap-1 rounded bg-background-tertiary/50 px-2 py-1 text-xs text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
-              title="Click to add game"
-            >
-              <Plus className="h-3 w-3" />
-              Game
-            </button>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Film
+                className={`h-12 w-12 ${isVisible ? 'animate-pulse text-text-muted' : 'text-text-muted/50'}`}
+              />
+            </div>
+          )}
+
+          {/* Play overlay on hover */}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-primary">
+              <Play className="ml-1 h-6 w-6 text-background-primary" />
+            </div>
+          </div>
+
+          {/* Duration badge */}
+          <div className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1 text-xs font-medium text-white">
+            {metadata ? formatDuration(metadata.duration) : '...'}
+          </div>
+
+          {/* Resolution badge */}
+          {metadata && (
+            <div className="absolute left-2 top-2 flex items-center gap-1 rounded bg-black/70 px-2 py-1 text-xs font-medium text-white">
+              <Maximize className="h-3 w-3" />
+              {metadata.width >= 1920 ? '1080p' : `${metadata.height}p`}
+            </div>
           )}
         </div>
 
-        {/* Tags (if any in metadata) */}
-        {clip.metadata?.tags && clip.metadata.tags.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {clip.metadata.tags.map((tag, index) => (
-              <span
-                key={index}
-                className="rounded bg-accent-primary/10 px-2 py-1 text-xs text-accent-primary"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
+        {/* Info */}
+        <div className={`${isGrid ? 'p-4' : 'flex-1'}`}>
+          <h3
+            className={`truncate font-medium text-text-primary ${
+              isGrid ? 'mb-2 text-sm' : 'mb-1 text-base'
+            }`}
+          >
+            {clip.filename.replace('.mp4', '')}
+          </h3>
 
-        {/* Favorite indicator */}
-        {clip.metadata?.favorite && (
-          <div className="mt-2">
-            <span className="text-xs text-yellow-500">★ Favorite</span>
+          <div
+            className={`flex items-center gap-3 text-xs text-text-muted ${isGrid ? '' : 'gap-6'}`}
+          >
+            <span className="flex items-center gap-1">
+              <HardDrive className="h-3 w-3" />
+              {formatFileSize(clip.size)}
+            </span>
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {formatDate(clip.createdAt)}
+            </span>
+            {metadata && (
+              <span className="flex items-center gap-1">
+                <span className="h-1 w-1 rounded-full bg-text-muted" />
+                {Math.round(metadata.fps)}fps
+              </span>
+            )}
           </div>
-        )}
+
+          {/* Game tag - always visible */}
+          <div className="mt-2">
+            {clip.metadata?.game ? (
+              <button
+                onClick={handleGameClick}
+                className="inline-flex items-center gap-1 rounded bg-purple-500/10 px-2 py-1 text-xs text-purple-400 transition-colors hover:bg-purple-500/20"
+                title="Click to edit game"
+              >
+                <Gamepad2 className="h-3 w-3" />
+                {clip.metadata.game}
+              </button>
+            ) : (
+              <button
+                onClick={handleGameClick}
+                className="inline-flex items-center gap-1 rounded bg-background-tertiary/50 px-2 py-1 text-xs text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
+                title="Click to add game"
+              >
+                <Plus className="h-3 w-3" />
+                Game
+              </button>
+            )}
+          </div>
+
+          {/* Tags (if any in metadata) */}
+          {clip.metadata?.tags && clip.metadata.tags.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {clip.metadata.tags.map((tag, index) => (
+                <span
+                  key={index}
+                  className="rounded bg-accent-primary/10 px-2 py-1 text-xs text-accent-primary"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Favorite indicator */}
+          {clip.metadata?.favorite && (
+            <div className="mt-2">
+              <span className="text-xs text-yellow-500">★ Favorite</span>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  )
-}, (prevProps, nextProps) => {
-  // Custom comparison for memo - only re-render if these change
-  return (
-    prevProps.clip.id === nextProps.clip.id &&
-    prevProps.viewMode === nextProps.viewMode &&
-    prevProps.thumbnailUrl === nextProps.thumbnailUrl &&
-    prevProps.isSelected === nextProps.isSelected &&
-    prevProps.showSelection === nextProps.showSelection &&
-    prevProps.metadata?.duration === nextProps.metadata?.duration &&
-    prevProps.metadata?.width === nextProps.metadata?.width &&
-    prevProps.metadata?.height === nextProps.metadata?.height &&
-    prevProps.metadata?.fps === nextProps.metadata?.fps &&
-    prevProps.clip.metadata?.favorite === nextProps.clip.metadata?.favorite &&
-    JSON.stringify(prevProps.clip.metadata?.tags) === JSON.stringify(nextProps.clip.metadata?.tags) &&
-    prevProps.clip.metadata?.game === nextProps.clip.metadata?.game
-  )
-})
+    )
+  },
+  (prevProps, nextProps) => {
+    // Custom comparison for memo - only re-render if these change
+    return (
+      prevProps.clip.id === nextProps.clip.id &&
+      prevProps.viewMode === nextProps.viewMode &&
+      prevProps.thumbnailUrl === nextProps.thumbnailUrl &&
+      prevProps.isSelected === nextProps.isSelected &&
+      prevProps.showSelection === nextProps.showSelection &&
+      prevProps.metadata?.duration === nextProps.metadata?.duration &&
+      prevProps.metadata?.width === nextProps.metadata?.width &&
+      prevProps.metadata?.height === nextProps.metadata?.height &&
+      prevProps.metadata?.fps === nextProps.metadata?.fps &&
+      prevProps.clip.metadata?.favorite === nextProps.clip.metadata?.favorite &&
+      JSON.stringify(prevProps.clip.metadata?.tags) ===
+        JSON.stringify(nextProps.clip.metadata?.tags) &&
+      prevProps.clip.metadata?.game === nextProps.clip.metadata?.game
+    )
+  }
+)
+
+ClipCard.displayName = 'ClipCard'

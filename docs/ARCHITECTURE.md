@@ -36,7 +36,7 @@
                               ▼
                     ┌─────────────────┐
                     │     libobs      │
-                    │   (obs-studio)  │
+                    │ (obs-studio-src)│
                     └─────────────────┘
 ```
 
@@ -46,7 +46,7 @@
 
 | Component | File | Responsibility |
 |-----------|------|----------------|
-| App | app.cpp | Lifecycle management, component coordination |
+| Main | main.cpp | Process lifecycle, single-instance guard, config bootstrap |
 | Hotkey | hotkey.cpp | F9 global hotkey registration and handling |
 | Tray | tray.cpp | System tray icon and context menu |
 | Config | config.cpp | Load/save settings.json |
@@ -112,9 +112,10 @@ Memory is managed by libobs replay_buffer output.
    │       ├── obs_startup()
    │       ├── obs_add_data_path()
    │       ├── obs_add_module_path()
+   │       ├── obs_load_all_modules()
+   │       ├── obs_post_load_modules()
    │       ├── obs_reset_video()
-   │       ├── obs_reset_audio()
-   │       └── obs_load_all_modules()
+   │       └── obs_reset_audio()
    │
    ├── Capture::init()
    │   ├── create monitor_capture
@@ -157,7 +158,7 @@ Memory is managed by libobs replay_buffer output.
 | File | Location |
 |------|----------|
 | Executable | `bin/ClipVault.exe` |
-| Config | `config/settings.json` |
+| Config | `%APPDATA%\\ClipVault\\settings.json` (runtime), `config/settings.json` (template) |
 | Log | `bin/clipvault.log` |
 | Clips | User-configured (default: `D:\Clips\ClipVault\`) |
 | OBS plugins | `bin/obs-plugins/64bit/` |

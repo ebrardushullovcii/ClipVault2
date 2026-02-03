@@ -14,6 +14,42 @@ interface LibraryState {
 
 const STORAGE_KEY = 'clipvault_library_state'
 
+const parseStoredState = (raw: string): Partial<LibraryState> => {
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    const data = parsed as Record<string, unknown>
+    const next: Partial<LibraryState> = {}
+    if (typeof data.searchQuery === 'string') next.searchQuery = data.searchQuery
+    if (data.viewMode === 'grid' || data.viewMode === 'list') next.viewMode = data.viewMode
+    if (
+      data.sortBy === 'date' ||
+      data.sortBy === 'size' ||
+      data.sortBy === 'name' ||
+      data.sortBy === 'favorite'
+    ) {
+      next.sortBy = data.sortBy
+    }
+    if (data.sortDirection === 'asc' || data.sortDirection === 'desc') {
+      next.sortDirection = data.sortDirection
+    }
+    if (data.filterBy === 'all' || data.filterBy === 'favorites' || data.filterBy === 'recent') {
+      next.filterBy = data.filterBy
+    }
+    if (typeof data.showFavoritesOnly === 'boolean') next.showFavoritesOnly = data.showFavoritesOnly
+    if (typeof data.selectedTag === 'string' || data.selectedTag === null) {
+      next.selectedTag = data.selectedTag
+    }
+    if (typeof data.selectedGame === 'string' || data.selectedGame === null) {
+      next.selectedGame = data.selectedGame
+    }
+    if (typeof data.scrollPosition === 'number') next.scrollPosition = data.scrollPosition
+    return next
+  } catch {
+    return {}
+  }
+}
+
 export const useLibraryState = () => {
   const [state, setState] = useState<LibraryState>({
     searchQuery: '',
@@ -35,7 +71,7 @@ export const useLibraryState = () => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY)
       if (saved) {
-        const parsed = JSON.parse(saved)
+        const parsed = parseStoredState(saved)
         setState(prev => ({
           ...prev,
           ...parsed,
@@ -54,12 +90,13 @@ export const useLibraryState = () => {
       try {
         const saved = localStorage.getItem(STORAGE_KEY)
         if (saved) {
-          const parsed = JSON.parse(saved)
-          if (parsed.scrollPosition && parsed.scrollPosition > 0) {
+          const parsed = parseStoredState(saved)
+          const scrollPosition = parsed.scrollPosition
+          if (typeof scrollPosition === 'number' && scrollPosition > 0) {
             // Small delay to ensure content is rendered
             setTimeout(() => {
               if (scrollRef.current) {
-                scrollRef.current.scrollTop = parsed.scrollPosition
+                scrollRef.current.scrollTop = scrollPosition
               }
             }, 100)
           }
@@ -100,37 +137,58 @@ export const useLibraryState = () => {
   }, [])
 
   // Update individual state values
-  const setSearchQuery = useCallback((value: string) => {
-    saveState({ searchQuery: value })
-  }, [saveState])
+  const setSearchQuery = useCallback(
+    (value: string) => {
+      saveState({ searchQuery: value })
+    },
+    [saveState]
+  )
 
-  const setViewMode = useCallback((value: 'grid' | 'list') => {
-    saveState({ viewMode: value })
-  }, [saveState])
+  const setViewMode = useCallback(
+    (value: 'grid' | 'list') => {
+      saveState({ viewMode: value })
+    },
+    [saveState]
+  )
 
-  const setSortBy = useCallback((value: 'date' | 'size' | 'name' | 'favorite') => {
-    saveState({ sortBy: value })
-  }, [saveState])
+  const setSortBy = useCallback(
+    (value: 'date' | 'size' | 'name' | 'favorite') => {
+      saveState({ sortBy: value })
+    },
+    [saveState]
+  )
 
-  const setFilterBy = useCallback((value: 'all' | 'favorites' | 'recent') => {
-    saveState({ filterBy: value })
-  }, [saveState])
+  const setFilterBy = useCallback(
+    (value: 'all' | 'favorites' | 'recent') => {
+      saveState({ filterBy: value })
+    },
+    [saveState]
+  )
 
-  const setShowFavoritesOnly = useCallback((value: boolean) => {
-    saveState({ showFavoritesOnly: value })
-  }, [saveState])
+  const setShowFavoritesOnly = useCallback(
+    (value: boolean) => {
+      saveState({ showFavoritesOnly: value })
+    },
+    [saveState]
+  )
 
   const toggleSortDirection = useCallback(() => {
     saveState({ sortDirection: state.sortDirection === 'asc' ? 'desc' : 'asc' })
   }, [saveState, state.sortDirection])
 
-  const setSelectedTag = useCallback((value: string | null) => {
-    saveState({ selectedTag: value })
-  }, [saveState])
+  const setSelectedTag = useCallback(
+    (value: string | null) => {
+      saveState({ selectedTag: value })
+    },
+    [saveState]
+  )
 
-  const setSelectedGame = useCallback((value: string | null) => {
-    saveState({ selectedGame: value })
-  }, [saveState])
+  const setSelectedGame = useCallback(
+    (value: string | null) => {
+      saveState({ selectedGame: value })
+    },
+    [saveState]
+  )
 
   return {
     state,

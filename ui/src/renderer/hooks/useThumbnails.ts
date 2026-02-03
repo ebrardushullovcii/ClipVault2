@@ -53,45 +53,48 @@ export const useThumbnails = (): UseThumbnailsReturn => {
     loadExistingThumbnails()
   }, [])
 
-  const generateThumbnail = useCallback(async (clipId: string, videoPath: string): Promise<string | undefined> => {
-    // Return cached thumbnail immediately if available - NO IPC CALL
-    if (globalThumbnailCache[clipId]) {
-      return globalThumbnailCache[clipId]
-    }
+  const generateThumbnail = useCallback(
+    async (clipId: string, videoPath: string): Promise<string | undefined> => {
+      // Return cached thumbnail immediately if available - NO IPC CALL
+      if (globalThumbnailCache[clipId]) {
+        return globalThumbnailCache[clipId]
+      }
 
-    // Skip if already loading
-    if (globalLoadingSet.has(clipId)) {
-      return undefined
-    }
+      // Skip if already loading
+      if (globalLoadingSet.has(clipId)) {
+        return undefined
+      }
 
-    // Mark as loading
-    globalLoadingSet.add(clipId)
+      // Mark as loading
+      globalLoadingSet.add(clipId)
 
-    try {
-      // Only make IPC call if not cached
-      const thumbnailUrl = await window.electronAPI.generateThumbnail(clipId, videoPath)
-      
-      // Store in global cache
-      globalThumbnailCache[clipId] = thumbnailUrl
-      
-      // Remove from failed set if it was there
-      globalFailedSet.delete(clipId)
-      
-      // Update React state (this will trigger re-render for all cards using this hook)
-      setThumbnails({ ...globalThumbnailCache })
-      // Force update for components that already have this hook
-      setForceUpdate(prev => prev + 1)
-      
-      return thumbnailUrl
-    } catch (err) {
-      console.error(`[Thumbnails] Failed to generate for ${clipId}:`, err)
-      // Mark as failed so it can be retried later
-      globalFailedSet.add(clipId)
-      return undefined
-    } finally {
-      globalLoadingSet.delete(clipId)
-    }
-  }, [])
+      try {
+        // Only make IPC call if not cached
+        const thumbnailUrl = await window.electronAPI.generateThumbnail(clipId, videoPath)
+
+        // Store in global cache
+        globalThumbnailCache[clipId] = thumbnailUrl
+
+        // Remove from failed set if it was there
+        globalFailedSet.delete(clipId)
+
+        // Update React state (this will trigger re-render for all cards using this hook)
+        setThumbnails({ ...globalThumbnailCache })
+        // Force update for components that already have this hook
+        setForceUpdate(prev => prev + 1)
+
+        return thumbnailUrl
+      } catch (err) {
+        console.error(`[Thumbnails] Failed to generate for ${clipId}:`, err)
+        // Mark as failed so it can be retried later
+        globalFailedSet.add(clipId)
+        return undefined
+      } finally {
+        globalLoadingSet.delete(clipId)
+      }
+    },
+    []
+  )
 
   return {
     thumbnails,

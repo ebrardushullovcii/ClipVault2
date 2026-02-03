@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { AppLayout } from './components/Layout/AppLayout'
 import { Library } from './components/Library/Library'
 import { Editor } from './components/Editor/Editor'
@@ -55,7 +55,9 @@ function App() {
         setSelectedClipMetadata(entry.metadata)
         setShowEditor(true)
       }
-      setTimeout(() => { isNavigatingRef.current = false }, 100)
+      setTimeout(() => {
+        isNavigatingRef.current = false
+      }, 100)
     }
   }, [history, historyIndex])
 
@@ -76,18 +78,23 @@ function App() {
         setSelectedClipMetadata(entry.metadata)
         setShowEditor(true)
       }
-      setTimeout(() => { isNavigatingRef.current = false }, 100)
+      setTimeout(() => {
+        isNavigatingRef.current = false
+      }, 100)
     }
   }, [history, historyIndex])
 
-  const handleOpenEditor = useCallback((clip: ClipInfo, metadata: VideoMetadata) => {
-    if (!isNavigatingRef.current) {
-      addToHistory({ type: 'clip', clip, metadata })
-    }
-    setSelectedClip(clip)
-    setSelectedClipMetadata(metadata)
-    setShowEditor(true)
-  }, [addToHistory])
+  const handleOpenEditor = useCallback(
+    (clip: ClipInfo, metadata: VideoMetadata) => {
+      if (!isNavigatingRef.current) {
+        addToHistory({ type: 'clip', clip, metadata })
+      }
+      setSelectedClip(clip)
+      setSelectedClipMetadata(metadata)
+      setShowEditor(true)
+    },
+    [addToHistory]
+  )
 
   const handleCloseEditor = useCallback(() => {
     if (!isNavigatingRef.current) {
@@ -162,9 +169,12 @@ function App() {
   }, [goBack, goForward])
 
   // Callback for Library to register its update function
-  const handleRegisterLibraryUpdate = useCallback((updateFn: (clipId: string, metadata: ClipMetadata) => void) => {
-    libraryUpdateRef.current = updateFn
-  }, [])
+  const handleRegisterLibraryUpdate = useCallback(
+    (updateFn: (clipId: string, metadata: ClipMetadata) => void) => {
+      libraryUpdateRef.current = updateFn
+    },
+    []
+  )
 
   // Save metadata and trigger update in Library
   const handleSaveMetadata = useCallback(async (clipId: string, metadata: ClipMetadata) => {
@@ -193,33 +203,32 @@ function App() {
       hideHeader={hideHeader}
     >
       {/* Library is always rendered (needed for metadata updates) */}
-      <div style={{ 
-        display: 'flex', 
-        height: '100%',
-        width: '100%',
-        visibility: showEditor || currentView === 'settings' ? 'hidden' : 'visible'
-      }}>
-        <Library 
-          onOpenEditor={handleOpenEditor}
-          onRegisterUpdate={handleRegisterLibraryUpdate}
-        />
+      <div
+        style={{
+          display: 'flex',
+          height: '100%',
+          width: '100%',
+          visibility: showEditor || currentView === 'settings' ? 'hidden' : 'visible',
+        }}
+      >
+        <Library onOpenEditor={handleOpenEditor} onRegisterUpdate={handleRegisterLibraryUpdate} />
       </div>
-      
+
       {/* Settings overlay */}
       {currentView === 'settings' && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 50 }}>
           <Settings onClose={handleCloseSettings} />
         </div>
       )}
-      
+
       {/* Editor modal overlay - Library stays mounted behind */}
       {showEditor && selectedClip && selectedClipMetadata && (
-        <div 
-          style={{ 
-            position: 'absolute', 
-            inset: 0, 
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
             zIndex: 40,
-            animation: 'fadeIn 0.2s ease-out'
+            animation: 'fadeIn 0.2s ease-out',
           }}
         >
           <Editor
@@ -230,7 +239,7 @@ function App() {
           />
         </div>
       )}
-      
+
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: scale(0.98); }

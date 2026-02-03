@@ -18,14 +18,14 @@ interface GameTagEditorState {
   setLoading: (loading: boolean) => void
 }
 
-export const useGameTagEditorStore = create<GameTagEditorState>((set) => ({
+export const useGameTagEditorStore = create<GameTagEditorState>(set => ({
   searchQuery: '',
   selectedGame: null,
   gamesList: [],
   loading: false,
 
-  setSearchQuery: (query) => set({ searchQuery: query }),
-  setSelectedGame: (game) => set({ selectedGame: game }),
-  setGamesList: (games) => set({ gamesList: games }),
-  setLoading: (loading) => set({ loading }),
+  setSearchQuery: query => set({ searchQuery: query }),
+  setSelectedGame: game => set({ selectedGame: game }),
+  setGamesList: games => set({ gamesList: games }),
+  setLoading: loading => set({ loading }),
 }))

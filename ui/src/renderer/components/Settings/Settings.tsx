@@ -1,5 +1,16 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Save, RotateCcw, FolderOpen, Video, Mic, Keyboard, Info, Monitor, HardDrive, Power } from 'lucide-react'
+import {
+  Save,
+  RotateCcw,
+  FolderOpen,
+  Video,
+  Mic,
+  Keyboard,
+  Info,
+  Monitor,
+  HardDrive,
+  Power,
+} from 'lucide-react'
 
 interface AppSettings {
   output_path: string
@@ -54,30 +65,35 @@ interface AudioDeviceInfo {
   is_default: boolean
 }
 
+type OpenDialogResult = {
+  canceled: boolean
+  filePaths: string[]
+}
+
 // Quality presets with realistic bitrates for file size calculation
 // Based on real-world x264 CQP encoding (measured from actual clips)
 const qualityPresets = {
-  low: { 
-    quality: 30, 
-    label: 'Low', 
+  low: {
+    quality: 30,
+    label: 'Low',
     description: 'Smaller files, good for sharing',
     videoBitrateMbps: 1.5, // ~1.5 Mbps (heavily compressed)
   },
-  medium: { 
-    quality: 23, 
-    label: 'Medium', 
+  medium: {
+    quality: 23,
+    label: 'Medium',
     description: 'Best balance of quality and size',
     videoBitrateMbps: 2.5, // ~2.5 Mbps (typical for CQP 20-23)
   },
-  high: { 
-    quality: 18, 
-    label: 'High', 
+  high: {
+    quality: 18,
+    label: 'High',
     description: 'High quality, larger files',
     videoBitrateMbps: 5, // ~5 Mbps
   },
-  ultra: { 
-    quality: 15, 
-    label: 'Ultra', 
+  ultra: {
+    quality: 15,
+    label: 'Ultra',
     description: 'Maximum quality, very large files',
     videoBitrateMbps: 12, // ~12 Mbps (visually lossless)
   },
@@ -104,28 +120,28 @@ const calculateEstimatedSize = (
   audioBitrateKbps: number
 ): string => {
   const preset = qualityPresets[qualityPreset]
-  
+
   // Base bitrate for 1080p60
   let videoBitrateMbps = preset.videoBitrateMbps
-  
+
   // Adjust for resolution (pixel count ratio vs 1080p)
   const pixelCount = width * height
   const pixelRatio = pixelCount / (1920 * 1080)
   videoBitrateMbps *= pixelRatio
-  
+
   // Adjust for frame rate (linear scaling roughly)
   const fpsRatio = fps / 60
   videoBitrateMbps *= fpsRatio
-  
+
   // Audio bitrate in Mbps
   const audioBitrateMbps = audioBitrateKbps / 1000
-  
+
   // Total bitrate
   const totalBitrateMbps = videoBitrateMbps + audioBitrateMbps
-  
+
   // Calculate size in MB
   const sizeMB = (totalBitrateMbps * durationSeconds) / 8
-  
+
   // Format nicely
   if (sizeMB >= 1024) {
     return `${(sizeMB / 1024).toFixed(2)} GB`
@@ -153,21 +169,25 @@ interface HotkeyInputProps {
   placeholder?: string
 }
 
-const HotkeyInput: React.FC<HotkeyInputProps> = ({ value, onChange, placeholder = "Click to set hotkey" }) => {
+const HotkeyInput: React.FC<HotkeyInputProps> = ({
+  value,
+  onChange,
+  placeholder = 'Click to set hotkey',
+}) => {
   const [isRecording, setIsRecording] = useState(false)
   const inputRef = useRef<HTMLDivElement>(null)
 
   const formatHotkey = (hotkey: string): string => {
-    if (!hotkey) return ""
+    if (!hotkey) return ''
     return hotkey
-      .replace(/Control/g, "Ctrl")
-      .replace(/Command/g, "Cmd")
-      .replace(/Option/g, "Alt")
-      .replace(/Shift/g, "⇧")
-      .replace(/Ctrl/g, "Ctrl")
-      .replace(/Alt/g, "Alt")
-      .replace(/Meta/g, "Win")
-      .replace(/\+/g, " + ")
+      .replace(/Control/g, 'Ctrl')
+      .replace(/Command/g, 'Cmd')
+      .replace(/Option/g, 'Alt')
+      .replace(/Shift/g, '⇧')
+      .replace(/Ctrl/g, 'Ctrl')
+      .replace(/Alt/g, 'Alt')
+      .replace(/Meta/g, 'Win')
+      .replace(/\+/g, ' + ')
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -177,53 +197,53 @@ const HotkeyInput: React.FC<HotkeyInputProps> = ({ value, onChange, placeholder 
     e.stopPropagation()
 
     // Ignore standalone modifier keys
-    if (["Control", "Alt", "Shift", "Meta", "Command", "Option"].includes(e.key)) {
+    if (['Control', 'Alt', 'Shift', 'Meta', 'Command', 'Option'].includes(e.key)) {
       return
     }
 
     // Build the hotkey string
     const modifiers: string[] = []
-    if (e.ctrlKey) modifiers.push("Ctrl")
-    if (e.altKey) modifiers.push("Alt")
-    if (e.shiftKey) modifiers.push("Shift")
-    if (e.metaKey) modifiers.push("Win")
+    if (e.ctrlKey) modifiers.push('Ctrl')
+    if (e.altKey) modifiers.push('Alt')
+    if (e.shiftKey) modifiers.push('Shift')
+    if (e.metaKey) modifiers.push('Win')
 
     // Get the main key
     let key = e.key
     if (key.length === 1) {
       key = key.toUpperCase()
-    } else if (key.startsWith("F") && /^F\d+$/.test(key)) {
+    } else if (key.startsWith('F') && /^F\d+$/.test(key)) {
       // Keep F1-F24 as-is
-    } else if (key === "Escape") {
-      key = "Esc"
-    } else if (key === "Delete") {
-      key = "Del"
-    } else if (key === "Insert") {
-      key = "Ins"
-    } else if (key === "PageUp") {
-      key = "PgUp"
-    } else if (key === "PageDown") {
-      key = "PgDown"
-    } else if (key === "ArrowUp") {
-      key = "Up"
-    } else if (key === "ArrowDown") {
-      key = "Down"
-    } else if (key === "ArrowLeft") {
-      key = "Left"
-    } else if (key === "ArrowRight") {
-      key = "Right"
-    } else if (key === "Backspace") {
-      key = "Backspace"
-    } else if (key === "Tab") {
-      key = "Tab"
-    } else if (key === "Enter") {
-      key = "Enter"
-    } else if (key === "Space") {
-      key = "Space"
+    } else if (key === 'Escape') {
+      key = 'Esc'
+    } else if (key === 'Delete') {
+      key = 'Del'
+    } else if (key === 'Insert') {
+      key = 'Ins'
+    } else if (key === 'PageUp') {
+      key = 'PgUp'
+    } else if (key === 'PageDown') {
+      key = 'PgDown'
+    } else if (key === 'ArrowUp') {
+      key = 'Up'
+    } else if (key === 'ArrowDown') {
+      key = 'Down'
+    } else if (key === 'ArrowLeft') {
+      key = 'Left'
+    } else if (key === 'ArrowRight') {
+      key = 'Right'
+    } else if (key === 'Backspace') {
+      key = 'Backspace'
+    } else if (key === 'Tab') {
+      key = 'Tab'
+    } else if (key === 'Enter') {
+      key = 'Enter'
+    } else if (key === 'Space') {
+      key = 'Space'
     }
 
     // Combine modifiers and key
-    const hotkeyString = [...modifiers, key].join("+")
+    const hotkeyString = [...modifiers, key].join('+')
     onChange(hotkeyString)
     setIsRecording(false)
   }
@@ -237,7 +257,7 @@ const HotkeyInput: React.FC<HotkeyInputProps> = ({ value, onChange, placeholder 
   }
 
   const clearHotkey = () => {
-    onChange("")
+    onChange('')
     setIsRecording(false)
   }
 
@@ -251,22 +271,22 @@ const HotkeyInput: React.FC<HotkeyInputProps> = ({ value, onChange, placeholder 
         tabIndex={0}
         className={`flex-1 cursor-pointer rounded-lg border px-4 py-2 text-sm font-medium transition-all ${
           isRecording
-            ? "border-accent-primary bg-accent-primary/10 text-accent-primary ring-2 ring-accent-primary/50"
-            : "border-border bg-background-tertiary text-text-primary hover:border-accent-primary/50"
+            ? 'border-accent-primary bg-accent-primary/10 text-accent-primary ring-2 ring-accent-primary/50'
+            : 'border-border bg-background-tertiary text-text-primary hover:border-accent-primary/50'
         }`}
       >
         {isRecording ? (
           <span className="animate-pulse">Press keys...</span>
         ) : value ? (
           <span className="flex items-center gap-2">
-            {formatHotkey(value).split(" + ").map((part, i, arr) => (
-              <span key={i} className="flex items-center gap-2">
-                <kbd className="rounded bg-background-secondary px-2 py-0.5 text-xs">
-                  {part}
-                </kbd>
-                {i < arr.length - 1 && <span className="text-text-muted">+</span>}
-              </span>
-            ))}
+            {formatHotkey(value)
+              .split(' + ')
+              .map((part, i, arr) => (
+                <span key={i} className="flex items-center gap-2">
+                  <kbd className="rounded bg-background-secondary px-2 py-0.5 text-xs">{part}</kbd>
+                  {i < arr.length - 1 && <span className="text-text-muted">+</span>}
+                </span>
+              ))}
           </span>
         ) : (
           <span className="text-text-muted">{placeholder}</span>
@@ -275,7 +295,7 @@ const HotkeyInput: React.FC<HotkeyInputProps> = ({ value, onChange, placeholder 
       {value && (
         <button
           onClick={clearHotkey}
-          className="rounded-lg border border-border bg-background-tertiary px-3 py-2 text-sm text-text-secondary transition-colors hover:border-error hover:text-error"
+          className="hover:border-error hover:text-error rounded-lg border border-border bg-background-tertiary px-3 py-2 text-sm text-text-secondary transition-colors"
         >
           Clear
         </button>
@@ -302,13 +322,22 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     loadAudioDevices()
   }, [])
 
+  const cloneSettings = (value: AppSettings): AppSettings =>
+    JSON.parse(JSON.stringify(value)) as AppSettings
+
+  const isOpenDialogResult = (value: unknown): value is OpenDialogResult => {
+    if (!value || typeof value !== 'object') return false
+    const record = value as { canceled?: unknown; filePaths?: unknown }
+    return typeof record.canceled === 'boolean' && Array.isArray(record.filePaths)
+  }
+
   const loadSettings = async () => {
     try {
       setLoading(true)
       setError(null)
       const data = await window.electronAPI.getSettings()
       setSettings(data)
-      setOriginalSettings(JSON.parse(JSON.stringify(data)))
+      setOriginalSettings(cloneSettings(data))
     } catch (err) {
       setError('Failed to load settings')
       console.error('Error loading settings:', err)
@@ -342,21 +371,21 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
   const handleSave = async () => {
     if (!settings) return
-    
+
     try {
       setSaving(true)
       setError(null)
       const result = await window.electronAPI.saveSettings(settings)
       setSaveSuccess(true)
-      setOriginalSettings(JSON.parse(JSON.stringify(settings)))
-      
+      setOriginalSettings(cloneSettings(settings))
+
       // Show restart message
       if (result.restarted) {
         setTimeout(() => {
           setError(null)
         }, 3000)
       }
-      
+
       setTimeout(() => setSaveSuccess(false), 3000)
     } catch (err) {
       setError('Failed to save settings')
@@ -368,7 +397,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
   const handleReset = () => {
     if (originalSettings) {
-      setSettings(JSON.parse(JSON.stringify(originalSettings)))
+      setSettings(cloneSettings(originalSettings))
     }
   }
 
@@ -403,7 +432,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     updateVideoSetting('quality', quality)
   }
 
-  const applyResolutionPreset = (preset: typeof allResolutionPresets[0]) => {
+  const applyResolutionPreset = (preset: (typeof allResolutionPresets)[0]) => {
     updateVideoSetting('width', preset.width)
     updateVideoSetting('height', preset.height)
     updateVideoSetting('fps', preset.fps)
@@ -412,13 +441,13 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   // Get available resolution presets based on selected monitor
   const getAvailableResolutionPresets = () => {
     if (!settings || monitors.length === 0) return allResolutionPresets
-    
+
     const selectedMonitor = monitors.find(m => m.id === settings.video.monitor) || monitors[0]
     if (!selectedMonitor) return allResolutionPresets
-    
+
     // Filter presets that fit within the monitor's resolution
-    return allResolutionPresets.filter(preset => 
-      preset.width <= selectedMonitor.width && preset.height <= selectedMonitor.height
+    return allResolutionPresets.filter(
+      preset => preset.width <= selectedMonitor.width && preset.height <= selectedMonitor.height
     )
   }
 
@@ -426,8 +455,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const getCurrentQualityPreset = (): keyof typeof qualityPresets => {
     if (!settings) return 'medium'
     const currentQuality = settings.video.quality
-    const preset = (Object.keys(qualityPresets) as Array<keyof typeof qualityPresets>)
-      .find(key => qualityPresets[key].quality === currentQuality)
+    const preset = (Object.keys(qualityPresets) as Array<keyof typeof qualityPresets>).find(
+      key => qualityPresets[key].quality === currentQuality
+    )
     return preset || 'medium'
   }
 
@@ -476,12 +506,8 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {saveSuccess && (
-            <span className="text-sm text-success">Saved & restarted!</span>
-          )}
-          {hasChanges && (
-            <span className="text-sm text-warning">Unsaved changes</span>
-          )}
+          {saveSuccess && <span className="text-success text-sm">Saved & restarted!</span>}
+          {hasChanges && <span className="text-warning text-sm">Unsaved changes</span>}
           <button
             onClick={handleReset}
             disabled={!hasChanges || saving}
@@ -509,22 +535,19 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
       {/* Error Message */}
       {error && (
-        <div className="mx-6 mt-4 rounded-lg bg-error/10 px-4 py-3 text-sm text-error">
-          {error}
-        </div>
+        <div className="bg-error/10 text-error mx-6 mt-4 rounded-lg px-4 py-3 text-sm">{error}</div>
       )}
 
       {/* Settings Content */}
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-4xl space-y-8">
-          
           {/* Video & Capture Settings */}
           <section className="rounded-xl border border-border bg-background-secondary p-6">
             <div className="mb-4 flex items-center gap-2">
               <Video className="h-5 w-5 text-accent-primary" />
               <h2 className="text-lg font-semibold text-text-primary">Video & Capture</h2>
             </div>
-            
+
             <div className="space-y-6">
               {/* Monitor Selection */}
               {monitors.length > 0 && (
@@ -543,9 +566,13 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                             : 'border-border bg-background-tertiary hover:border-accent-primary/50'
                         }`}
                       >
-                        <Monitor className={`h-5 w-5 ${settings.video.monitor === monitor.id ? 'text-accent-primary' : 'text-text-muted'}`} />
+                        <Monitor
+                          className={`h-5 w-5 ${settings.video.monitor === monitor.id ? 'text-accent-primary' : 'text-text-muted'}`}
+                        />
                         <div>
-                          <div className={`text-sm font-medium ${settings.video.monitor === monitor.id ? 'text-accent-primary' : 'text-text-primary'}`}>
+                          <div
+                            className={`text-sm font-medium ${settings.video.monitor === monitor.id ? 'text-accent-primary' : 'text-text-primary'}`}
+                          >
                             {monitor.name} {monitor.primary && '(Primary)'}
                           </div>
                           <div className="text-xs text-text-muted">
@@ -567,7 +594,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   </label>
                   <div className="flex flex-wrap gap-2">
                     {availablePresets.map(preset => {
-                      const isActive = settings.video.width === preset.width && settings.video.height === preset.height
+                      const isActive =
+                        settings.video.width === preset.width &&
+                        settings.video.height === preset.height
                       return (
                         <button
                           key={preset.label}
@@ -584,7 +613,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     })}
                   </div>
                   {monitors.length > 0 && availablePresets.length < allResolutionPresets.length && (
-                    <p className="mt-2 text-xs text-text-warning">
+                    <p className="text-text-warning mt-2 text-xs">
                       Some options hidden - exceed monitor resolution
                     </p>
                   )}
@@ -619,27 +648,31 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   Quality Preset
                 </label>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {(Object.keys(qualityPresets) as Array<keyof typeof qualityPresets>).map(preset => {
-                    const isActive = settings.video.quality === qualityPresets[preset].quality
-                    return (
-                      <button
-                        key={preset}
-                        onClick={() => applyQualityPreset(preset)}
-                        className={`rounded-lg border p-3 text-left transition-all ${
-                          isActive
-                            ? 'border-accent-primary bg-accent-primary/10'
-                            : 'border-border bg-background-tertiary hover:border-accent-primary/50'
-                        }`}
-                      >
-                        <div className={`text-sm font-medium ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}>
-                          {qualityPresets[preset].label}
-                        </div>
-                        <div className="mt-1 text-xs text-text-muted leading-tight">
-                          {qualityPresets[preset].description}
-                        </div>
-                      </button>
-                    )
-                  })}
+                  {(Object.keys(qualityPresets) as Array<keyof typeof qualityPresets>).map(
+                    preset => {
+                      const isActive = settings.video.quality === qualityPresets[preset].quality
+                      return (
+                        <button
+                          key={preset}
+                          onClick={() => applyQualityPreset(preset)}
+                          className={`rounded-lg border p-3 text-left transition-all ${
+                            isActive
+                              ? 'border-accent-primary bg-accent-primary/10'
+                              : 'border-border bg-background-tertiary hover:border-accent-primary/50'
+                          }`}
+                        >
+                          <div
+                            className={`text-sm font-medium ${isActive ? 'text-accent-primary' : 'text-text-primary'}`}
+                          >
+                            {qualityPresets[preset].label}
+                          </div>
+                          <div className="mt-1 text-xs leading-tight text-text-muted">
+                            {qualityPresets[preset].description}
+                          </div>
+                        </button>
+                      )
+                    }
+                  )}
                 </div>
               </div>
 
@@ -650,7 +683,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     <label className="block text-sm font-medium text-text-secondary">
                       Buffer Duration
                     </label>
-                    <p className="text-xs text-text-muted mt-1">
+                    <p className="mt-1 text-xs text-text-muted">
                       How much gameplay is kept in memory
                     </p>
                   </div>
@@ -661,10 +694,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       max="300"
                       step="30"
                       value={settings.buffer_seconds}
-                      onChange={e => setSettings(prev => prev ? { ...prev, buffer_seconds: parseInt(e.target.value) || 120 } : null)}
-                      className="w-20 rounded-lg border border-border bg-background-secondary px-3 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none text-center"
+                      onChange={e =>
+                        setSettings(prev =>
+                          prev ? { ...prev, buffer_seconds: parseInt(e.target.value) || 120 } : null
+                        )
+                      }
+                      className="w-20 rounded-lg border border-border bg-background-secondary px-3 py-2 text-center text-sm text-text-primary focus:border-accent-primary focus:outline-none"
                     />
-                    <span className="text-sm text-text-muted w-16">
+                    <span className="w-16 text-sm text-text-muted">
                       {formatDuration(settings.buffer_seconds)}
                     </span>
                   </div>
@@ -673,7 +710,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
 
               {/* Encoder Selection */}
               <div>
-                <label className="mb-2 block text-sm font-medium text-text-secondary">Encoder</label>
+                <label className="mb-2 block text-sm font-medium text-text-secondary">
+                  Encoder
+                </label>
                 <div className="flex gap-3">
                   {(['auto', 'nvenc', 'x264'] as const).map(encoder => (
                     <button
@@ -704,16 +743,15 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     <div className="text-sm font-medium text-text-primary">
                       Estimated File Size per Clip
                     </div>
-                    <div className="text-xs text-text-muted mt-1">
-                      Based on {formatDuration(settings.buffer_seconds)} @ {settings.video.width}x{settings.video.height} with {qualityPresets[currentPreset].label} quality
+                    <div className="mt-1 text-xs text-text-muted">
+                      Based on {formatDuration(settings.buffer_seconds)} @ {settings.video.width}x
+                      {settings.video.height} with {qualityPresets[currentPreset].label} quality
                     </div>
-                    <div className="text-xs text-text-muted/60 mt-0.5 italic">
+                    <div className="mt-0.5 text-xs italic text-text-muted/60">
                       *Actual size varies with content complexity (CQP/CRF uses variable bitrate)
                     </div>
                   </div>
-                  <div className="text-lg font-semibold text-accent-primary">
-                    {estimatedSize}
-                  </div>
+                  <div className="text-lg font-semibold text-accent-primary">{estimatedSize}</div>
                 </div>
               </div>
             </div>
@@ -725,7 +763,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               <FolderOpen className="h-5 w-5 text-accent-primary" />
               <h2 className="text-lg font-semibold text-text-primary">Output</h2>
             </div>
-            
+
             <div>
               <label className="mb-2 block text-sm font-medium text-text-secondary">
                 Clips Folder
@@ -737,9 +775,13 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 <button
                   onClick={async () => {
                     try {
-                      const result = await window.electronAPI.dialog.openFolder()
-                      if (result && !result.canceled && result.filePaths && result.filePaths.length > 0) {
-                        setSettings(prev => prev ? { ...prev, output_path: result.filePaths[0] } : null)
+                      const result: unknown = await window.electronAPI.dialog.openFolder()
+                      if (!isOpenDialogResult(result)) {
+                        return
+                      }
+                      const { canceled, filePaths } = result
+                      if (!canceled && filePaths.length > 0) {
+                        setSettings(prev => (prev ? { ...prev, output_path: filePaths[0] } : null))
                       }
                     } catch (error) {
                       console.error('Failed to open folder picker:', error)
@@ -777,7 +819,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     onChange={e => updateAudioSetting('system_audio_enabled', e.target.checked)}
                     className="peer sr-only"
                   />
-                  <div className="h-6 w-11 rounded-full bg-background-primary peer-checked:bg-accent-primary peer-focus:outline-none after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:after:left-5.5" />
+                  <div className="peer-checked:after:left-5.5 h-6 w-11 rounded-full bg-background-primary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-focus:outline-none" />
                 </label>
               </div>
 
@@ -793,7 +835,8 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   >
                     {audioOutputDevices.map(device => (
                       <option key={device.id} value={device.id}>
-                        {device.name}{device.is_default ? ' (Default)' : ''}
+                        {device.name}
+                        {device.is_default ? ' (Default)' : ''}
                       </option>
                     ))}
                   </select>
@@ -812,7 +855,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     onChange={e => updateAudioSetting('microphone_enabled', e.target.checked)}
                     className="peer sr-only"
                   />
-                  <div className="h-6 w-11 rounded-full bg-background-primary peer-checked:bg-accent-primary peer-focus:outline-none after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:after:left-5.5" />
+                  <div className="peer-checked:after:left-5.5 h-6 w-11 rounded-full bg-background-primary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-focus:outline-none" />
                 </label>
               </div>
 
@@ -828,7 +871,8 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   >
                     {audioInputDevices.map(device => (
                       <option key={device.id} value={device.id}>
-                        {device.name}{device.is_default ? ' (Default)' : ''}
+                        {device.name}
+                        {device.is_default ? ' (Default)' : ''}
                       </option>
                     ))}
                   </select>
@@ -872,7 +916,19 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 min="1"
                 max="60"
                 value={settings.editor?.skip_seconds ?? 5}
-                onChange={e => setSettings(prev => prev ? { ...prev, editor: { ...(prev.editor || {}), skip_seconds: parseInt(e.target.value) || 5 } } : null)}
+                onChange={e =>
+                  setSettings(prev =>
+                    prev
+                      ? {
+                          ...prev,
+                          editor: {
+                            ...(prev.editor || {}),
+                            skip_seconds: parseInt(e.target.value) || 5,
+                          },
+                        }
+                      : null
+                  )
+                }
                 className="w-full rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
               />
               <p className="mt-1 text-xs text-text-muted">
@@ -887,18 +943,23 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               <Keyboard className="h-5 w-5 text-accent-primary" />
               <h2 className="text-lg font-semibold text-text-primary">Hotkey</h2>
             </div>
-            
+
             <div>
               <label className="mb-2 block text-sm font-medium text-text-secondary">
                 Save Clip Hotkey
               </label>
               <HotkeyInput
                 value={settings.hotkey.save_clip}
-                onChange={(value) => setSettings(prev => prev ? { ...prev, hotkey: { ...prev.hotkey, save_clip: value } } : null)}
+                onChange={value =>
+                  setSettings(prev =>
+                    prev ? { ...prev, hotkey: { ...prev.hotkey, save_clip: value } } : null
+                  )
+                }
                 placeholder="Click to set hotkey (e.g., F9)"
               />
               <p className="mt-1 text-xs text-text-muted">
-                Press this key combination to save the last {formatDuration(settings.buffer_seconds)} as a clip (~{estimatedSize})
+                Press this key combination to save the last{' '}
+                {formatDuration(settings.buffer_seconds)} as a clip (~{estimatedSize})
               </p>
             </div>
           </section>
@@ -914,15 +975,23 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               {/* Start with Windows */}
               <div className="flex items-center justify-between">
                 <div>
-                  <label className="block text-sm font-medium text-text-primary">Start with Windows</label>
-                  <p className="text-xs text-text-muted">Automatically run ClipVault when you log in</p>
+                  <label className="block text-sm font-medium text-text-primary">
+                    Start with Windows
+                  </label>
+                  <p className="text-xs text-text-muted">
+                    Automatically run ClipVault when you log in
+                  </p>
                 </div>
                 <button
                   onClick={async () => {
                     if (!settings) return
                     const newValue = !settings.ui?.start_with_windows
                     // Update local state
-                    setSettings(prev => prev ? { ...prev, ui: { ...(prev.ui || {}), start_with_windows: newValue } } : null)
+                    setSettings(prev =>
+                      prev
+                        ? { ...prev, ui: { ...(prev.ui || {}), start_with_windows: newValue } }
+                        : null
+                    )
                     // Update registry
                     try {
                       await window.electronAPI.setStartup(newValue)
@@ -950,11 +1019,18 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               <Info className="h-5 w-5 text-accent-primary" />
               <h2 className="text-lg font-semibold text-text-primary">About</h2>
             </div>
-            
+
             <div className="space-y-2 text-sm text-text-secondary">
               <p>ClipVault - Lightweight game clipping tool</p>
-              <p>Settings are saved to <code className="rounded bg-background-tertiary px-2 py-1 text-text-primary">%APPDATA%\ClipVault\settings.json</code></p>
-              <p className="text-text-muted">Changes require restarting the backend to take full effect.</p>
+              <p>
+                Settings are saved to{' '}
+                <code className="rounded bg-background-tertiary px-2 py-1 text-text-primary">
+                  %APPDATA%\ClipVault\settings.json
+                </code>
+              </p>
+              <p className="text-text-muted">
+                Changes require restarting the backend to take full effect.
+              </p>
             </div>
           </section>
         </div>
