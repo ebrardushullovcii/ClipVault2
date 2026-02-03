@@ -1,5 +1,22 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
-import { Search, Grid3X3, List, Loader2, ArrowUpDown, ArrowUp, ArrowDown, RefreshCw, Gamepad2, X, Plus } from 'lucide-react'
+import {
+  Search,
+  Grid3X3,
+  List,
+  Loader2,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  RefreshCw,
+  Gamepad2,
+  X,
+  Plus,
+  Trash2,
+  Tag,
+  Heart,
+  Download,
+  CheckSquare,
+} from 'lucide-react'
 import { ClipCard } from './ClipCard'
 import { GameTagEditor } from '../GameTagEditor'
 import { useThumbnails } from '../../hooks/useThumbnails'
@@ -26,6 +43,31 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
   const [scrollTop, setScrollTop] = useState(0)
   const [containerHeight, setContainerHeight] = useState(0)
   const [editingGameClip, setEditingGameClip] = useState<ClipInfo | null>(null)
+  const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set())
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [showTagModal, setShowTagModal] = useState(false)
+  const [bulkTagMode, setBulkTagMode] = useState<'add' | 'remove'>('add')
+  const [bulkTagValue, setBulkTagValue] = useState('')
+  const [bulkActionMessage, setBulkActionMessage] = useState<string | null>(null)
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+  const [isBulkTagApplying, setIsBulkTagApplying] = useState(false)
+  const [isBulkExporting, setIsBulkExporting] = useState(false)
+  const [bulkExportProgress, setBulkExportProgress] = useState(0)
+  const [bulkExportIndex, setBulkExportIndex] = useState(0)
+  const [bulkExportTotal, setBulkExportTotal] = useState(0)
+  const [bulkExportCurrent, setBulkExportCurrent] = useState<string | null>(null)
+  const [bulkExportErrors, setBulkExportErrors] = useState<string[]>([])
+  const [bulkTargetSizeMB, setBulkTargetSizeMB] = useState<number | 'original'>('original')
+  const [showExportSizeDropdown, setShowExportSizeDropdown] = useState(false)
+  const bulkExportAbortRef = useRef(false)
+  const lastSelectedIndexRef = useRef<number | null>(null)
+  const bulkMessageTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const [showGameModal, setShowGameModal] = useState(false)
+  const [bulkGameMode, setBulkGameMode] = useState<'add' | 'remove'>('add')
+  const [bulkGameValue, setBulkGameValue] = useState('')
+  const [gamesList, setGamesList] = useState<string[]>([])
+  const [gamesLoading, setGamesLoading] = useState(false)
+  const [gameSearchQuery, setGameSearchQuery] = useState('')
   
   // Use persistent state
   const {
@@ -50,6 +92,12 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
   const processingFilesRef = useRef<Set<string>>(new Set())
   // Track retry attempts for each filename
   const retryAttemptsRef = useRef<Map<string, number>>(new Map())
+  const selectedClips = useMemo(
+    () => clips.filter(clip => selectedClipIds.has(clip.id)),
+    [clips, selectedClipIds]
+  )
+  const selectedCount = selectedClipIds.size
+  const selectionActive = selectedCount > 0
 
   // Calculate responsive columns based on container width
   const getGridCols = (width: number): number => {
@@ -242,6 +290,14 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
     return Object.keys(tagCounts).sort()
   }, [tagCounts])
 
+  const selectedTags = useMemo(() => {
+    const tags = new Set<string>()
+    selectedClips.forEach(clip => {
+      clip.metadata?.tags?.forEach(tag => tags.add(tag))
+    })
+    return Array.from(tags).sort()
+  }, [selectedClips])
+
   // Extract all unique games from clips with counts
   // ONLY counts games from actual metadata tags (backend detection or user tagging)
   // Does NOT use filename extraction for filtering - filename is just for display
@@ -260,6 +316,24 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
   const allGames = useMemo(() => {
     return Object.keys(gameCounts).sort()
   }, [gameCounts])
+
+  const selectedGames = useMemo(() => {
+    const games = new Set<string>()
+    selectedClips.forEach(clip => {
+      if (clip.metadata?.game) {
+        games.add(clip.metadata.game)
+      }
+    })
+    return Array.from(games).sort()
+  }, [selectedClips])
+
+  const filteredGamesList = useMemo(() => {
+    if (!gameSearchQuery.trim()) {
+      return gamesList
+    }
+    const query = gameSearchQuery.toLowerCase()
+    return gamesList.filter(game => game.toLowerCase().includes(query))
+  }, [gameSearchQuery, gamesList])
 
   const filteredAndSortedClips = useMemo(() => {
     let result = clips.filter(clip =>
@@ -304,6 +378,485 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
 
     return result
   }, [clips, libraryState.searchQuery, libraryState.sortBy, libraryState.sortDirection, libraryState.filterBy, libraryState.showFavoritesOnly, libraryState.selectedTag, libraryState.selectedGame])
+
+  const clearSelection = useCallback(() => {
+    setSelectedClipIds(new Set())
+    lastSelectedIndexRef.current = null
+  }, [])
+
+  const selectAllVisible = useCallback(() => {
+    if (filteredAndSortedClips.length === 0) {
+      return
+    }
+    setSelectedClipIds(new Set(filteredAndSortedClips.map(clip => clip.id)))
+    lastSelectedIndexRef.current = filteredAndSortedClips.length - 1
+  }, [filteredAndSortedClips])
+
+  const applySelection = useCallback(
+    (
+      clipId: string,
+      index: number,
+      options: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; forceToggle?: boolean }
+    ) => {
+      setSelectedClipIds(prev => {
+        const next = new Set(prev)
+        const hasModifier = options.ctrlKey || options.metaKey
+        const hasExisting = next.size > 0
+
+        if (options.shiftKey && lastSelectedIndexRef.current !== null) {
+          const start = Math.min(lastSelectedIndexRef.current, index)
+          const end = Math.max(lastSelectedIndexRef.current, index)
+          const rangeIds = filteredAndSortedClips.slice(start, end + 1).map(clip => clip.id)
+          if (!hasModifier) {
+            next.clear()
+          }
+          rangeIds.forEach(id => next.add(id))
+        } else if (options.forceToggle || hasModifier || hasExisting) {
+          if (next.has(clipId)) {
+            next.delete(clipId)
+          } else {
+            next.add(clipId)
+          }
+        } else {
+          next.clear()
+          next.add(clipId)
+        }
+
+        return next
+      })
+
+      lastSelectedIndexRef.current = index
+    },
+    [filteredAndSortedClips]
+  )
+
+  const handleCardClick = useCallback(
+    (clip: ClipInfo, index: number, event: React.MouseEvent<HTMLDivElement>) => {
+      const hasModifier = event.ctrlKey || event.metaKey || event.shiftKey
+      if (selectionActive || hasModifier) {
+        applySelection(clip.id, index, {
+          shiftKey: event.shiftKey,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+        })
+        return
+      }
+
+      const fallbackMetadata: VideoMetadata = metadata[clip.id] || {
+        duration: 0,
+        width: 1920,
+        height: 1080,
+        fps: 60,
+        bitrate: 0,
+        size: clip.size,
+        format: 'mp4',
+        videoCodec: 'h264',
+        audioTracks: 2,
+      }
+      onOpenEditor(clip, fallbackMetadata)
+    },
+    [applySelection, metadata, onOpenEditor, selectionActive]
+  )
+
+  const handleToggleSelect = useCallback(
+    (clip: ClipInfo, index: number, event: React.MouseEvent<HTMLButtonElement>) => {
+      applySelection(clip.id, index, {
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        forceToggle: true,
+      })
+    },
+    [applySelection]
+  )
+
+  useEffect(() => {
+    if (filteredAndSortedClips.length === 0) {
+      if (selectedClipIds.size > 0) {
+        clearSelection()
+      }
+      return
+    }
+
+    const allowedIds = new Set(filteredAndSortedClips.map(clip => clip.id))
+    setSelectedClipIds(prev => {
+      const next = new Set(Array.from(prev).filter(id => allowedIds.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [clearSelection, filteredAndSortedClips, selectedClipIds.size])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const isTypingField =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          (target as HTMLElement).isContentEditable)
+
+      if (isTypingField) {
+        return
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+        event.preventDefault()
+        selectAllVisible()
+      }
+
+      if (event.key === 'Escape' && selectedClipIds.size > 0) {
+        event.preventDefault()
+        clearSelection()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [clearSelection, selectAllVisible, selectedClipIds.size])
+
+  const showBulkMessage = useCallback((message: string) => {
+    setBulkActionMessage(message)
+    if (bulkMessageTimeoutRef.current) {
+      clearTimeout(bulkMessageTimeoutRef.current)
+    }
+    bulkMessageTimeoutRef.current = setTimeout(() => {
+      setBulkActionMessage(null)
+    }, 3000)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (bulkMessageTimeoutRef.current) {
+        clearTimeout(bulkMessageTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const handleBulkFavoriteToggle = useCallback(async () => {
+    if (selectedClips.length === 0) return
+
+    const allFavorite = selectedClips.every(clip => clip.metadata?.favorite)
+    const nextFavorite = !allFavorite
+    const updatedMetadata = new Map<string, ClipMetadata>()
+    const failed: string[] = []
+
+    for (const clip of selectedClips) {
+      const newMetadata: ClipMetadata = {
+        ...(clip.metadata ?? {}),
+        favorite: nextFavorite,
+      }
+      try {
+        await window.electronAPI.saveClipMetadata(clip.id, newMetadata)
+        updatedMetadata.set(clip.id, newMetadata)
+      } catch (error) {
+        console.error('[Library] Failed to update favorite:', error)
+        failed.push(clip.filename)
+      }
+    }
+
+    if (updatedMetadata.size > 0) {
+      setClips(prev =>
+        prev.map(clip => {
+          const updated = updatedMetadata.get(clip.id)
+          return updated ? { ...clip, metadata: updated } : clip
+        })
+      )
+    }
+
+    if (failed.length > 0) {
+      showBulkMessage(`Failed to update ${failed.length} clips`)
+    } else {
+      showBulkMessage(nextFavorite ? 'Marked as favorite' : 'Removed from favorites')
+    }
+    clearSelection()
+  }, [clearSelection, selectedClips, showBulkMessage])
+
+  const loadGamesList = useCallback(async () => {
+    if (gamesLoading || gamesList.length > 0) {
+      return
+    }
+    setGamesLoading(true)
+    try {
+      const result = await window.electronAPI.getGamesDatabase()
+      if (result?.success && result.data?.games) {
+        const names = result.data.games.map(game => game.name).filter(Boolean)
+        names.sort((a, b) => a.localeCompare(b))
+        setGamesList(names)
+      }
+    } catch (error) {
+      console.error('[Library] Failed to load games list:', error)
+    } finally {
+      setGamesLoading(false)
+    }
+  }, [gamesLoading, gamesList.length])
+
+  const applyBulkTags = useCallback(async () => {
+    const tagValue = bulkTagValue.trim()
+    if (!tagValue || selectedClips.length === 0) {
+      return
+    }
+
+    setIsBulkTagApplying(true)
+    const updatedMetadata = new Map<string, ClipMetadata>()
+    const failed: string[] = []
+
+    for (const clip of selectedClips) {
+      const existingTags = clip.metadata?.tags ? [...clip.metadata.tags] : []
+      let nextTags = existingTags
+      if (bulkTagMode === 'add') {
+        if (!existingTags.includes(tagValue)) {
+          nextTags = [...existingTags, tagValue]
+        }
+      } else {
+        nextTags = existingTags.filter(tag => tag !== tagValue)
+      }
+
+      const newMetadata: ClipMetadata = {
+        ...(clip.metadata ?? {}),
+        tags: nextTags,
+      }
+
+      try {
+        await window.electronAPI.saveClipMetadata(clip.id, newMetadata)
+        updatedMetadata.set(clip.id, newMetadata)
+      } catch (error) {
+        console.error('[Library] Failed to update tags:', error)
+        failed.push(clip.filename)
+      }
+    }
+
+    if (updatedMetadata.size > 0) {
+      setClips(prev =>
+        prev.map(clip => {
+          const updated = updatedMetadata.get(clip.id)
+          return updated ? { ...clip, metadata: updated } : clip
+        })
+      )
+    }
+
+    setIsBulkTagApplying(false)
+    setShowTagModal(false)
+    setBulkTagValue('')
+
+    if (failed.length > 0) {
+      showBulkMessage(`Failed to update ${failed.length} clips`)
+    } else {
+      showBulkMessage(bulkTagMode === 'add' ? 'Tag added to selection' : 'Tag removed from selection')
+    }
+    clearSelection()
+  }, [bulkTagMode, bulkTagValue, clearSelection, selectedClips, showBulkMessage])
+
+  const applyBulkGame = useCallback(async () => {
+    if (selectedClips.length === 0) {
+      return
+    }
+
+    const gameValue = bulkGameValue.trim()
+    if (!gameValue) {
+      return
+    }
+
+    const updatedMetadata = new Map<string, ClipMetadata>()
+    const failed: string[] = []
+
+    for (const clip of selectedClips) {
+      let nextGame = clip.metadata?.game
+
+      if (bulkGameMode === 'add') {
+        nextGame = gameValue
+      } else if (bulkGameMode === 'remove') {
+        if (clip.metadata?.game === gameValue) {
+          nextGame = undefined
+        }
+      }
+
+      const newMetadata: ClipMetadata = {
+        ...(clip.metadata ?? {}),
+        game: nextGame,
+      }
+
+      try {
+        await window.electronAPI.saveClipMetadata(clip.id, newMetadata)
+        updatedMetadata.set(clip.id, newMetadata)
+      } catch (error) {
+        console.error('[Library] Failed to update game tag:', error)
+        failed.push(clip.filename)
+      }
+    }
+
+    if (updatedMetadata.size > 0) {
+      setClips(prev =>
+        prev.map(clip => {
+          const updated = updatedMetadata.get(clip.id)
+          return updated ? { ...clip, metadata: updated } : clip
+        })
+      )
+    }
+
+    setShowGameModal(false)
+    setBulkGameValue('')
+    setGameSearchQuery('')
+
+    if (failed.length > 0) {
+      showBulkMessage(`Failed to update ${failed.length} clips`)
+    } else {
+      showBulkMessage(bulkGameMode === 'add' ? 'Game tag added to selection' : 'Game tag removed from selection')
+    }
+    clearSelection()
+  }, [bulkGameMode, bulkGameValue, clearSelection, selectedClips, showBulkMessage])
+
+  const handleBulkDelete = useCallback(async () => {
+    if (selectedClips.length === 0) return
+
+    setIsBulkDeleting(true)
+    const deletedIds = new Set<string>()
+    const failed: string[] = []
+
+    for (const clip of selectedClips) {
+      try {
+        const result = await window.electronAPI.deleteClip(clip.id)
+        if (result?.success) {
+          deletedIds.add(clip.id)
+        } else {
+          failed.push(clip.filename)
+        }
+      } catch (error) {
+        console.error('[Library] Failed to delete clip:', error)
+        failed.push(clip.filename)
+      }
+    }
+
+    if (deletedIds.size > 0) {
+      setClips(prev => prev.filter(clip => !deletedIds.has(clip.id)))
+    }
+
+    setIsBulkDeleting(false)
+    setShowDeleteConfirm(false)
+    clearSelection()
+
+    if (failed.length > 0) {
+      showBulkMessage(`Failed to delete ${failed.length} clips`)
+    } else {
+      showBulkMessage('Deleted selected clips')
+    }
+  }, [clearSelection, selectedClips, showBulkMessage])
+
+  const handleBulkExport = useCallback(async () => {
+    if (selectedClips.length === 0) return
+
+    setIsBulkExporting(true)
+    setBulkExportErrors([])
+    setBulkExportProgress(0)
+    setBulkExportIndex(0)
+    setBulkExportTotal(selectedClips.length)
+    bulkExportAbortRef.current = false
+
+    const failures: string[] = []
+
+    for (let i = 0; i < selectedClips.length; i += 1) {
+      if (bulkExportAbortRef.current) {
+        break
+      }
+
+      const clip = selectedClips[i]
+      setBulkExportIndex(i + 1)
+      setBulkExportCurrent(clip.filename)
+      setBulkExportProgress(0)
+
+      let clipMetadata = metadata[clip.id]
+      if (!clipMetadata) {
+        clipMetadata = await fetchMetadata(clip.id, clip.path)
+      }
+
+      if (!clipMetadata) {
+        failures.push(`${clip.filename} (metadata unavailable)`)
+        continue
+      }
+
+      const trimStart = clip.metadata?.trim?.start ?? 0
+      const trimEndDefault = clip.metadata?.trim?.end ?? clipMetadata.duration
+      const trimEnd = Math.max(trimEndDefault, trimStart + 0.01)
+      const audioTrack1 = clip.metadata?.audio?.track1 ?? true
+      const audioTrack2 = clip.metadata?.audio?.track2 ?? true
+
+      const baseFilename = clip.filename.replace('.mp4', '')
+      const timestamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15)
+      const exportFilename = `${baseFilename}_export_${timestamp}.mp4`
+
+      try {
+        const result = await window.electronAPI.editor.exportClip({
+          clipPath: clip.path,
+          exportFilename,
+          trimStart,
+          trimEnd,
+          audioTrack1,
+          audioTrack2,
+          audioTrack1Volume: 1.0,
+          audioTrack2Volume: 1.0,
+          targetSizeMB: bulkTargetSizeMB,
+        })
+
+        if (!result.success) {
+          failures.push(`${clip.filename} (${result.error || 'export failed'})`)
+        }
+      } catch (error) {
+        console.error('[Library] Failed to export clip:', error)
+        failures.push(`${clip.filename} (export failed)`)
+      }
+    }
+
+    setIsBulkExporting(false)
+    setBulkExportProgress(0)
+    setBulkExportCurrent(null)
+    setBulkExportIndex(0)
+    setBulkExportTotal(0)
+    setBulkExportErrors(failures)
+
+    if (bulkExportAbortRef.current) {
+      showBulkMessage('Export stopped')
+    } else if (failures.length > 0) {
+      showBulkMessage(`Export completed with ${failures.length} errors`)
+    } else {
+      showBulkMessage('Export completed')
+    }
+    bulkExportAbortRef.current = false
+    clearSelection()
+  }, [bulkTargetSizeMB, clearSelection, fetchMetadata, metadata, selectedClips, showBulkMessage])
+
+  const handleCancelExport = useCallback(() => {
+    if (isBulkExporting) {
+      bulkExportAbortRef.current = true
+      showBulkMessage('Stopping export after current clip...')
+    }
+  }, [isBulkExporting, showBulkMessage])
+
+  useEffect(() => {
+    if (!isBulkExporting) {
+      return
+    }
+
+    const unsubscribe = window.electronAPI.on('export:progress', (data: unknown) => {
+      const payload = data as { percent?: number }
+      if (typeof payload.percent === 'number') {
+        setBulkExportProgress(payload.percent)
+      }
+    })
+
+    return () => {
+      unsubscribe?.()
+    }
+  }, [isBulkExporting])
+
+  useEffect(() => {
+    if (showGameModal) {
+      void loadGamesList()
+    }
+  }, [loadGamesList, showGameModal])
+
+  useEffect(() => {
+    if (!selectionActive && showExportSizeDropdown) {
+      setShowExportSizeDropdown(false)
+    }
+  }, [selectionActive, showExportSizeDropdown])
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes'
@@ -451,6 +1004,190 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
           </button>
         </div>
       </div>
+
+      {/* Selection Toolbar */}
+      {selectionActive && (
+        <div className="flex shrink-0 flex-col border-b border-border bg-background-secondary/60">
+          <div className="flex h-12 items-center justify-between px-6">
+            <div className="flex items-center gap-3 text-sm text-text-primary">
+              <span className="font-medium">{selectedCount} selected</span>
+              <button
+                type="button"
+                onClick={selectAllVisible}
+                className="flex items-center gap-1 rounded-md border border-border bg-background-secondary px-2 py-1 text-xs text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
+              >
+                <CheckSquare className="h-3 w-3" />
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                className="flex items-center gap-1 rounded-md border border-border bg-background-secondary px-2 py-1 text-xs text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
+              >
+                <X className="h-3 w-3" />
+                Clear
+              </button>
+              {bulkActionMessage && (
+                <span className="ml-2 text-xs text-text-muted">{bulkActionMessage}</span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleBulkFavoriteToggle}
+                disabled={isBulkDeleting || isBulkTagApplying || isBulkExporting}
+                className="flex items-center gap-1 rounded-md border border-border bg-background-secondary px-3 py-1.5 text-xs font-medium text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Heart className="h-3 w-3" />
+                {selectedClips.every(clip => clip.metadata?.favorite) ? 'Unfavorite' : 'Favorite'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkTagMode('add')
+                  setShowTagModal(true)
+                  setBulkTagValue('')
+                }}
+                disabled={isBulkDeleting || isBulkTagApplying || isBulkExporting}
+                className="flex items-center gap-1 rounded-md border border-border bg-background-secondary px-3 py-1.5 text-xs font-medium text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Tag className="h-3 w-3" />
+                Add Tag
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkTagMode('remove')
+                  setShowTagModal(true)
+                  setBulkTagValue('')
+                }}
+                disabled={isBulkDeleting || isBulkTagApplying || isBulkExporting}
+                className="flex items-center gap-1 rounded-md border border-border bg-background-secondary px-3 py-1.5 text-xs font-medium text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Tag className="h-3 w-3" />
+                Remove Tag
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkGameMode('add')
+                  setShowGameModal(true)
+                  setBulkGameValue('')
+                  setGameSearchQuery('')
+                }}
+                disabled={isBulkDeleting || isBulkTagApplying || isBulkExporting}
+                className="flex items-center gap-1 rounded-md border border-border bg-background-secondary px-3 py-1.5 text-xs font-medium text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Gamepad2 className="h-3 w-3" />
+                Add Game
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkGameMode('remove')
+                  setShowGameModal(true)
+                  setBulkGameValue('')
+                  setGameSearchQuery('')
+                }}
+                disabled={isBulkDeleting || isBulkTagApplying || isBulkExporting}
+                className="flex items-center gap-1 rounded-md border border-border bg-background-secondary px-3 py-1.5 text-xs font-medium text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Gamepad2 className="h-3 w-3" />
+                Remove Game
+              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowExportSizeDropdown(prev => !prev)}
+                  disabled={isBulkDeleting || isBulkTagApplying || isBulkExporting}
+                  className="flex items-center gap-1 rounded-md border border-border bg-background-secondary px-3 py-1.5 text-xs font-medium text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Size:
+                  <span className="text-text-primary">
+                    {bulkTargetSizeMB === 'original' ? 'Original' : `${bulkTargetSizeMB}MB`}
+                  </span>
+                </button>
+                {showExportSizeDropdown && (
+                  <div className="absolute right-0 top-9 z-20 w-36 overflow-hidden rounded-lg border border-border bg-background-secondary shadow-lg">
+                    {[
+                      { label: 'Original', value: 'original' as const },
+                      { label: '10 MB', value: 10 },
+                      { label: '50 MB', value: 50 },
+                      { label: '100 MB', value: 100 },
+                    ].map(option => (
+                      <button
+                        key={option.label}
+                        type="button"
+                        onClick={() => {
+                          setBulkTargetSizeMB(option.value)
+                          setShowExportSizeDropdown(false)
+                        }}
+                        className={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition-colors hover:bg-background-tertiary ${
+                          bulkTargetSizeMB === option.value ? 'text-accent-primary' : 'text-text-secondary'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleBulkExport}
+                disabled={isBulkDeleting || isBulkTagApplying || isBulkExporting}
+                className="flex items-center gap-1 rounded-md border border-border bg-background-secondary px-3 py-1.5 text-xs font-medium text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Download className="h-3 w-3" />
+                Export
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={isBulkDeleting || isBulkTagApplying || isBulkExporting}
+                className="flex items-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trash2 className="h-3 w-3" />
+                Delete
+              </button>
+            </div>
+          </div>
+
+          {isBulkExporting && (
+            <div className="border-t border-border px-6 py-2">
+              <div className="flex items-center justify-between text-xs text-text-muted">
+                <span>
+                  Exporting {bulkExportIndex}/{bulkExportTotal}
+                  {bulkExportCurrent ? ` • ${bulkExportCurrent}` : ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCancelExport}
+                  className="rounded-md border border-border bg-background-secondary px-2 py-1 text-xs text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary"
+                >
+                  Stop
+                </button>
+              </div>
+              <div className="mt-2 h-1 overflow-hidden rounded-full bg-background-tertiary">
+                <div
+                  className="h-full bg-accent-primary transition-all duration-300"
+                  style={{ width: `${bulkExportProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {!isBulkExporting && bulkExportErrors.length > 0 && (
+            <div className="border-t border-border px-6 py-2">
+              <p className="text-xs text-red-400">
+                Export errors: {bulkExportErrors.slice(0, 2).join(', ')}
+                {bulkExportErrors.length > 2 ? ` +${bulkExportErrors.length - 2} more` : ''}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background-secondary/50 px-6">
@@ -622,21 +1359,28 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
                   : 'grid-cols-1'
               }`}
             >
-              {filteredAndSortedClips.slice(visibleStartIndex, visibleEndIndex).map(clip => (
-                <ClipCard
-                  key={clip.id}
-                  clip={clip}
-                  viewMode={libraryState.viewMode}
-                  formatFileSize={formatFileSize}
-                  formatDate={formatDate}
-                  thumbnailUrl={thumbnails[clip.id]}
-                  metadata={metadata[clip.id]}
-                  onGenerateThumbnail={generateThumbnail}
-                  onFetchMetadata={fetchMetadata}
-                  onOpenEditor={onOpenEditor}
-                  onEditGame={handleEditGame}
-                />
-              ))}
+              {filteredAndSortedClips.slice(visibleStartIndex, visibleEndIndex).map((clip, index) => {
+                const clipIndex = visibleStartIndex + index
+                return (
+                  <ClipCard
+                    key={clip.id}
+                    clip={clip}
+                    clipIndex={clipIndex}
+                    viewMode={libraryState.viewMode}
+                    formatFileSize={formatFileSize}
+                    formatDate={formatDate}
+                    thumbnailUrl={thumbnails[clip.id]}
+                    metadata={metadata[clip.id]}
+                    isSelected={selectedClipIds.has(clip.id)}
+                    showSelection={selectionActive}
+                    onGenerateThumbnail={generateThumbnail}
+                    onFetchMetadata={fetchMetadata}
+                    onCardClick={handleCardClick}
+                    onToggleSelect={handleToggleSelect}
+                    onEditGame={handleEditGame}
+                  />
+                )
+              })}
             </div>
             
             {/* Spacer for rows below visible range */}
@@ -646,6 +1390,200 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
           </>
         )}
       </div>
+
+      {/* Bulk Delete Confirmation */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="w-96 rounded-xl border border-border bg-background-secondary p-6 shadow-2xl">
+            <h3 className="mb-2 text-lg font-semibold text-text-primary">
+              Delete {selectedCount} clip{selectedCount === 1 ? '' : 's'}?
+            </h3>
+            <p className="mb-4 text-sm text-text-muted">
+              This will permanently delete the selected clips. This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="btn-secondary"
+                disabled={isBulkDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleBulkDelete}
+                disabled={isBulkDeleting}
+                className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isBulkDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Tag Modal */}
+      {showTagModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="w-96 rounded-xl border border-border bg-background-secondary p-6 shadow-2xl">
+            <h3 className="mb-2 text-lg font-semibold text-text-primary">
+              {bulkTagMode === 'add' ? 'Add Tag' : 'Remove Tag'}
+            </h3>
+            <p className="mb-4 text-sm text-text-muted">
+              Apply to {selectedCount} clip{selectedCount === 1 ? '' : 's'}.
+            </p>
+            <input
+              type="text"
+              value={bulkTagValue}
+              onChange={e => setBulkTagValue(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && applyBulkTags()}
+              placeholder={bulkTagMode === 'add' ? 'e.g. clutch' : 'select a tag to remove'}
+              className="input w-full"
+            />
+            <div className="mt-3 max-h-32 overflow-y-auto rounded-lg border border-border bg-background-primary/40 p-2">
+              {(bulkTagMode === 'add' ? allTags : selectedTags).length === 0 ? (
+                <p className="text-xs text-text-muted">
+                  {bulkTagMode === 'add' ? 'No tags exist yet.' : 'No tags on selected clips.'}
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(bulkTagMode === 'add' ? allTags : selectedTags).map(tag => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setBulkTagValue(tag)}
+                      className={`rounded-full px-2 py-1 text-xs transition-colors ${
+                        bulkTagValue === tag
+                          ? 'bg-accent-primary text-background-primary'
+                          : 'bg-background-tertiary text-text-muted hover:text-text-primary'
+                      }`}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTagModal(false)
+                  setBulkTagValue('')
+                }}
+                className="btn-secondary"
+                disabled={isBulkTagApplying}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={applyBulkTags}
+                disabled={isBulkTagApplying || bulkTagValue.trim().length === 0}
+                className="btn-primary"
+              >
+                {isBulkTagApplying ? 'Applying...' : bulkTagMode === 'add' ? 'Add' : 'Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Game Modal */}
+      {showGameModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="w-[420px] rounded-xl border border-border bg-background-secondary p-6 shadow-2xl">
+            <h3 className="mb-2 text-lg font-semibold text-text-primary">
+              {bulkGameMode === 'add' ? 'Add Game Tag' : 'Remove Game Tag'}
+            </h3>
+            <p className="mb-4 text-sm text-text-muted">
+              Apply to {selectedCount} clip{selectedCount === 1 ? '' : 's'}.
+            </p>
+
+            {bulkGameMode === 'add' ? (
+              <>
+                <input
+                  type="text"
+                  value={gameSearchQuery}
+                  onChange={e => setGameSearchQuery(e.target.value)}
+                  placeholder="Search games..."
+                  className="input w-full"
+                />
+                <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-border bg-background-primary/40 p-2">
+                  {gamesLoading ? (
+                    <p className="text-xs text-text-muted">Loading games...</p>
+                  ) : filteredGamesList.length === 0 ? (
+                    <p className="text-xs text-text-muted">No games found.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {filteredGamesList.map(game => (
+                        <button
+                          key={game}
+                          type="button"
+                          onClick={() => setBulkGameValue(game)}
+                          className={`rounded-full px-2 py-1 text-xs transition-colors ${
+                            bulkGameValue === game
+                              ? 'bg-accent-primary text-background-primary'
+                              : 'bg-background-tertiary text-text-muted hover:text-text-primary'
+                          }`}
+                        >
+                          {game}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="max-h-40 overflow-y-auto rounded-lg border border-border bg-background-primary/40 p-2">
+                {selectedGames.length === 0 ? (
+                  <p className="text-xs text-text-muted">No game tags on selected clips.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {selectedGames.map(game => (
+                      <button
+                        key={game}
+                        type="button"
+                        onClick={() => setBulkGameValue(game)}
+                        className={`rounded-full px-2 py-1 text-xs transition-colors ${
+                          bulkGameValue === game
+                            ? 'bg-red-500 text-white'
+                            : 'bg-background-tertiary text-text-muted hover:text-text-primary'
+                        }`}
+                      >
+                        {game}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowGameModal(false)
+                  setBulkGameValue('')
+                  setGameSearchQuery('')
+                }}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={applyBulkGame}
+                disabled={bulkGameValue.trim().length === 0}
+                className="btn-primary"
+              >
+                {bulkGameMode === 'add' ? 'Add' : 'Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Game Tag Editor Modal */}
       <GameTagEditor

@@ -5,8 +5,8 @@
 
 ## Current Status Overview
 
-**Last Updated**: 2026-02-03 (UI polish fixes + clip save sound)
-**Status**: ✅ Phase 1-3 COMPLETE - Phase 4 In Progress (UI polish + clip save sound completed)
+**Last Updated**: 2026-02-03 (bulk clip operations)
+**Status**: ✅ Phase 1-3 COMPLETE - Phase 4 In Progress (bulk clip operations completed)
 **Architecture**: Independent Backend (C++) + Electron UI (React/TypeScript)
 **Packaging**: Single EXE with auto-starting backend
 
@@ -194,6 +194,17 @@ npm run dev
 - [x] Resolution presets filtered by monitor capabilities
 
 ## Recent Changes
+
+### 2026-02-03 - Bulk Clip Operations (COMPLETED ✅)
+
+- **Multi-select in Library**: Ctrl/Shift click selection with persistent toolbar
+- **Bulk actions**: Favorite/unfavorite, add/remove tags, add/remove game tags, export queue, delete confirmation
+- **Bulk export size**: Size target selector (Original/10/50/100 MB) in selection toolbar
+- **Selection UX**: Select all, clear, progress indicators, and export error summary
+
+**Files Modified**:
+- `ui/src/renderer/components/Library/Library.tsx` - selection state, bulk actions, modals, export queue
+- `ui/src/renderer/components/Library/ClipCard.tsx` - selection checkbox + click handling
 
 ### 2026-02-03 - UI Polish Fixes (COMPLETED ✅)
 
@@ -651,8 +662,8 @@ None - all features working as expected.
 
 ### Library Management
 
-- [ ] **14. Bulk Clip Operations** - Select and act on multiple clips at once
-      **Status**: Ready to implement
+- [x] **14. Bulk Clip Operations** - Select and act on multiple clips at once
+      **Status**: ✅ COMPLETED
       **Independent**: ✓ Yes
       **Files**: `ui/src/renderer/components/Library/Library.tsx` (major refactor)
       **Implementation**:
@@ -675,12 +686,12 @@ None - all features working as expected.
   - Export queue progress indicator
 
   **Acceptance Criteria**:
-  - [ ] Can select multiple clips with Ctrl/Shift click
-  - [ ] Can select all with Ctrl+A
-  - [ ] Bulk delete with confirmation
-  - [ ] Bulk tag add/remove
-  - [ ] Export queue processes sequentially (not parallel)
-  - [ ] Selection clears after action or on Escape
+  - [x] Can select multiple clips with Ctrl/Shift click
+  - [x] Can select all with Ctrl+A
+  - [x] Bulk delete with confirmation
+  - [x] Bulk tag add/remove
+  - [x] Export queue processes sequentially (not parallel)
+  - [x] Selection clears after action or on Escape
 
 ### Game Integration
 

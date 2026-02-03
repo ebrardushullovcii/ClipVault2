@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, memo } from 'react'
-import { Play, Clock, HardDrive, Film, Maximize, Gamepad2, Plus } from 'lucide-react'
+import { Play, Clock, HardDrive, Film, Maximize, Gamepad2, Plus, CheckSquare, Square } from 'lucide-react'
 import type { VideoMetadata } from '../../hooks/useVideoMetadata'
 import type { ClipInfo } from '../../types/electron'
 
@@ -10,9 +10,14 @@ interface ClipCardProps {
   formatDate: (dateString: string) => string
   thumbnailUrl?: string
   metadata?: VideoMetadata
+  clipIndex?: number
+  isSelected?: boolean
+  showSelection?: boolean
   onGenerateThumbnail: (clipId: string, videoPath: string) => Promise<string | undefined>
   onFetchMetadata: (clipId: string, videoPath: string) => Promise<VideoMetadata | undefined>
   onOpenEditor?: (clip: ClipInfo, metadata: VideoMetadata) => void
+  onCardClick?: (clip: ClipInfo, index: number, event: React.MouseEvent<HTMLDivElement>) => void
+  onToggleSelect?: (clip: ClipInfo, index: number, event: React.MouseEvent<HTMLButtonElement>) => void
   onEditGame?: (clip: ClipInfo) => void
 }
 
@@ -23,9 +28,14 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
   formatDate,
   thumbnailUrl,
   metadata,
+  clipIndex,
+  isSelected = false,
+  showSelection = false,
   onGenerateThumbnail,
   onFetchMetadata,
   onOpenEditor,
+  onCardClick,
+  onToggleSelect,
   onEditGame,
 }) => {
   const cardRef = useRef<HTMLDivElement>(null)
@@ -104,7 +114,11 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
     }
   }, [clip.id, clip.path, thumbnailUrl, metadata, onGenerateThumbnail, onFetchMetadata])
 
-  const handleClick = () => {
+  const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (onCardClick) {
+      onCardClick(clip, clipIndex ?? 0, event)
+      return
+    }
     if (onOpenEditor) {
       // Allow clicking even without full metadata - Editor will load it
       const fallbackMetadata: VideoMetadata = metadata || {
@@ -119,6 +133,13 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
         audioTracks: 2
       }
       onOpenEditor(clip, fallbackMetadata)
+    }
+  }
+
+  const handleToggleSelect = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    if (onToggleSelect) {
+      onToggleSelect(clip, clipIndex ?? 0, event)
     }
   }
 
@@ -142,6 +163,8 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
       ref={cardRef}
       onClick={handleClick}
       className={`card group cursor-pointer overflow-hidden ${
+        isSelected ? 'ring-2 ring-accent-primary' : ''
+      } ${
         isGrid ? '' : 'flex items-center gap-4 p-4'
       }`}
     >
@@ -151,6 +174,20 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
           isGrid ? 'aspect-video' : 'aspect-video w-48 rounded-lg'
         }`}
       >
+        {/* Selection checkbox */}
+        <button
+          type="button"
+          onClick={handleToggleSelect}
+          className={`absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border bg-black/60 text-white transition-opacity ${
+            showSelection || isSelected
+              ? 'opacity-100 pointer-events-auto'
+              : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
+          }`}
+          title={isSelected ? 'Deselect clip' : 'Select clip'}
+        >
+          {isSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+        </button>
+
         {/* Thumbnail image or placeholder */}
         {thumbnailUrl ? (
           <img
@@ -269,6 +306,8 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
     prevProps.clip.id === nextProps.clip.id &&
     prevProps.viewMode === nextProps.viewMode &&
     prevProps.thumbnailUrl === nextProps.thumbnailUrl &&
+    prevProps.isSelected === nextProps.isSelected &&
+    prevProps.showSelection === nextProps.showSelection &&
     prevProps.metadata?.duration === nextProps.metadata?.duration &&
     prevProps.metadata?.width === nextProps.metadata?.width &&
     prevProps.metadata?.height === nextProps.metadata?.height &&
