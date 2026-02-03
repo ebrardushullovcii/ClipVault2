@@ -17,17 +17,12 @@ reviews:
     - "!**/bin/**"
     - "!ui/node_modules/**"
     - "!ui/release/**"
+    - ".coderabbit.yaml"
+    - "package.json"
+    - "package-lock.json"
+    - "ui/package.json"
+    - "ui/package-lock.json"
     - "src/**"
     - "ui/src/**"
 chat:
   auto_reply: true
-categories:
-  snapshot:
-    paths: []
-  security:
-    paths: []
-  test_coverage:
-    paths: []
-knowledge:
-  base_path: .
-  use_website: true
