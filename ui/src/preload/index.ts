@@ -10,12 +10,15 @@ interface AppSettings {
     fps: number
     encoder: 'auto' | 'nvenc' | 'x264'
     quality: number
+    monitor: number
   }
   audio: {
     sample_rate: number
     bitrate: number
     system_audio_enabled: boolean
     microphone_enabled: boolean
+    system_audio_device_id?: string
+    microphone_device_id?: string
   }
   hotkey: {
     save_clip: string
@@ -24,6 +27,7 @@ interface AppSettings {
     show_notifications: boolean
     minimize_to_tray: boolean
     start_with_windows: boolean
+    first_run_completed?: boolean
   }
   launcher?: {
     autostart_backend: boolean

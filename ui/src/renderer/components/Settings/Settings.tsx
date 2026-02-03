@@ -41,6 +41,7 @@ interface AppSettings {
     show_notifications?: boolean
     minimize_to_tray?: boolean
     start_with_windows?: boolean
+    first_run_completed?: boolean
   }
 }
 
