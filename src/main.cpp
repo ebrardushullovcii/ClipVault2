@@ -14,6 +14,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <string>
+#include <atomic>
 #include <cstring>
 #include <iostream>
 
@@ -100,21 +101,22 @@ bool play_clip_sound(const std::string& sound_path)
         return false;
     }
 
+    static std::atomic<bool> logged_missing{false};
+    static std::atomic<bool> logged_failed{false};
+
     DWORD attrs = GetFileAttributesA(sound_path.c_str());
     if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY)) {
-        static bool logged_missing = false;
-        if (!logged_missing) {
+        bool expected = false;
+        if (logged_missing.compare_exchange_strong(expected, true)) {
             LOG_WARNING("Clip sound not found: " + sound_path);
-            logged_missing = true;
         }
         return false;
     }
 
     if (!PlaySoundA(sound_path.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT)) {
-        static bool logged_failed = false;
-        if (!logged_failed) {
+        bool expected = false;
+        if (logged_failed.compare_exchange_strong(expected, true)) {
             LOG_WARNING("Failed to play clip sound: " + sound_path);
-            logged_failed = true;
         }
         return false;
     }
