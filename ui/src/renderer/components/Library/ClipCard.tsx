@@ -151,6 +151,7 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
   }
 
   const isGrid = viewMode === 'grid'
+  const selectionLabel = isSelected ? 'Deselect clip' : 'Select clip'
 
   const formatDuration = (seconds: number): string => {
     const mins = Math.floor(seconds / 60)
@@ -178,12 +179,13 @@ export const ClipCard: React.FC<ClipCardProps> = memo(({
         <button
           type="button"
           onClick={handleToggleSelect}
+          aria-label={selectionLabel}
           className={`absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border bg-black/60 text-white transition-opacity ${
             showSelection || isSelected
               ? 'opacity-100 pointer-events-auto'
               : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
           }`}
-          title={isSelected ? 'Deselect clip' : 'Select clip'}
+          title={selectionLabel}
         >
           {isSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
         </button>

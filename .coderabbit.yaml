@@ -17,6 +17,11 @@ reviews:
     - "!**/bin/**"
     - "!ui/node_modules/**"
     - "!ui/release/**"
+    - ".coderabbit.yaml"
+    - "package.json"
+    - "package-lock.json"
+    - "ui/package.json"
+    - "ui/package-lock.json"
     - "src/**"
     - "ui/src/**"
 chat:

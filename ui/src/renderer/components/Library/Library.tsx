@@ -764,7 +764,13 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
 
       let clipMetadata = metadata[clip.id]
       if (!clipMetadata) {
-        clipMetadata = await fetchMetadata(clip.id, clip.path)
+        try {
+          clipMetadata = await fetchMetadata(clip.id, clip.path)
+        } catch (error) {
+          console.error('[Library] Failed to fetch metadata for export:', error)
+          failures.push(`${clip.filename} (metadata unavailable)`)
+          continue
+        }
       }
 
       if (!clipMetadata) {
