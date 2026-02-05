@@ -96,6 +96,7 @@ npm run backend:build  # Re-copies obs-nvenc-test.exe
 - Check Task Manager for `ClipVault.exe` process
 
 **Change hotkey:** Edit `%APPDATA%\ClipVault\settings.json`:
+
 ```json
 "hotkey": {
     "save_clip": "F10"

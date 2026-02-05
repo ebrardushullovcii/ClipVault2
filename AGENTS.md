@@ -142,6 +142,7 @@ When explicitly asked to create a release:
 2. Update `CHANGELOG.md` with changes
 3. Build: `npm run package:win`
 4. Create release with gh CLI:
+
    ```powershell
    gh release create vX.Y.Z --title "ClipVault X.Y.Z" --notes-file CHANGELOG.md ./ui/release/*.exe
    ```

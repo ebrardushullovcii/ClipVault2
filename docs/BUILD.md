@@ -71,7 +71,7 @@ Output: `ui\release\ClipVault-Setup-{version}.exe`
 
 ## Directory Structure After Build
 
-```
+```text
 bin/                          # Backend build output
 ├── ClipVault.exe            # Backend executable
 ├── clipvault.log            # Runtime log
