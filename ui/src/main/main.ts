@@ -128,6 +128,36 @@ const dragIconPaths = [
 
 const dragIconPath = dragIconPaths.find(p => existsSync(p)) || dragIconPaths[0]
 
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.clipvault.editor')
+}
+
+function resolveWindowIcon(): Electron.NativeImage | undefined {
+  const iconPaths: string[] = []
+
+  if (process.platform === 'win32') {
+    iconPaths.push(
+      join(process.resourcesPath, 'icon.ico'),
+      join(app.getAppPath(), 'public', 'icons', 'icon.ico'),
+      join(appDir, '..', '..', 'public', 'icons', 'icon.ico')
+    )
+  }
+
+  iconPaths.push(...dragIconPaths)
+
+  const iconPath = iconPaths.find(p => existsSync(p))
+  if (!iconPath) {
+    return undefined
+  }
+
+  const icon = nativeImage.createFromPath(iconPath)
+  if (icon.isEmpty()) {
+    return undefined
+  }
+
+  return icon
+}
+
 // Disable hardware acceleration to prevent GPU crashes
 app.disableHardwareAcceleration()
 
@@ -583,6 +613,7 @@ function createTray(): void {
 
 async function createWindow() {
   console.log('Creating main window...')
+  const windowIcon = resolveWindowIcon()
   const savedWindowState = readWindowState()
   const useSavedBounds = savedWindowState?.bounds && isBoundsVisible(savedWindowState.bounds)
   const initialBounds = useSavedBounds
@@ -601,6 +632,7 @@ async function createWindow() {
     title: 'ClipVault Editor',
     backgroundColor: '#0f0f0f',
     show: true, // Show immediately with background color
+    ...(windowIcon ? { icon: windowIcon } : {}),
     webPreferences: {
       preload: isDev
         ? join(appDir, '..', 'preload', 'index.js')

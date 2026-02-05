@@ -5,104 +5,90 @@
 Install via [Scoop](https://scoop.sh/):
 
 ```powershell
-scoop install mingw cmake git
+scoop install mingw cmake git nodejs
 ```
 
 Or manually install:
 - MinGW-w64 (GCC 12+)
 - CMake 3.20+
+- Node.js 18+
 - Git
 
-## First-Time Setup
+## Building
 
-Run the setup script to clone OBS and build libobs:
-
-```powershell
-.\build.ps1 -Setup
-```
-
-This will:
-1. Clone OBS Studio as a git submodule
-2. Build only libobs (not the full OBS application)
-3. Copy required DLLs to `bin/`
-4. Copy required data files to `bin/data/`
-
-## Building ClipVault
-
-After setup, build with:
+### Backend (C++)
 
 ```powershell
-.\build.ps1
+# First-time setup (clones OBS, copies DLLs)
+npm run backend:setup
+
+# Regular build
+npm run backend:build
+
+# Clean rebuild
+npm run backend:clean
+
+# Debug build
+npm run backend:debug
 ```
 
-Or for a clean build:
+Output: `bin\ClipVault.exe`
+
+### UI (Electron + React)
 
 ```powershell
-.\build.ps1 -Clean
+# Install dependencies (first time)
+npm install
+
+# Development mode with hot reload
+npm run dev
+
+# Production build
+npm run build:react
 ```
 
-## Running
+### Full Build (Backend + UI)
 
 ```powershell
-.\build.ps1 -Run
+npm run build:all
 ```
 
-Or directly:
+### Full Package
 
 ```powershell
-.\bin\ClipVault.exe
+npm run package:portable
 ```
 
-## Build Flags
+Output: `ui\release\ClipVault-Portable.exe` (portable app)
 
-| Flag | Description |
-|------|-------------|
-| `-Setup` | First-time setup (clone OBS, build libobs) |
-| `-Clean` | Remove build artifacts before building |
-| `-Run` | Build and run |
-| `-Debug` | Debug build (no optimization, symbols) |
-| `-Release` | Release build (default) |
-
-## Manual Build (Without Script)
+### Installer
 
 ```powershell
-# Create build directory
-mkdir build
-cd build
-
-# Configure
-cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-
-# Build
-cmake --build . --parallel
-
-# Copy result
-copy ClipVault.exe ..\bin\
+npm run package:win
 ```
+
+Output: `ui\release\ClipVault-Setup-{version}.exe`
 
 ## Directory Structure After Build
 
-```
-bin/
-├── ClipVault.exe           # Main executable
-├── clipvault.log           # Log file (created on run)
-├── obs-config/             # OBS config directory
-├── libobs.dll              # OBS core library
-├── libobs-d3d11.dll        # D3D11 graphics backend
-├── w32-pthreads.dll        # Threading library
-├── obs-plugins/
-│   └── 64bit/
-│       ├── win-capture.dll
-│       ├── win-wasapi.dll
-│       ├── obs-ffmpeg.dll
-│       └── obs-outputs.dll
-└── data/
-    ├── libobs/
-    │   ├── default.effect
-    │   ├── bicubic_scale.effect
-    │   └── ...
-    └── obs-plugins/
-        └── ...
+```text
+bin/                          # Backend build output
+├── ClipVault.exe            # Backend executable
+├── clipvault.log            # Runtime log
+├── obs.dll                  # OBS core
+├── libobs-d3d11.dll         # D3D11 graphics
+├── obs-nvenc-test.exe       # NVENC detection
+├── data/
+│   └── libobs/              # OBS shader files
+└── obs-plugins/
+    └── 64bit/               # OBS plugins (capture, encoding)
+
+ui/release/win-unpacked/     # Packaged app
+├── ClipVault.exe            # Electron app (run this)
+└── resources/
+    ├── bin/                 # Bundled backend + OBS
+    ├── ffmpeg/              # FFmpeg binaries
+    └── app.asar             # Bundled UI
 ```
 
 ## Troubleshooting
@@ -116,54 +102,29 @@ $env:PATH += ";C:\Users\$env:USERNAME\scoop\apps\mingw\current\bin"
 
 ### "obs.h not found"
 
-Run setup first:
+Run first-time setup:
 ```powershell
-.\build.ps1 -Setup
+npm run backend:setup
 ```
 
-### "libobs.dll not found"
+### CMake generator mismatch
 
-The DLLs should be in `bin/`. If missing, re-run setup:
+Clean and rebuild:
 ```powershell
-.\build.ps1 -Setup
+npm run backend:clean
+npm run backend:build
 ```
 
-### "Failed to find file 'default.effect'"
-
-The data path isn't set correctly. Check that:
-1. `bin/data/libobs/` exists and contains `.effect` files
-2. The code adds the data path with a trailing slash
-
-### obs_reset_video returns -1
+### obs_reset_video fails
 
 Check:
-1. `graphics_module` is set to `"libobs-d3d11"`
+1. `graphics_module` set to `"libobs-d3d11"`
 2. `libobs-d3d11.dll` exists in `bin/`
-3. Data path is correct
+3. Data path has trailing slash: `"./data/libobs/"`
 
-### obs_reset_video returns -5
+### NVENC not working
 
-Missing module. Ensure `bin/obs-plugins/64bit/` contains the required DLLs.
-
-## Building libobs Manually
-
-If the setup script fails, you can build libobs manually:
-
+Ensure `bin/obs-nvenc-test.exe` exists. If missing:
 ```powershell
-cd third_party/obs-studio-src
-
-mkdir build
-cd build
-
-cmake .. -G "MinGW Makefiles" `
-    -DCMAKE_BUILD_TYPE=Release `
-    -DENABLE_UI=OFF `
-    -DENABLE_SCRIPTING=OFF `
-    -DENABLE_BROWSER=OFF `
-    -DENABLE_PLUGINS=ON
-
-cmake --build . --target obs-frontend-api --parallel
-cmake --build . --target libobs --parallel
+npm run backend:build  # Copies it automatically
 ```
-
-Then copy the built files to `bin/`.
