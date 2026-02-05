@@ -12,7 +12,7 @@
     "rcedit": "^4.0.1"
   },
   "scripts": {
-    "postinstall": "npm --prefix ui install",
+    "postinstall": "scripts\\postinstall.cmd",
     "backend:setup": "powershell -ExecutionPolicy Bypass -File .\\build.ps1 -Setup",
     "backend:build": "powershell -ExecutionPolicy Bypass -File .\\build.ps1",
     "backend:clean": "powershell -ExecutionPolicy Bypass -File .\\build.ps1 -Clean",
@@ -24,7 +24,7 @@
     "build:electron": "npm --prefix ui run build:electron",
     "dist": "npm --prefix ui run dist",
     "dist:win": "npm --prefix ui run dist:win",
-    "dist:portable": "npm --prefix ui run build && npm --prefix ui exec electron-builder --win --dir",
+    "dist:portable": "npm --prefix ui run dist:portable",
     "package:portable": "npm run backend:build && npm run dist:portable",
     "package:win": "npm run backend:build && npm run dist:win",
     "lint": "npm --prefix ui run lint",

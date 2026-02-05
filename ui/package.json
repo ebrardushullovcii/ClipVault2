@@ -13,6 +13,7 @@
     "build:electron": "tsc -p src/main/tsconfig.json",
     "preview": "vite preview",
     "dist": "npm run build && electron-builder",
+    "dist:portable": "npm run build && electron-builder --win --dir",
     "dist:win": "npm run build && electron-builder --win",
     "postinstall": "electron-builder install-app-deps",
     "lint": "eslint . --ext .ts,.tsx,.js",
@@ -60,7 +61,6 @@
   "build": {
     "appId": "com.clipvault.editor",
     "productName": "ClipVault",
-    "afterPack": "build/afterPack.js",
     "directories": {
       "output": "release"
     },
@@ -90,6 +90,7 @@
           ]
         }
       ],
+      "icon": "public/icons/icon.ico",
       "verifyUpdateCodeSignature": false,
       "signAndEditExecutable": false,
       "forceCodeSigning": false,
@@ -102,9 +103,7 @@
       "createStartMenuShortcut": true,
       "shortcutName": "ClipVault",
       "menuCategory": "ClipVault",
-      "include": "build/installer.nsh",
-      "artifactName": "ClipVault-Setup-${version}.exe",
-      "installerIcon": "build/icon.ico"
+      "artifactName": "ClipVault-Setup-${version}.exe"
     },
     "portable": {
       "artifactName": "ClipVault-Portable.exe"
