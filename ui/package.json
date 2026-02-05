@@ -79,6 +79,10 @@
       {
         "from": "../64x64.png",
         "to": "64x64.png"
+      },
+      {
+        "from": "public/icons/icon.ico",
+        "to": "icon.ico"
       }
     ],
     "win": {

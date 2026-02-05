@@ -133,7 +133,19 @@ if (process.platform === 'win32') {
 }
 
 function resolveWindowIcon(): Electron.NativeImage | undefined {
-  const iconPath = dragIconPaths.find(p => existsSync(p))
+  const iconPaths: string[] = []
+
+  if (process.platform === 'win32') {
+    iconPaths.push(
+      join(process.resourcesPath, 'icon.ico'),
+      join(app.getAppPath(), 'public', 'icons', 'icon.ico'),
+      join(appDir, '..', '..', 'public', 'icons', 'icon.ico')
+    )
+  }
+
+  iconPaths.push(...dragIconPaths)
+
+  const iconPath = iconPaths.find(p => existsSync(p))
   if (!iconPath) {
     return undefined
   }
