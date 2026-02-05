@@ -48,9 +48,7 @@ const qualityPresets = [
 ]
 
 const normalizeSettings = (value: AppSettings): AppSettings => {
-  const outputPath = value.output_path?.trim()
-    ? value.output_path.trim()
-    : DEFAULT_CLIPS_PATH
+  const outputPath = value.output_path?.trim() ? value.output_path.trim() : DEFAULT_CLIPS_PATH
   const video = { ...DEFAULT_VIDEO, ...(value.video ?? {}) }
   const audio = { ...DEFAULT_AUDIO, ...(value.audio ?? {}) }
   const ui = value.ui ?? {}
@@ -78,7 +76,6 @@ const normalizeSettings = (value: AppSettings): AppSettings => {
 
 const withDefaultDevice = (
   devices: AudioDeviceInfo[],
-  label: string,
   fallbackType: AudioDeviceInfo['type']
 ): AudioDeviceInfo[] => {
   const hasDefault = devices.some(device => device.id === 'default')
@@ -88,9 +85,9 @@ const withDefaultDevice = (
   return [
     {
       id: 'default',
-      name: label,
+      name: 'Default Device (follows system setting)',
       type: devices[0]?.type ?? fallbackType,
-      is_default: true,
+      is_default: false, // This is the "follow default" option, not a device that IS the default
     },
     ...devices,
   ]
@@ -132,8 +129,8 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
         if (!mounted) return
 
         setMonitors(monitorList)
-        setAudioOutputs(withDefaultDevice(outputDevices, 'System Default', 'output'))
-        setAudioInputs(withDefaultDevice(inputDevices, 'Microphone Default', 'input'))
+        setAudioOutputs(withDefaultDevice(outputDevices, 'output'))
+        setAudioInputs(withDefaultDevice(inputDevices, 'input'))
       } catch (error) {
         console.error('[FirstRunWizard] Failed to load devices:', error)
       } finally {
@@ -279,8 +276,8 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                       isActive
                         ? 'border-accent-primary bg-accent-primary text-white'
                         : isComplete
-                        ? 'border-accent-primary/40 bg-accent-primary/20 text-accent-primary'
-                        : 'border-border bg-background-tertiary text-text-muted'
+                          ? 'border-accent-primary/40 bg-accent-primary/20 text-accent-primary'
+                          : 'border-border bg-background-tertiary text-text-muted'
                     }`}
                   >
                     <Icon className="h-4 w-4" />
@@ -296,7 +293,11 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     <div className="h-1 w-full rounded-full bg-background-tertiary">
                       <div
                         className={`h-1 rounded-full transition-all ${
-                          isComplete ? 'w-full bg-accent-primary' : isActive ? 'w-1/2 bg-accent-primary' : 'w-0'
+                          isComplete
+                            ? 'w-full bg-accent-primary'
+                            : isActive
+                              ? 'w-1/2 bg-accent-primary'
+                              : 'w-0'
                         }`}
                       />
                     </div>
@@ -310,10 +311,12 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
             {stepIndex === 0 && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-xl font-semibold text-text-primary">Choose your clips folder</h2>
+                  <h2 className="text-xl font-semibold text-text-primary">
+                    Choose your clips folder
+                  </h2>
                   <p className="mt-1 text-sm text-text-muted">
-                    This is where every clip will be saved. We’ll automatically create the folder if it
-                    doesn’t exist yet.
+                    This is where every clip will be saved. We’ll automatically create the folder if
+                    it doesn’t exist yet.
                   </p>
                 </div>
                 <div className="space-y-3">
@@ -361,7 +364,9 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
             {stepIndex === 1 && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-xl font-semibold text-text-primary">Pick your capture monitor</h2>
+                  <h2 className="text-xl font-semibold text-text-primary">
+                    Pick your capture monitor
+                  </h2>
                   <p className="mt-1 text-sm text-text-muted">
                     ClipVault will record the monitor you select. You can switch monitors later in
                     Settings.
@@ -388,7 +393,9 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                       }
                     >
                       {monitors.length === 0 && (
-                        <option value={settings.video.monitor}>Monitor {settings.video.monitor + 1}</option>
+                        <option value={settings.video.monitor}>
+                          Monitor {settings.video.monitor + 1}
+                        </option>
                       )}
                       {monitors.map(monitor => (
                         <option key={monitor.id} value={monitor.id}>
@@ -443,7 +450,9 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                               <div className="font-semibold text-text-primary">{preset.label}</div>
                               <div className="text-xs text-text-muted">{preset.description}</div>
                             </div>
-                            <div className="text-xs font-semibold text-text-muted">CQP {preset.quality}</div>
+                            <div className="text-xs font-semibold text-text-muted">
+                              CQP {preset.quality}
+                            </div>
                           </label>
                         )
                       })}
@@ -458,8 +467,8 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                 <div>
                   <h2 className="text-xl font-semibold text-text-primary">Audio devices</h2>
                   <p className="mt-1 text-sm text-text-muted">
-                    Choose the default devices for system audio and microphone capture. You can tweak
-                    them anytime in Settings.
+                    Choose the default devices for system audio and microphone capture. You can
+                    tweak them anytime in Settings.
                   </p>
                 </div>
                 <div className="grid gap-6 lg:grid-cols-2">
@@ -467,7 +476,9 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     <div className="flex items-center justify-between">
                       <div id={systemAudioLabelId}>
                         <div className="text-sm font-semibold text-text-primary">System audio</div>
-                        <div className="text-xs text-text-muted">Capture game and desktop sound</div>
+                        <div className="text-xs text-text-muted">
+                          Capture game and desktop sound
+                        </div>
                       </div>
                       <label className="relative inline-flex cursor-pointer items-center">
                         <input
@@ -485,7 +496,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                           }
                           className="peer sr-only"
                         />
-                        <div className="h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-checked:after:left-5.5" />
+                        <div className="peer-checked:after:left-5.5 h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
                       </label>
                     </div>
                     <select
@@ -504,7 +515,8 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     >
                       {audioOutputs.map(device => (
                         <option key={device.id} value={device.id}>
-                          {device.name}{device.is_default ? ' (Default)' : ''}
+                          {device.name}
+                          {device.is_default ? ' (Current Default)' : ''}
                         </option>
                       ))}
                     </select>
@@ -532,7 +544,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                           }
                           className="peer sr-only"
                         />
-                        <div className="h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-checked:after:left-5.5" />
+                        <div className="peer-checked:after:left-5.5 h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
                       </label>
                     </div>
                     <select
@@ -551,16 +563,15 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     >
                       {audioInputs.map(device => (
                         <option key={device.id} value={device.id}>
-                          {device.name}{device.is_default ? ' (Default)' : ''}
+                          {device.name}
+                          {device.is_default ? ' (Current Default)' : ''}
                         </option>
                       ))}
                     </select>
                   </div>
                 </div>
                 {loadingDevices && (
-                  <div className="text-xs text-text-muted">
-                    Loading devices from backend...
-                  </div>
+                  <div className="text-xs text-text-muted">Loading devices from backend...</div>
                 )}
               </div>
             )}
@@ -576,7 +587,9 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                 <div className="grid gap-4">
                   <div className="flex items-center justify-between rounded-lg border border-border bg-background-secondary p-4">
                     <div id={startWithWindowsLabelId}>
-                      <div className="text-sm font-semibold text-text-primary">Start with Windows</div>
+                      <div className="text-sm font-semibold text-text-primary">
+                        Start with Windows
+                      </div>
                       <div className="text-xs text-text-muted">
                         Launch ClipVault in the background when you log in.
                       </div>
@@ -597,13 +610,15 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                         }
                         className="peer sr-only"
                       />
-                      <div className="h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-checked:after:left-5.5" />
+                      <div className="peer-checked:after:left-5.5 h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
                     </label>
                   </div>
 
                   <div className="flex items-center justify-between rounded-lg border border-border bg-background-secondary p-4">
                     <div id={minimizeToTrayLabelId}>
-                      <div className="text-sm font-semibold text-text-primary">Minimize to tray</div>
+                      <div className="text-sm font-semibold text-text-primary">
+                        Minimize to tray
+                      </div>
                       <div className="text-xs text-text-muted">
                         Keep ClipVault running when you close the window.
                       </div>
@@ -624,13 +639,15 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                         }
                         className="peer sr-only"
                       />
-                      <div className="h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-checked:after:left-5.5" />
+                      <div className="peer-checked:after:left-5.5 h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
                     </label>
                   </div>
 
                   <div className="flex items-center justify-between rounded-lg border border-border bg-background-secondary p-4">
                     <div id={showNotificationsLabelId}>
-                      <div className="text-sm font-semibold text-text-primary">Show save notifications</div>
+                      <div className="text-sm font-semibold text-text-primary">
+                        Show save notifications
+                      </div>
                       <div className="text-xs text-text-muted">
                         Display a tray notification when a clip is saved.
                       </div>
@@ -651,7 +668,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                         }
                         className="peer sr-only"
                       />
-                      <div className="h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-checked:after:left-5.5" />
+                      <div className="peer-checked:after:left-5.5 h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
                     </label>
                   </div>
                 </div>

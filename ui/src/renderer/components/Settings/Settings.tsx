@@ -834,13 +834,20 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     onChange={e => updateAudioSetting('system_audio_device_id', e.target.value)}
                     className="w-full rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
                   >
+                    <option value="default">Default Device (follows system setting)</option>
                     {audioOutputDevices.map(device => (
                       <option key={device.id} value={device.id}>
                         {device.name}
-                        {device.is_default ? ' (Default)' : ''}
+                        {device.is_default ? ' (Current Default)' : ''}
                       </option>
                     ))}
                   </select>
+                  <p className="mt-1 text-xs text-text-muted">
+                    {settings.audio.system_audio_device_id === 'default' ||
+                    !settings.audio.system_audio_device_id
+                      ? 'Will automatically switch when you change your Windows default device'
+                      : 'Using a specific device - will not follow system changes'}
+                  </p>
                 </div>
               )}
 
@@ -870,13 +877,20 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     onChange={e => updateAudioSetting('microphone_device_id', e.target.value)}
                     className="w-full rounded-lg border border-border bg-background-tertiary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
                   >
+                    <option value="default">Default Device (follows system setting)</option>
                     {audioInputDevices.map(device => (
                       <option key={device.id} value={device.id}>
                         {device.name}
-                        {device.is_default ? ' (Default)' : ''}
+                        {device.is_default ? ' (Current Default)' : ''}
                       </option>
                     ))}
                   </select>
+                  <p className="mt-1 text-xs text-text-muted">
+                    {settings.audio.microphone_device_id === 'default' ||
+                    !settings.audio.microphone_device_id
+                      ? 'Will automatically switch when you change your Windows default device'
+                      : 'Using a specific device - will not follow system changes'}
+                  </p>
                 </div>
               )}
 

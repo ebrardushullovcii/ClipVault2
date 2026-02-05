@@ -65,6 +65,8 @@ git push -u origin feature/your-feature
 
 **Never:** Commit directly to master, push to master, commit/push without permission
 
+**Default scope:** If the user says "commit and PR", include all current changes unless they explicitly ask to exclude something
+
 ## Code Style
 
 ### C++ (Backend)
