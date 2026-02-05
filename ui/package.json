@@ -4,7 +4,7 @@
   "description": "ClipVault Editor UI - Modern video clip library and editor",
   "main": "dist/main/main.js",
   "author": "ClipVault Team",
-  "license": "MIT",
+  "license": "GPL-2.0-or-later",
   "private": true,
   "scripts": {
     "dev": "npm run build:electron && vite",
