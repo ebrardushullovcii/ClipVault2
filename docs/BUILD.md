@@ -59,7 +59,7 @@ npm run build:all
 npm run package:portable
 ```
 
-Output: `ui\release\win-unpacked\ClipVault.exe` (portable app)
+Output: `ui\release\ClipVault-Portable.exe` (portable app)
 
 ### Installer
 

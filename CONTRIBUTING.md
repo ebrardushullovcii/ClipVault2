@@ -22,6 +22,7 @@ This project is primarily a personal tool that I'm sharing. While contributions 
 See [docs/BUILD.md](docs/BUILD.md) for detailed build instructions.
 
 Quick start:
+
 ```powershell
 npm install
 
@@ -34,6 +35,20 @@ npm run build:react
 # Build packaged app (backend + UI)
 npm run package:portable
 ```
+
+Platform notes:
+
+Backend build and packaging scripts require Windows PowerShell. On macOS/Linux, you can work on the UI with:
+
+```bash
+npm --prefix ui install
+npm --prefix ui run dev
+npm --prefix ui run build:react
+npm --prefix ui run lint
+npm --prefix ui run test:ui
+```
+
+Use a Windows runner for backend builds and packaging.
 
 ## Questions?
 

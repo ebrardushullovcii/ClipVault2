@@ -25,7 +25,8 @@ ls bin\*.dll
 2. Monitor capture source not created
 
 **Check log for:**
-```
+
+```text
 [INFO] Using monitor_capture
 [INFO] Scene set as output source
 ```
@@ -46,7 +47,8 @@ ffprobe -show_streams clip.mp4 2>&1 | Select-String "codec_type=audio"
 3. Audio device not available
 
 **Check log for:**
-```
+
+```text
 [INFO] Desktop audio source activated
 [INFO] Microphone source activated
 ```
@@ -71,7 +73,8 @@ obs_output_set_audio_encoder(replay, audio_enc_2, 1);  // Track 2
 - `obs-nvenc-test.exe` in `bin/`
 
 **Check log for:**
-```
+
+```text
 [INFO] Using encoder: jim_nvenc    # NVENC working
 [INFO] Using encoder: obs_x264    # Fallback to CPU
 ```

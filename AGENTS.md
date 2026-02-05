@@ -23,7 +23,7 @@ A Windows game clipping tool. Press F9 to save the last 2 minutes of gameplay as
 
 ## Quick Orientation
 
-```
+```text
 src/                 # C++ backend (recording engine)
 ├── main.cpp        # Entry point
 ├── capture.cpp     # Video/audio capture
@@ -52,7 +52,7 @@ The app is **feature-complete**. Main functionality works:
 
 All work on branches, merged via PR:
 
-```
+```bash
 git checkout -b feature/your-feature
 # Make changes
 git add <files>
@@ -97,6 +97,7 @@ void my_function()
 ## OBS Patterns (Critical for Backend)
 
 **Always release OBS objects:**
+
 ```cpp
 obs_data_t* settings = obs_data_create();
 // ... use settings ...
@@ -104,6 +105,7 @@ obs_data_release(settings);  // REQUIRED
 ```
 
 **Initialization order:**
+
 ```cpp
 obs_startup("en-US", config_path, nullptr);
 obs_add_data_path("./data/libobs/");  // Trailing slash!

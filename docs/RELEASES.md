@@ -14,25 +14,29 @@ We use [Semantic Versioning](https://semver.org/):
 When creating a new release, agents should follow these steps:
 
 ### 1. Update Version
+
 - Update version in `ui/package.json`
 - Update version in root `package.json`
 
 ### 2. Update Changelog
+
 - Add new version section to `CHANGELOG.md`
 - Document changes (features, fixes, breaking changes)
 
 ### 3. Build Release
+
 ```powershell
 npm install
 
 # Build installer
 npm run package:win
 
-# Optional: build win-unpacked folder (portable app)
+# Optional: build portable executable
 npm run package:portable
 ```
 
 ### 4. Create Git Tag
+
 ```powershell
 git add .
 git commit -m "chore: bump version to X.Y.Z"
@@ -55,7 +59,7 @@ This creates the release and uploads the installer files automatically. No need 
 
 **Files uploaded:**
 - `ClipVault-Setup-X.Y.Z.exe`
-- Optional: zip and upload `ui\release\win-unpacked` for a portable download
+- Optional: upload `ui\release\ClipVault-Portable.exe` for a portable download
 
 ## Automatic Upload (Future)
 

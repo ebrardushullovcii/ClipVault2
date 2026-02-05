@@ -20,6 +20,7 @@ A lightweight game clipping tool for Windows. Press F9 to save the last 2 minute
 ## Quick Start
 
 **Run the app:**
+
 ```powershell
 .\ClipVault.exe
 ```
@@ -51,13 +52,13 @@ npm install
 npm run package:portable
 ```
 
-Output: `ui\release\win-unpacked\ClipVault.exe`
+Output: `ui\release\ClipVault-Portable.exe`
 
 See [docs/BUILD.md](docs/BUILD.md) for detailed instructions.
 
 ## Project Structure
 
-```
+```text
 ClipVault/
 ├── src/           # C++ backend (OBS-based recording engine)
 ├── ui/            # Electron + React frontend
