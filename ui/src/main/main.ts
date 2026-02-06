@@ -2043,7 +2043,9 @@ ipcMain.handle(
       const metadataDir = join(dirname(clipPath), 'clips-metadata')
       const metadataPath = join(metadataDir, `${clipId}.json`)
       if (existsSync(metadataPath)) {
-        const existing = JSON.parse(await readFile(metadataPath, 'utf-8'))
+        const existing: Record<string, unknown> = JSON.parse(
+          await readFile(metadataPath, 'utf-8')
+        )
         existing.trim = { start: 0, end: newDuration }
         existing.playheadPosition = 0
         existing.lastModified = new Date().toISOString()
@@ -2054,15 +2056,19 @@ ipcMain.handle(
       await fsUnlinkAsync(backupPath)
 
       // Step 6: Delete cached thumbnail and audio tracks so they regenerate
-      const thumbPath = join(thumbnailsPath, `${clipId}.jpg`)
-      if (existsSync(thumbPath)) {
-        await fsUnlinkAsync(thumbPath)
+      try {
+        const thumbPath = join(thumbnailsPath, `${clipId}.jpg`)
+        if (existsSync(thumbPath)) {
+          await fsUnlinkAsync(thumbPath)
+        }
+        const audioCachePath = join(thumbnailsPath, 'audio')
+        const track1Path = join(audioCachePath, `${clipId}_track1.m4a`)
+        const track2Path = join(audioCachePath, `${clipId}_track2.m4a`)
+        if (existsSync(track1Path)) await fsUnlinkAsync(track1Path)
+        if (existsSync(track2Path)) await fsUnlinkAsync(track2Path)
+      } catch (cacheErr) {
+        console.error(`[Main] Failed to clean cached files for ${clipId}:`, cacheErr)
       }
-      const audioCachePath = join(thumbnailsPath, 'audio')
-      const track1Path = join(audioCachePath, `${clipId}_track1.m4a`)
-      const track2Path = join(audioCachePath, `${clipId}_track2.m4a`)
-      if (existsSync(track1Path)) await fsUnlinkAsync(track1Path)
-      if (existsSync(track2Path)) await fsUnlinkAsync(track2Path)
 
       console.log(`[Main] Trim in place complete: ${clipId}, new duration: ${newDuration}s`)
 

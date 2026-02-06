@@ -63,7 +63,6 @@ const formatHotkey = (hotkey: string): string => {
     .replace(/Command/g, 'Cmd')
     .replace(/Option/g, 'Alt')
     .replace(/Shift/g, '\u21e7')
-    .replace(/Alt/g, 'Alt')
     .replace(/Meta/g, 'Win')
     .replace(/\+/g, ' + ')
 }
@@ -73,27 +72,28 @@ const WizardHotkeyInput: React.FC<{
   onChange: (value: string) => void
 }> = ({ value, onChange }) => {
   const [isRecording, setIsRecording] = useState(false)
-  const inputRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLButtonElement>(null)
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!isRecording) return
-    e.preventDefault()
-    e.stopPropagation()
-    if (['Control', 'Alt', 'Shift', 'Meta', 'Command', 'Option'].includes(e.key)) return
+    if (isRecording) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (['Control', 'Alt', 'Shift', 'Meta', 'Command', 'Option'].includes(e.key)) return
 
-    const modifiers: string[] = []
-    if (e.ctrlKey) modifiers.push('Ctrl')
-    if (e.altKey) modifiers.push('Alt')
-    if (e.shiftKey) modifiers.push('Shift')
-    if (e.metaKey) modifiers.push('Win')
+      const modifiers: string[] = []
+      if (e.ctrlKey) modifiers.push('Ctrl')
+      if (e.altKey) modifiers.push('Alt')
+      if (e.shiftKey) modifiers.push('Shift')
+      if (e.metaKey) modifiers.push('Win')
 
-    let key = e.key
-    if (key.length === 1) key = key.toUpperCase()
-    else if (key === 'Escape') key = 'Esc'
-    else if (key === 'Delete') key = 'Del'
+      let key = e.key
+      if (key.length === 1) key = key.toUpperCase()
+      else if (key === 'Escape') key = 'Esc'
+      else if (key === 'Delete') key = 'Del'
 
-    onChange([...modifiers, key].join('+'))
-    setIsRecording(false)
+      onChange([...modifiers, key].join('+'))
+      setIsRecording(false)
+    }
   }
 
   const handleClick = () => {
@@ -102,15 +102,14 @@ const WizardHotkeyInput: React.FC<{
   }
 
   return (
-    <div
+    <button
       ref={inputRef}
-      role="button"
+      type="button"
       aria-label="Set hotkey"
       aria-pressed={isRecording}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       onBlur={() => setIsRecording(false)}
-      tabIndex={0}
       className={`cursor-pointer rounded-lg border px-4 py-2 text-sm font-medium transition-all ${
         isRecording
           ? 'border-accent-primary bg-accent-primary/10 text-accent-primary ring-2 ring-accent-primary/50'
@@ -133,7 +132,7 @@ const WizardHotkeyInput: React.FC<{
       ) : (
         <span className="text-text-muted">Click to set hotkey</span>
       )}
-    </div>
+    </button>
   )
 }
 
@@ -556,14 +555,17 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="space-y-3">
-                    <div className="text-sm font-medium text-text-secondary">Frame rate</div>
-                    <div className="flex flex-wrap gap-2">
+                    <div id="frame-rate-label" className="text-sm font-medium text-text-secondary">Frame rate</div>
+                    <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="frame-rate-label">
                       {[30, 60, 120, 144].map(fps => {
                         const isActive = settings.video.fps === fps
                         return (
                           <button
                             key={fps}
                             type="button"
+                            role="radio"
+                            aria-checked={isActive}
+                            tabIndex={isActive ? 0 : -1}
                             onClick={() =>
                               setSettings(prev => ({
                                 ...prev,
@@ -583,8 +585,8 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     </div>
                   </div>
                   <div className="space-y-3">
-                    <div className="text-sm font-medium text-text-secondary">Encoder</div>
-                    <div className="flex flex-wrap gap-2">
+                    <div id="encoder-label" className="text-sm font-medium text-text-secondary">Encoder</div>
+                    <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="encoder-label">
                       {([
                         { value: 'auto', label: 'Auto' },
                         { value: 'nvenc', label: 'NVENC (GPU)' },
@@ -595,6 +597,9 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                           <button
                             key={enc.value}
                             type="button"
+                            role="radio"
+                            aria-checked={isActive}
+                            tabIndex={isActive ? 0 : -1}
                             onClick={() =>
                               setSettings(prev => ({
                                 ...prev,
@@ -619,20 +624,23 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                 </div>
 
                 <div className="space-y-3">
-                  <div className="text-sm font-medium text-text-secondary">
+                  <div id="buffer-duration-label" className="text-sm font-medium text-text-secondary">
                     Buffer duration
                   </div>
                   <p className="text-xs text-text-muted">
                     How much gameplay is kept in memory. When you press the save
                     hotkey, this is the maximum clip length.
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="buffer-duration-label">
                     {bufferOptions.map(opt => {
                       const isActive = (settings.buffer_seconds ?? 120) === opt.value
                       return (
                         <button
                           key={opt.value}
                           type="button"
+                          role="radio"
+                          aria-checked={isActive}
+                          tabIndex={isActive ? 0 : -1}
                           onClick={() =>
                             setSettings(prev => ({
                               ...prev,
