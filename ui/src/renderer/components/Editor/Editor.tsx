@@ -859,8 +859,11 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     targetSizeMB,
   ])
 
+  // Tolerance for floating-point imprecision when comparing trim markers against duration
+  const TRIM_EPSILON = 0.1
+
   // Check if trim markers differ from the full clip (i.e. user has trimmed)
-  const hasTrimRange = trimStart > 0.1 || (duration > 0 && trimEnd < duration - 0.1)
+  const hasTrimRange = trimStart > TRIM_EPSILON || (duration > 0 && trimEnd < duration - TRIM_EPSILON)
 
   const handleTrimInPlace = useCallback(async () => {
     if (!window.electronAPI?.editor?.trimInPlace) {
@@ -871,6 +874,9 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     setShowTrimConfirm(false)
     setIsTrimming(true)
     setTrimProgress(0)
+
+    // Save current video source so we can restore on failure
+    const prevSrc = videoRef.current?.currentSrc || videoSrc
 
     try {
       // Stop all playback before trimming
@@ -925,6 +931,10 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
       }
     } catch (error) {
       console.error('Trim in place failed:', error)
+      // Restore video source so the user doesn't see a blank player
+      if (prevSrc) {
+        setVideoSrc(prevSrc)
+      }
     } finally {
       setIsTrimming(false)
       setTrimProgress(0)
@@ -946,6 +956,7 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     audioTrack2Volume,
     stopAudioPlayback,
     onSave,
+    videoSrc,
   ])
 
   return (
@@ -1463,6 +1474,7 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
             {/* Trim Original button - always visible, disabled when no trim range set */}
             <div className="mt-3">
               <button
+                type="button"
                 onClick={() => setShowTrimConfirm(true)}
                 disabled={isTrimming || isExporting || !hasTrimRange}
                 className={`flex w-full items-center justify-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/10 px-4 py-2 text-sm font-medium text-orange-400 transition-colors hover:bg-orange-500/20 ${
@@ -1533,10 +1545,11 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
               This cannot be undone. The original full-length clip will be lost.
             </p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setShowTrimConfirm(false)} className="btn-secondary">
+              <button type="button" onClick={() => setShowTrimConfirm(false)} className="btn-secondary">
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleTrimInPlace}
                 className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-600"
               >

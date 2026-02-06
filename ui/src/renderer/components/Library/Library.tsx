@@ -400,7 +400,12 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
       const match = clip.filename.match(/^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/)
       if (match) {
         const [, y, mo, d, h, mi, s] = match
-        return new Date(`${y}-${mo}-${d}T${h}:${mi}:${s}`).getTime()
+        const parsed = new Date(
+          Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)
+        )
+        if (!isNaN(parsed.getTime())) {
+          return parsed.getTime()
+        }
       }
       return new Date(clip.createdAt).getTime()
     }

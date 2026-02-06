@@ -2013,9 +2013,18 @@ ipcMain.handle(
         throw new Error('Trimmed file is empty')
       }
 
-      // Step 3: Delete original and rename temp to original
-      await fsUnlinkAsync(clipPath)
-      await rename(tempPath, clipPath)
+      // Step 3: Atomic swap via backup - rename original to .bak, rename temp to original
+      const backupPath = clipPath + '.bak'
+      await rename(clipPath, backupPath)
+      try {
+        await rename(tempPath, clipPath)
+      } catch (renameErr) {
+        // Restore backup if rename failed
+        await rename(backupPath, clipPath)
+        throw renameErr
+      }
+      // Success - remove backup
+      await fsUnlinkAsync(backupPath)
 
       // Step 4: ffprobe for actual new duration
       const newDuration = await new Promise<number>((resolve, reject) => {
@@ -2063,6 +2072,20 @@ ipcMain.handle(
       if (existsSync(tempPath)) {
         try {
           await fsUnlinkAsync(tempPath)
+        } catch {
+          // ignore cleanup error
+        }
+      }
+      // Clean up backup file if it exists
+      const backupPath = clipPath + '.bak'
+      if (existsSync(backupPath)) {
+        try {
+          // Restore backup if original is missing
+          if (!existsSync(clipPath)) {
+            await rename(backupPath, clipPath)
+          } else {
+            await fsUnlinkAsync(backupPath)
+          }
         } catch {
           // ignore cleanup error
         }
