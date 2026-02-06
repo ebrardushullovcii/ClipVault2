@@ -5,7 +5,26 @@
 #include <sstream>
 #include <algorithm>
 
+#ifdef _WIN32
+#include <shlobj.h>
+#endif
+
 namespace clipvault {
+
+std::string default_clips_path()
+{
+#ifdef _WIN32
+    char path[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_MYVIDEO, nullptr, 0, path))) {
+        return std::string(path) + "\\ClipVault";
+    }
+    // Fallback: public Videos folder
+    if (SUCCEEDED(SHGetFolderPathA(nullptr, CSIDL_COMMON_VIDEO, nullptr, 0, path))) {
+        return std::string(path) + "\\ClipVault";
+    }
+#endif
+    return "C:\\Videos\\ClipVault";
+}
 
 std::string escape_json_string(const std::string& input) {
     std::string output;
@@ -152,6 +171,9 @@ bool ConfigManager::load(const std::string& filepath) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
         LOG_WARNING("Config file not found, using defaults: " + filepath);
+        if (config_.output_path.empty()) {
+            config_.output_path = default_clips_path();
+        }
         return false;
     }
 
@@ -163,6 +185,10 @@ bool ConfigManager::load(const std::string& filepath) {
     std::string output_path = extract_string(json, "output_path");
     if (!output_path.empty()) {
         config_.output_path = output_path;
+    }
+
+    if (config_.output_path.empty()) {
+        config_.output_path = default_clips_path();
     }
 
     config_.buffer_seconds = extract_int(json, "buffer_seconds", config_.buffer_seconds);

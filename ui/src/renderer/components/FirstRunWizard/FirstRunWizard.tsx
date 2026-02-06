@@ -63,7 +63,6 @@ const formatHotkey = (hotkey: string): string => {
     .replace(/Command/g, 'Cmd')
     .replace(/Option/g, 'Alt')
     .replace(/Shift/g, '\u21e7')
-    .replace(/Ctrl/g, 'Ctrl')
     .replace(/Alt/g, 'Alt')
     .replace(/Meta/g, 'Win')
     .replace(/\+/g, ' + ')
@@ -97,10 +96,18 @@ const WizardHotkeyInput: React.FC<{
     setIsRecording(false)
   }
 
+  const handleClick = () => {
+    setIsRecording(true)
+    inputRef.current?.focus()
+  }
+
   return (
     <div
       ref={inputRef}
-      onClick={() => setIsRecording(true)}
+      role="button"
+      aria-label="Set hotkey"
+      aria-pressed={isRecording}
+      onClick={handleClick}
       onKeyDown={handleKeyDown}
       onBlur={() => setIsRecording(false)}
       tabIndex={0}
@@ -322,6 +329,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
   const microphoneLabelId = 'first-run-microphone-label'
   const startWithWindowsLabelId = 'first-run-start-windows-label'
   const showNotificationsLabelId = 'first-run-show-notifications-label'
+  const playSoundLabelId = 'first-run-play-sound-label'
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm">
@@ -680,7 +688,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                           }
                           className="peer sr-only"
                         />
-                        <div className="peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                        <div className="relative peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
                       </label>
                     </div>
                     <select
@@ -728,7 +736,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                           }
                           className="peer sr-only"
                         />
-                        <div className="peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                        <div className="relative peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
                       </label>
                     </div>
                     <select
@@ -769,7 +777,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                         ...prev,
                         audio: {
                           ...prev.audio,
-                          bitrate: parseInt(event.target.value),
+                          bitrate: parseInt(event.target.value, 10),
                         },
                       }))
                     }
@@ -841,7 +849,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                         }
                         className="peer sr-only"
                       />
-                      <div className="peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                      <div className="relative peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
                     </label>
                   </div>
 
@@ -870,12 +878,12 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                         }
                         className="peer sr-only"
                       />
-                      <div className="peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                      <div className="relative peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
                     </label>
                   </div>
 
                   <div className="flex items-center justify-between rounded-lg border border-border bg-background-secondary p-4">
-                    <div>
+                    <div id={playSoundLabelId}>
                       <div className="text-sm font-semibold text-text-primary">
                         Play sound on save
                       </div>
@@ -886,6 +894,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     <label className="relative inline-flex cursor-pointer items-center">
                       <input
                         type="checkbox"
+                        aria-labelledby={playSoundLabelId}
                         checked={settings.ui?.play_sound ?? true}
                         onChange={event =>
                           setSettings(prev => ({
@@ -898,7 +907,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                         }
                         className="peer sr-only"
                       />
-                      <div className="peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                      <div className="relative peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
                     </label>
                   </div>
                 </div>

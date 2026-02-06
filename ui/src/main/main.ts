@@ -409,8 +409,8 @@ const getSettingsPath = (): string => {
   return join(appDataPath, 'ClipVault', 'settings.json')
 }
 
-// Default clips path (fallback if not in settings)
-const DEFAULT_CLIPS_PATH = 'D:\\Clips\\ClipVault'
+// Default clips path - single source of truth for fallback
+const defaultClipsPath = join(app.getPath('videos'), 'ClipVault')
 
 // Get clips path from settings file
 function getClipsPath(): string {
@@ -427,7 +427,7 @@ function getClipsPath(): string {
   } catch (error) {
     console.error('Failed to read clips path from settings:', error)
   }
-  return DEFAULT_CLIPS_PATH
+  return defaultClipsPath
 }
 
 async function ensureClipsDirectory(): Promise<void> {
@@ -742,8 +742,6 @@ async function createWindow() {
 // IPC Handlers
 
 // Default settings object
-const defaultClipsPath = join(app.getPath('videos'), 'ClipVault')
-
 const defaultSettings = {
   output_path: defaultClipsPath,
   buffer_seconds: 120,

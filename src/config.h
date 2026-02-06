@@ -5,6 +5,7 @@
 namespace clipvault {
 
 std::string escape_json_string(const std::string& input);
+std::string default_clips_path();
 
 struct VideoConfig {
     int width = 1920;
@@ -43,7 +44,7 @@ struct LauncherConfig {
 };
 
 struct Config {
-    std::string output_path = "C:\\Videos\\ClipVault";
+    std::string output_path;
     int buffer_seconds = 120;
     VideoConfig video;
     AudioConfig audio;

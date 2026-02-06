@@ -186,7 +186,6 @@ const HotkeyInput: React.FC<HotkeyInputProps> = ({
       .replace(/Command/g, 'Cmd')
       .replace(/Option/g, 'Alt')
       .replace(/Shift/g, '⇧')
-      .replace(/Ctrl/g, 'Ctrl')
       .replace(/Alt/g, 'Alt')
       .replace(/Meta/g, 'Win')
       .replace(/\+/g, ' + ')
@@ -698,7 +697,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       value={settings.buffer_seconds}
                       onChange={e =>
                         setSettings(prev =>
-                          prev ? { ...prev, buffer_seconds: parseInt(e.target.value) || 120 } : null
+                          prev ? { ...prev, buffer_seconds: parseInt(e.target.value, 10) || 120 } : null
                         )
                       }
                       className="w-20 rounded-lg border border-border bg-background-secondary px-3 py-2 text-center text-sm text-text-primary focus:border-accent-primary focus:outline-none"
@@ -821,7 +820,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     onChange={e => updateAudioSetting('system_audio_enabled', e.target.checked)}
                     className="peer sr-only"
                   />
-                  <div className="peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-primary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-focus:outline-none" />
+                  <div className="relative peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-primary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-focus:outline-none" />
                 </label>
               </div>
 
@@ -864,7 +863,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     onChange={e => updateAudioSetting('microphone_enabled', e.target.checked)}
                     className="peer sr-only"
                   />
-                  <div className="peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-primary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-focus:outline-none" />
+                  <div className="relative peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-primary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-focus:outline-none" />
                 </label>
               </div>
 
@@ -905,7 +904,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   max="320"
                   step="32"
                   value={settings.audio.bitrate}
-                  onChange={e => updateAudioSetting('bitrate', parseInt(e.target.value))}
+                  onChange={e => updateAudioSetting('bitrate', parseInt(e.target.value, 10))}
                   className="w-full accent-accent-primary"
                 />
                 <div className="mt-1 flex justify-between text-xs text-text-muted">
@@ -939,7 +938,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                           ...prev,
                           editor: {
                             ...(prev.editor || {}),
-                            skip_seconds: parseInt(e.target.value) || 5,
+                            skip_seconds: parseInt(e.target.value, 10) || 5,
                           },
                         }
                       : null
@@ -991,14 +990,18 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               {/* Start with Windows */}
               <div className="flex items-center justify-between">
                 <div>
-                  <label className="block text-sm font-medium text-text-primary">
+                  <div className="block text-sm font-medium text-text-primary">
                     Start with Windows
-                  </label>
+                  </div>
                   <p className="text-xs text-text-muted">
                     Automatically run ClipVault when you log in
                   </p>
                 </div>
                 <button
+                  type="button"
+                  role="switch"
+                  aria-checked={!!settings.ui?.start_with_windows}
+                  aria-label="Start with Windows"
                   onClick={async () => {
                     if (!settings) return
                     const newValue = !settings.ui?.start_with_windows
@@ -1028,14 +1031,18 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               {/* Show Notifications */}
               <div className="flex items-center justify-between">
                 <div>
-                  <label className="block text-sm font-medium text-text-primary">
+                  <div className="block text-sm font-medium text-text-primary">
                     Show save notifications
-                  </label>
+                  </div>
                   <p className="text-xs text-text-muted">
                     Display a tray notification when a clip is saved
                   </p>
                 </div>
                 <button
+                  type="button"
+                  role="switch"
+                  aria-checked={settings.ui?.show_notifications !== false}
+                  aria-label="Show save notifications"
                   onClick={() =>
                     setSettings(prev =>
                       prev
@@ -1068,14 +1075,18 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
               {/* Play Sound */}
               <div className="flex items-center justify-between">
                 <div>
-                  <label className="block text-sm font-medium text-text-primary">
+                  <div className="block text-sm font-medium text-text-primary">
                     Play sound on save
-                  </label>
+                  </div>
                   <p className="text-xs text-text-muted">
                     Play a sound effect when a clip is saved
                   </p>
                 </div>
                 <button
+                  type="button"
+                  role="switch"
+                  aria-checked={settings.ui?.play_sound !== false}
+                  aria-label="Play sound on save"
                   onClick={() =>
                     setSettings(prev =>
                       prev
