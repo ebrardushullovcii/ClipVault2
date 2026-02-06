@@ -742,8 +742,10 @@ async function createWindow() {
 // IPC Handlers
 
 // Default settings object
+const defaultClipsPath = join(app.getPath('videos'), 'ClipVault')
+
 const defaultSettings = {
-  output_path: 'D:\\Clips\\ClipVault',
+  output_path: defaultClipsPath,
   buffer_seconds: 120,
   video: {
     width: 1920,
@@ -766,6 +768,7 @@ const defaultSettings = {
   },
   ui: {
     show_notifications: true,
+    play_sound: true,
     minimize_to_tray: true,
     start_with_windows: false,
     first_run_completed: false,

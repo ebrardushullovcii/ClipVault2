@@ -39,6 +39,7 @@ interface AppSettings {
   }
   ui?: {
     show_notifications?: boolean
+    play_sound?: boolean
     minimize_to_tray?: boolean
     start_with_windows?: boolean
     first_run_completed?: boolean
@@ -820,7 +821,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     onChange={e => updateAudioSetting('system_audio_enabled', e.target.checked)}
                     className="peer sr-only"
                   />
-                  <div className="peer-checked:after:left-5.5 h-6 w-11 rounded-full bg-background-primary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-focus:outline-none" />
+                  <div className="peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-primary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-focus:outline-none" />
                 </label>
               </div>
 
@@ -863,7 +864,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     onChange={e => updateAudioSetting('microphone_enabled', e.target.checked)}
                     className="peer sr-only"
                   />
-                  <div className="peer-checked:after:left-5.5 h-6 w-11 rounded-full bg-background-primary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-focus:outline-none" />
+                  <div className="peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-primary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-focus:outline-none" />
                 </label>
               </div>
 
@@ -1001,13 +1002,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   onClick={async () => {
                     if (!settings) return
                     const newValue = !settings.ui?.start_with_windows
-                    // Update local state
                     setSettings(prev =>
                       prev
                         ? { ...prev, ui: { ...(prev.ui || {}), start_with_windows: newValue } }
                         : null
                     )
-                    // Update registry
                     try {
                       await window.electronAPI.setStartup(newValue)
                     } catch (error) {
@@ -1021,6 +1020,84 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   <span
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                       settings.ui?.start_with_windows ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Show Notifications */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-sm font-medium text-text-primary">
+                    Show save notifications
+                  </label>
+                  <p className="text-xs text-text-muted">
+                    Display a tray notification when a clip is saved
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    setSettings(prev =>
+                      prev
+                        ? {
+                            ...prev,
+                            ui: {
+                              ...(prev.ui || {}),
+                              show_notifications: !(prev.ui?.show_notifications ?? true),
+                            },
+                          }
+                        : null
+                    )
+                  }
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    settings.ui?.show_notifications !== false
+                      ? 'bg-accent-primary'
+                      : 'bg-background-tertiary'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      settings.ui?.show_notifications !== false
+                        ? 'translate-x-6'
+                        : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Play Sound */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-sm font-medium text-text-primary">
+                    Play sound on save
+                  </label>
+                  <p className="text-xs text-text-muted">
+                    Play a sound effect when a clip is saved
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    setSettings(prev =>
+                      prev
+                        ? {
+                            ...prev,
+                            ui: {
+                              ...(prev.ui || {}),
+                              play_sound: !(prev.ui?.play_sound ?? true),
+                            },
+                          }
+                        : null
+                    )
+                  }
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    settings.ui?.play_sound !== false
+                      ? 'bg-accent-primary'
+                      : 'bg-background-tertiary'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      settings.ui?.play_sound !== false ? 'translate-x-6' : 'translate-x-1'
                     }`}
                   />
                 </button>

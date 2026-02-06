@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
-import { FolderOpen, Monitor, Mic, Power, Sparkles } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { FolderOpen, Monitor, Mic, Sparkles, Keyboard } from 'lucide-react'
 import type { AppSettings, AudioDeviceInfo, MonitorInfo } from '../../types/electron'
 
-const DEFAULT_CLIPS_PATH = 'D:\\Clips\\ClipVault'
+// Fallback only — the actual default comes from main process via initialSettings.output_path
+const DEFAULT_CLIPS_PATH = 'C:\\Videos\\ClipVault'
 const DEFAULT_VIDEO: AppSettings['video'] = {
   width: 1920,
   height: 1080,
@@ -47,6 +48,88 @@ const qualityPresets = [
   },
 ]
 
+const bufferOptions = [
+  { value: 30, label: '30 sec' },
+  { value: 60, label: '1 min' },
+  { value: 120, label: '2 min' },
+  { value: 180, label: '3 min' },
+  { value: 300, label: '5 min' },
+]
+
+const formatHotkey = (hotkey: string): string => {
+  if (!hotkey) return ''
+  return hotkey
+    .replace(/Control/g, 'Ctrl')
+    .replace(/Command/g, 'Cmd')
+    .replace(/Option/g, 'Alt')
+    .replace(/Shift/g, '\u21e7')
+    .replace(/Ctrl/g, 'Ctrl')
+    .replace(/Alt/g, 'Alt')
+    .replace(/Meta/g, 'Win')
+    .replace(/\+/g, ' + ')
+}
+
+const WizardHotkeyInput: React.FC<{
+  value: string
+  onChange: (value: string) => void
+}> = ({ value, onChange }) => {
+  const [isRecording, setIsRecording] = useState(false)
+  const inputRef = useRef<HTMLDivElement>(null)
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!isRecording) return
+    e.preventDefault()
+    e.stopPropagation()
+    if (['Control', 'Alt', 'Shift', 'Meta', 'Command', 'Option'].includes(e.key)) return
+
+    const modifiers: string[] = []
+    if (e.ctrlKey) modifiers.push('Ctrl')
+    if (e.altKey) modifiers.push('Alt')
+    if (e.shiftKey) modifiers.push('Shift')
+    if (e.metaKey) modifiers.push('Win')
+
+    let key = e.key
+    if (key.length === 1) key = key.toUpperCase()
+    else if (key === 'Escape') key = 'Esc'
+    else if (key === 'Delete') key = 'Del'
+
+    onChange([...modifiers, key].join('+'))
+    setIsRecording(false)
+  }
+
+  return (
+    <div
+      ref={inputRef}
+      onClick={() => setIsRecording(true)}
+      onKeyDown={handleKeyDown}
+      onBlur={() => setIsRecording(false)}
+      tabIndex={0}
+      className={`cursor-pointer rounded-lg border px-4 py-2 text-sm font-medium transition-all ${
+        isRecording
+          ? 'border-accent-primary bg-accent-primary/10 text-accent-primary ring-2 ring-accent-primary/50'
+          : 'border-border bg-background-tertiary text-text-primary hover:border-accent-primary/50'
+      }`}
+    >
+      {isRecording ? (
+        <span className="animate-pulse">Press a key...</span>
+      ) : value ? (
+        <span className="flex items-center gap-2">
+          {formatHotkey(value)
+            .split(' + ')
+            .map((part, i, arr) => (
+              <span key={i} className="flex items-center gap-2">
+                <kbd className="rounded bg-background-secondary px-2 py-0.5 text-xs">{part}</kbd>
+                {i < arr.length - 1 && <span className="text-text-muted">+</span>}
+              </span>
+            ))}
+        </span>
+      ) : (
+        <span className="text-text-muted">Click to set hotkey</span>
+      )}
+    </div>
+  )
+}
+
 const normalizeSettings = (value: AppSettings): AppSettings => {
   const outputPath = value.output_path?.trim() ? value.output_path.trim() : DEFAULT_CLIPS_PATH
   const video = { ...DEFAULT_VIDEO, ...(value.video ?? {}) }
@@ -65,9 +148,13 @@ const normalizeSettings = (value: AppSettings): AppSettings => {
       system_audio_device_id: audio.system_audio_device_id ?? DEFAULT_AUDIO.system_audio_device_id,
       microphone_device_id: audio.microphone_device_id ?? DEFAULT_AUDIO.microphone_device_id,
     },
+    buffer_seconds: value.buffer_seconds ?? 120,
+    hotkey: {
+      save_clip: value.hotkey?.save_clip ?? 'F9',
+    },
     ui: {
       show_notifications: ui.show_notifications ?? true,
-      minimize_to_tray: ui.minimize_to_tray ?? true,
+      play_sound: ui.play_sound ?? true,
       start_with_windows: ui.start_with_windows ?? false,
       first_run_completed: ui.first_run_completed ?? false,
     },
@@ -172,7 +259,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
     { id: 'storage', title: 'Storage', icon: FolderOpen },
     { id: 'capture', title: 'Capture', icon: Monitor },
     { id: 'audio', title: 'Audio', icon: Mic },
-    { id: 'behavior', title: 'Behavior', icon: Power },
+    { id: 'behavior', title: 'Hotkey', icon: Keyboard },
   ]
 
   const canContinue = useMemo(() => {
@@ -234,13 +321,12 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
   const systemAudioLabelId = 'first-run-system-audio-label'
   const microphoneLabelId = 'first-run-microphone-label'
   const startWithWindowsLabelId = 'first-run-start-windows-label'
-  const minimizeToTrayLabelId = 'first-run-minimize-tray-label'
   const showNotificationsLabelId = 'first-run-show-notifications-label'
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm">
       <div className="w-full max-w-4xl rounded-2xl border border-border bg-background-secondary p-8 shadow-2xl">
-        <div className="flex flex-col gap-6">
+        <div className="flex max-h-[calc(100vh-4rem)] flex-col gap-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-accent-primary">
@@ -307,7 +393,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
             })}
           </div>
 
-          <div className="min-h-[320px] rounded-2xl border border-border bg-background-primary p-6">
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-border bg-background-primary p-6">
             {stepIndex === 0 && (
               <div className="space-y-6">
                 <div>
@@ -349,7 +435,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                       onClick={() =>
                         setSettings(prev => ({
                           ...prev,
-                          output_path: DEFAULT_CLIPS_PATH,
+                          output_path: initialSettings.output_path || DEFAULT_CLIPS_PATH,
                         }))
                       }
                       className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-muted transition-colors hover:border-accent-primary hover:text-accent-primary"
@@ -459,6 +545,104 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     </div>
                   </div>
                 </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium text-text-secondary">Frame rate</div>
+                    <div className="flex flex-wrap gap-2">
+                      {[30, 60, 120, 144].map(fps => {
+                        const isActive = settings.video.fps === fps
+                        return (
+                          <button
+                            key={fps}
+                            type="button"
+                            onClick={() =>
+                              setSettings(prev => ({
+                                ...prev,
+                                video: { ...prev.video, fps },
+                              }))
+                            }
+                            className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                              isActive
+                                ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                                : 'border-border bg-background-secondary text-text-muted hover:border-accent-primary'
+                            }`}
+                          >
+                            {fps} FPS
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium text-text-secondary">Encoder</div>
+                    <div className="flex flex-wrap gap-2">
+                      {([
+                        { value: 'auto', label: 'Auto' },
+                        { value: 'nvenc', label: 'NVENC (GPU)' },
+                        { value: 'x264', label: 'x264 (CPU)' },
+                      ] as const).map(enc => {
+                        const isActive = settings.video.encoder === enc.value
+                        return (
+                          <button
+                            key={enc.value}
+                            type="button"
+                            onClick={() =>
+                              setSettings(prev => ({
+                                ...prev,
+                                video: { ...prev.video, encoder: enc.value },
+                              }))
+                            }
+                            className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                              isActive
+                                ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                                : 'border-border bg-background-secondary text-text-muted hover:border-accent-primary'
+                            }`}
+                          >
+                            {enc.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <p className="text-xs text-text-muted">
+                      NVENC uses your GPU for minimal performance impact.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="text-sm font-medium text-text-secondary">
+                    Buffer duration
+                  </div>
+                  <p className="text-xs text-text-muted">
+                    How much gameplay is kept in memory. When you press the save
+                    hotkey, this is the maximum clip length.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {bufferOptions.map(opt => {
+                      const isActive = (settings.buffer_seconds ?? 120) === opt.value
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() =>
+                            setSettings(prev => ({
+                              ...prev,
+                              buffer_seconds: opt.value,
+                            }))
+                          }
+                          className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                            isActive
+                              ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                              : 'border-border bg-background-secondary text-text-muted hover:border-accent-primary'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -496,7 +680,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                           }
                           className="peer sr-only"
                         />
-                        <div className="peer-checked:after:left-5.5 h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                        <div className="peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
                       </label>
                     </div>
                     <select
@@ -544,7 +728,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                           }
                           className="peer sr-only"
                         />
-                        <div className="peer-checked:after:left-5.5 h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                        <div className="peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
                       </label>
                     </div>
                     <select
@@ -570,6 +754,32 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     </select>
                   </div>
                 </div>
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-text-secondary">
+                    Audio bitrate: {settings.audio.bitrate ?? 160} kbps
+                  </div>
+                  <input
+                    type="range"
+                    min="96"
+                    max="320"
+                    step="32"
+                    value={settings.audio.bitrate ?? 160}
+                    onChange={event =>
+                      setSettings(prev => ({
+                        ...prev,
+                        audio: {
+                          ...prev.audio,
+                          bitrate: parseInt(event.target.value),
+                        },
+                      }))
+                    }
+                    className="w-full accent-accent-primary"
+                  />
+                  <div className="flex justify-between text-xs text-text-muted">
+                    <span>96 kbps (compact)</span>
+                    <span>320 kbps (high quality)</span>
+                  </div>
+                </div>
                 {loadingDevices && (
                   <div className="text-xs text-text-muted">Loading devices from backend...</div>
                 )}
@@ -579,12 +789,33 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
             {stepIndex === 3 && (
               <div className="space-y-6">
                 <div>
-                  <h2 className="text-xl font-semibold text-text-primary">Startup & behavior</h2>
+                  <h2 className="text-xl font-semibold text-text-primary">Hotkey & behavior</h2>
                   <p className="mt-1 text-sm text-text-muted">
-                    Decide how ClipVault behaves when Windows starts or when you close the window.
+                    Set up the key that saves your clips and decide how ClipVault starts.
                   </p>
                 </div>
                 <div className="grid gap-4">
+                  <div className="rounded-lg border border-border bg-background-secondary p-4">
+                    <div className="mb-3 flex items-center gap-2">
+                      <Keyboard className="h-4 w-4 text-accent-primary" />
+                      <div className="text-sm font-semibold text-text-primary">Save clip hotkey</div>
+                    </div>
+                    <WizardHotkeyInput
+                      value={settings.hotkey?.save_clip ?? 'F9'}
+                      onChange={value =>
+                        setSettings(prev => ({
+                          ...prev,
+                          hotkey: { ...prev.hotkey, save_clip: value },
+                        }))
+                      }
+                    />
+                    <div className="mt-2 text-xs text-text-muted">
+                      Press this key anytime to save your last{' '}
+                      {bufferOptions.find(o => o.value === (settings.buffer_seconds ?? 120))?.label ?? '2 min'}{' '}
+                      of gameplay.
+                    </div>
+                  </div>
+
                   <div className="flex items-center justify-between rounded-lg border border-border bg-background-secondary p-4">
                     <div id={startWithWindowsLabelId}>
                       <div className="text-sm font-semibold text-text-primary">
@@ -610,36 +841,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                         }
                         className="peer sr-only"
                       />
-                      <div className="peer-checked:after:left-5.5 h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
-                    </label>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-lg border border-border bg-background-secondary p-4">
-                    <div id={minimizeToTrayLabelId}>
-                      <div className="text-sm font-semibold text-text-primary">
-                        Minimize to tray
-                      </div>
-                      <div className="text-xs text-text-muted">
-                        Keep ClipVault running when you close the window.
-                      </div>
-                    </div>
-                    <label className="relative inline-flex cursor-pointer items-center">
-                      <input
-                        type="checkbox"
-                        aria-labelledby={minimizeToTrayLabelId}
-                        checked={settings.ui?.minimize_to_tray ?? true}
-                        onChange={event =>
-                          setSettings(prev => ({
-                            ...prev,
-                            ui: {
-                              ...prev.ui,
-                              minimize_to_tray: event.target.checked,
-                            },
-                          }))
-                        }
-                        className="peer sr-only"
-                      />
-                      <div className="peer-checked:after:left-5.5 h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                      <div className="peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
                     </label>
                   </div>
 
@@ -668,7 +870,35 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                         }
                         className="peer sr-only"
                       />
-                      <div className="peer-checked:after:left-5.5 h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                      <div className="peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                    </label>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-lg border border-border bg-background-secondary p-4">
+                    <div>
+                      <div className="text-sm font-semibold text-text-primary">
+                        Play sound on save
+                      </div>
+                      <div className="text-xs text-text-muted">
+                        Play a sound effect when a clip is saved.
+                      </div>
+                    </div>
+                    <label className="relative inline-flex cursor-pointer items-center">
+                      <input
+                        type="checkbox"
+                        checked={settings.ui?.play_sound ?? true}
+                        onChange={event =>
+                          setSettings(prev => ({
+                            ...prev,
+                            ui: {
+                              ...prev.ui,
+                              play_sound: event.target.checked,
+                            },
+                          }))
+                        }
+                        className="peer sr-only"
+                      />
+                      <div className="peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
                     </label>
                   </div>
                 </div>

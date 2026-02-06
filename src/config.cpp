@@ -203,6 +203,7 @@ bool ConfigManager::load(const std::string& filepath) {
     std::string ui_json = extract_object(json, "ui");
     if (!ui_json.empty()) {
         config_.ui.show_notifications = extract_bool(ui_json, "show_notifications", config_.ui.show_notifications);
+        config_.ui.play_sound = extract_bool(ui_json, "play_sound", config_.ui.play_sound);
         config_.ui.minimize_to_tray = extract_bool(ui_json, "minimize_to_tray", config_.ui.minimize_to_tray);
         config_.ui.start_with_windows = extract_bool(ui_json, "start_with_windows", config_.ui.start_with_windows);
     }
@@ -249,6 +250,7 @@ bool ConfigManager::save(const std::string& filepath) {
     file << "    },\n";
     file << "    \"ui\": {\n";
     file << "        \"show_notifications\": " << (config_.ui.show_notifications ? "true" : "false") << ",\n";
+    file << "        \"play_sound\": " << (config_.ui.play_sound ? "true" : "false") << ",\n";
     file << "        \"minimize_to_tray\": " << (config_.ui.minimize_to_tray ? "true" : "false") << ",\n";
     file << "        \"start_with_windows\": " << (config_.ui.start_with_windows ? "true" : "false") << "\n";
     file << "    }\n";

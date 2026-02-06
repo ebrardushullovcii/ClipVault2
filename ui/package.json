@@ -64,6 +64,7 @@
     "directories": {
       "output": "release"
     },
+    "afterPack": "build/afterPack.cjs",
     "files": [
       "dist/**/*",
       "node_modules/**/*"
@@ -107,7 +108,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "ClipVault",
       "menuCategory": "ClipVault",
-      "artifactName": "ClipVault-Setup-${version}.exe"
+      "artifactName": "ClipVault-Setup-${version}.exe",
+      "include": "build/installer.nsh"
     },
     "portable": {
       "artifactName": "ClipVault-Portable.exe"

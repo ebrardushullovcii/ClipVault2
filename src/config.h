@@ -30,6 +30,7 @@ struct HotkeyConfig {
 
 struct UIConfig {
     bool show_notifications = true;
+    bool play_sound = true;
     bool minimize_to_tray = true;
     bool start_with_windows = false;
 };
@@ -42,7 +43,7 @@ struct LauncherConfig {
 };
 
 struct Config {
-    std::string output_path = "D:\\Clips\\ClipVault";
+    std::string output_path = "C:\\Videos\\ClipVault";
     int buffer_seconds = 120;
     VideoConfig video;
     AudioConfig audio;
