@@ -183,9 +183,20 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
       retryAttemptsRef.current.delete(filename)
     })
 
+    // Listen for trim-in-place completion to refresh the clip in the list
+    const unsubscribeTrimmed = window.electronAPI.on('clip:trimmed', (data: unknown) => {
+      const { filename } = data as { filename: string }
+      console.log(`[Library] Clip trimmed, refreshing: ${filename}`)
+      // Use refreshClipData to reload clip info and regenerate thumbnail/metadata
+      refreshClipData(filename).catch(error =>
+        console.error('[Library] Failed to refresh trimmed clip:', error)
+      )
+    })
+
     return () => {
       unsubscribeNew?.()
       unsubscribeRemoved?.()
+      unsubscribeTrimmed?.()
     }
   }, [isRestored])
 
@@ -374,11 +385,26 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
       result = result.filter(clip => clip.metadata?.game === libraryState.selectedGame)
     }
 
+    // Parse date from filename like "2026-02-04_21-33-19.mp4", fallback to createdAt
+    const getClipDate = (clip: ClipInfo): number => {
+      const match = clip.filename.match(/^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/)
+      if (match) {
+        const [, y, mo, d, h, mi, s] = match
+        const parsed = new Date(
+          Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)
+        )
+        if (!isNaN(parsed.getTime())) {
+          return parsed.getTime()
+        }
+      }
+      return new Date(clip.createdAt).getTime()
+    }
+
     result.sort((a, b) => {
       let comparison = 0
       switch (libraryState.sortBy) {
         case 'date':
-          comparison = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          comparison = getClipDate(b) - getClipDate(a)
           break
         case 'size':
           comparison = b.size - a.size

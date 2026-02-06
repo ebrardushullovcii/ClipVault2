@@ -11,8 +11,16 @@ import {
   Rectangle,
   screen,
 } from 'electron'
-import { dirname, join, basename } from 'path'
-import { readFile, writeFile, readdir, stat, mkdir, unlink as fsUnlinkAsync } from 'fs/promises'
+import { dirname, join, basename, resolve, relative, isAbsolute } from 'path'
+import {
+  readFile,
+  writeFile,
+  readdir,
+  stat,
+  mkdir,
+  unlink as fsUnlinkAsync,
+  rename,
+} from 'fs/promises'
 import { existsSync, readFileSync, createWriteStream } from 'fs'
 import ffmpeg from 'fluent-ffmpeg'
 import { spawn, execSync, execFile } from 'child_process'
@@ -177,6 +185,7 @@ app.disableHardwareAcceleration()
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
+let suppressFileWatcher = false
 let backendProcess: ReturnType<typeof spawn> | null = null
 
 type WindowState = {
@@ -1960,6 +1969,178 @@ ipcMain.handle(
   }
 )
 
+// Trim clip in place - lossless stream copy, replaces original file
+ipcMain.handle(
+  'editor:trimInPlace',
+  async (
+    _,
+    params: { clipId: string; clipPath: string; trimStart: number; trimEnd: number }
+  ) => {
+    const { clipId, clipPath, trimStart, trimEnd } = params
+    const duration = trimEnd - trimStart
+
+    // Validate clipPath is inside the clips directory (path traversal guard)
+    const resolvedClipsDir = resolve(getClipsPath())
+    const resolvedClipPath = resolve(clipPath)
+    const rel = relative(resolvedClipsDir, resolvedClipPath)
+    if (rel.startsWith('..') || isAbsolute(rel)) {
+      throw new Error(`Invalid clip path: ${clipPath} is outside clips directory`)
+    }
+
+    if (!existsSync(clipPath)) {
+      throw new Error(`Clip file not found: ${clipPath}`)
+    }
+    if (trimStart < 0 || duration <= 0) {
+      throw new Error(`Invalid trim range: ${trimStart} - ${trimEnd}`)
+    }
+
+    const tempPath = clipPath.replace(/\.mp4$/i, '.trimming.mp4')
+
+    // Remove stale temp file from a previous failed trim
+    if (existsSync(tempPath)) {
+      await fsUnlinkAsync(tempPath)
+    }
+
+    try {
+      // Step 1: FFmpeg stream copy to temp file
+      await new Promise<void>((resolve, reject) => {
+        const command = ffmpeg(clipPath)
+          .seekInput(trimStart)
+          .duration(duration)
+          .outputOptions(['-map 0', '-c copy', '-avoid_negative_ts make_zero'])
+          .on('progress', (progress) => {
+            if (mainWindow && progress.percent) {
+              mainWindow.webContents.send('trim:progress', { percent: progress.percent })
+            }
+          })
+          .on('end', () => resolve())
+          .on('error', (err) => {
+            console.error('Trim error:', err)
+            reject(err)
+          })
+          .save(tempPath)
+      })
+
+      // Step 2: Verify temp file exists and has content
+      const tempStat = await stat(tempPath)
+      if (tempStat.size === 0) {
+        throw new Error('Trimmed file is empty')
+      }
+
+      // Step 3: Atomic swap via backup - rename original to .bak, rename temp to original
+      // Suppress chokidar watcher during rename to avoid spurious clips:removed/clips:new
+      const backupPath = clipPath + '.bak'
+      // Guard against stale backup from a previous failed trim
+      if (existsSync(backupPath)) {
+        await fsUnlinkAsync(backupPath)
+      }
+      suppressFileWatcher = true
+      try {
+        await rename(clipPath, backupPath)
+        try {
+          await rename(tempPath, clipPath)
+        } catch (renameErr) {
+          // Restore backup if rename failed
+          await rename(backupPath, clipPath)
+          throw renameErr
+        }
+      } finally {
+        suppressFileWatcher = false
+      }
+
+      // Post-swap: ffprobe, metadata update, and cache cleanup are non-fatal.
+      // The trim file swap already succeeded, so errors here become warnings.
+      let newDuration = duration
+      let warning: string | undefined
+
+      try {
+        // Step 4: ffprobe for actual new duration
+        newDuration = await new Promise<number>((res, rej) => {
+          ffmpeg.ffprobe(clipPath, (err, metadata) => {
+            if (err) {
+              rej(err)
+              return
+            }
+            res(metadata.format.duration || duration)
+          })
+        })
+
+        // Step 5: Update metadata - reset trim markers and playhead
+        const metadataDir = join(dirname(clipPath), 'clips-metadata')
+        const metadataPath = join(metadataDir, `${clipId}.json`)
+        if (existsSync(metadataPath)) {
+          const existing: Record<string, unknown> = JSON.parse(
+            await readFile(metadataPath, 'utf-8')
+          )
+          existing.trim = { start: 0, end: newDuration }
+          existing.playheadPosition = 0
+          existing.lastModified = new Date().toISOString()
+          await writeFile(metadataPath, JSON.stringify(existing, null, 2))
+        }
+      } catch (postSwapErr) {
+        console.error(`[Main] Post-swap metadata update failed for ${clipId}:`, postSwapErr)
+        warning = `Trim succeeded but metadata update failed: ${postSwapErr}`
+      }
+
+      // Step 5b: Remove backup now that swap is complete
+      try {
+        await fsUnlinkAsync(backupPath)
+      } catch {
+        console.error(`[Main] Failed to remove backup: ${backupPath}`)
+      }
+
+      // Step 6: Delete cached thumbnail and audio tracks so they regenerate
+      try {
+        const thumbPath = join(thumbnailsPath, `${clipId}.jpg`)
+        if (existsSync(thumbPath)) {
+          await fsUnlinkAsync(thumbPath)
+        }
+        const audioCachePath = join(thumbnailsPath, 'audio')
+        const track1Path = join(audioCachePath, `${clipId}_track1.m4a`)
+        const track2Path = join(audioCachePath, `${clipId}_track2.m4a`)
+        if (existsSync(track1Path)) await fsUnlinkAsync(track1Path)
+        if (existsSync(track2Path)) await fsUnlinkAsync(track2Path)
+      } catch (cacheErr) {
+        console.error(`[Main] Failed to clean cached files for ${clipId}:`, cacheErr)
+      }
+
+      console.log(`[Main] Trim in place complete: ${clipId}, new duration: ${newDuration}s`)
+
+      // Notify renderer to refresh this clip in the Library
+      if (mainWindow) {
+        mainWindow.webContents.send('clip:trimmed', { clipId, filename: basename(clipPath) })
+      }
+
+      return { success: true, newDuration, warning }
+    } catch (error) {
+      // Clean up temp file on failure
+      if (existsSync(tempPath)) {
+        try {
+          await fsUnlinkAsync(tempPath)
+        } catch {
+          // ignore cleanup error
+        }
+      }
+      // Clean up backup file if it exists
+      const backupPath = clipPath + '.bak'
+      if (existsSync(backupPath)) {
+        try {
+          // Restore backup if original is missing
+          if (!existsSync(clipPath)) {
+            await rename(backupPath, clipPath)
+          } else {
+            await fsUnlinkAsync(backupPath)
+          }
+        } catch {
+          // ignore cleanup error
+        }
+      }
+      console.error('Failed to trim in place:', error)
+      throw error
+    }
+  }
+)
+
 // Clean up orphaned cache files (thumbnails/audio for clips that no longer exist)
 ipcMain.handle('cleanup:orphans', async () => {
   try {
@@ -2186,8 +2367,8 @@ app.whenReady().then(async () => {
   })
 
   clipsWatcher.on('add', filePath => {
-    // Only notify for .mp4 files
-    if (filePath.endsWith('.mp4')) {
+    // Only notify for .mp4 files; skip during trim-in-place swap
+    if (filePath.endsWith('.mp4') && !suppressFileWatcher) {
       console.log('[Watcher] New clip detected:', filePath)
       // Notify all windows that a new clip is available
       BrowserWindow.getAllWindows().forEach(window => {
@@ -2197,8 +2378,8 @@ app.whenReady().then(async () => {
   })
 
   clipsWatcher.on('unlink', filePath => {
-    // Notify when a clip is deleted
-    if (filePath.endsWith('.mp4')) {
+    // Notify when a clip is deleted; skip during trim-in-place swap
+    if (filePath.endsWith('.mp4') && !suppressFileWatcher) {
       console.log('[Watcher] Clip deleted:', filePath)
       BrowserWindow.getAllWindows().forEach(window => {
         window.webContents.send('clips:removed', { filename: basename(filePath) })
