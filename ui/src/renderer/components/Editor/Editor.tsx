@@ -74,6 +74,7 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
   const audioStartTimeRef = useRef<number>(0)
   const videoStartTimeRef = useRef<number>(0)
   const isAudioPlayingRef = useRef<boolean>(false)
+  const startAudioPlaybackRef = useRef<((fromTime: number) => void) | null>(null)
 
   // Audio track sources and volume
   const [audioTrack1Src, setAudioTrack1Src] = useState<string | null>(null)
@@ -107,6 +108,12 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
 
   // Delete state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  // Trim in place state
+  const [isTrimming, setIsTrimming] = useState(false)
+  const [trimProgress, setTrimProgress] = useState(0)
+  const [showTrimConfirm, setShowTrimConfirm] = useState(false)
+  const [audioExtractionKey, setAudioExtractionKey] = useState(0)
 
   // Editor settings
   const [skipSeconds, setSkipSeconds] = useState(5)
@@ -277,6 +284,19 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     return () => document.removeEventListener('click', handleClickOutside)
   }, [showSizeDropdown])
 
+  // Listen for trim progress events
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.on('trim:progress', (data: unknown) => {
+      const payload = data as { percent?: number }
+      if (typeof payload.percent === 'number') {
+        setTrimProgress(payload.percent)
+      }
+    })
+    return () => {
+      if (unsubscribe) unsubscribe()
+    }
+  }, [])
+
   // Initialize AudioContext
   useEffect(() => {
     const AudioContextClass =
@@ -334,6 +354,10 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
       if (audioTrack1Src && audioContextRef.current) {
         const buffer = await loadAudioBuffer(audioTrack1Src)
         audioBuffer1Ref.current = buffer
+        // If video is already playing, start audio playback to sync
+        if (videoRef.current && !videoRef.current.paused) {
+          startAudioPlaybackRef.current?.(videoRef.current.currentTime)
+        }
       }
     })()
 
@@ -341,6 +365,10 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
       if (audioTrack2Src && audioContextRef.current) {
         const buffer = await loadAudioBuffer(audioTrack2Src)
         audioBuffer2Ref.current = buffer
+        // If video is already playing, start audio playback to sync
+        if (videoRef.current && !videoRef.current.paused) {
+          startAudioPlaybackRef.current?.(videoRef.current.currentTime)
+        }
       }
     })()
   }, [audioTrack1Src, audioTrack2Src])
@@ -375,7 +403,7 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     }, 100)
 
     return () => clearTimeout(timer)
-  }, [clip.id, clip.path, metadata.audioTracks])
+  }, [clip.id, clip.path, metadata.audioTracks, audioExtractionKey])
 
   // Update gain node values when volume/mute/track enabled changes
   useEffect(() => {
@@ -477,6 +505,9 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
       duration,
     ]
   )
+
+  // Keep ref in sync so buffer-loading effect can call it without TDZ issues
+  startAudioPlaybackRef.current = startAudioPlayback
 
   // Stop audio playback
   const stopAudioPlayback = useCallback(() => {
@@ -826,6 +857,95 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     audioTrack1Volume,
     audioTrack2Volume,
     targetSizeMB,
+  ])
+
+  // Check if trim markers differ from the full clip (i.e. user has trimmed)
+  const hasTrimRange = trimStart > 0.1 || (duration > 0 && trimEnd < duration - 0.1)
+
+  const handleTrimInPlace = useCallback(async () => {
+    if (!window.electronAPI?.editor?.trimInPlace) {
+      console.error('Trim in place API not available')
+      return
+    }
+
+    setShowTrimConfirm(false)
+    setIsTrimming(true)
+    setTrimProgress(0)
+
+    try {
+      // Stop all playback before trimming
+      setIsPlaying(false)
+      stopAudioPlayback()
+      if (videoRef.current) {
+        videoRef.current.pause()
+        videoRef.current.removeAttribute('src')
+        videoRef.current.load()
+      }
+
+      const result = await window.electronAPI.editor.trimInPlace({
+        clipId: clip.id,
+        clipPath: clip.path,
+        trimStart,
+        trimEnd,
+      })
+
+      if (result.success) {
+        // Reset trim markers to new full range
+        setTrimStart(0)
+        setTrimEnd(result.newDuration)
+        setDuration(result.newDuration)
+        setCurrentTime(0)
+
+        // Force video element to reload with fresh file
+        const freshSrc = `clipvault://clip/${encodeURIComponent(clip.filename)}?t=${Date.now()}`
+        setVideoSrc(freshSrc)
+
+        // Notify library of changes
+        if (onSave) {
+          onSave(clip.id, {
+            favorite: isFavorite,
+            tags,
+            game,
+            trim: { start: 0, end: result.newDuration },
+            audio: {
+              track1: { enabled: audioTrack1, muted: audioTrack1Muted, volume: audioTrack1Volume },
+              track2: { enabled: audioTrack2, muted: audioTrack2Muted, volume: audioTrack2Volume },
+            },
+            playheadPosition: 0,
+            lastModified: new Date().toISOString(),
+          })
+        }
+
+        // Clear audio caches and trigger re-extraction
+        setAudioTrack1Src(null)
+        setAudioTrack2Src(null)
+        audioBuffer1Ref.current = null
+        audioBuffer2Ref.current = null
+        setAudioExtractionKey(k => k + 1)
+      }
+    } catch (error) {
+      console.error('Trim in place failed:', error)
+    } finally {
+      setIsTrimming(false)
+      setTrimProgress(0)
+    }
+  }, [
+    clip.id,
+    clip.path,
+    clip.filename,
+    trimStart,
+    trimEnd,
+    isFavorite,
+    tags,
+    game,
+    audioTrack1,
+    audioTrack2,
+    audioTrack1Muted,
+    audioTrack2Muted,
+    audioTrack1Volume,
+    audioTrack2Volume,
+    stopAudioPlayback,
+    onSave,
   ])
 
   return (
@@ -1339,6 +1459,39 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
                 />
               </div>
             )}
+
+            {/* Trim Original button - always visible, disabled when no trim range set */}
+            <div className="mt-3">
+              <button
+                onClick={() => setShowTrimConfirm(true)}
+                disabled={isTrimming || isExporting || !hasTrimRange}
+                className={`flex w-full items-center justify-center gap-2 rounded-lg border border-orange-500/30 bg-orange-500/10 px-4 py-2 text-sm font-medium text-orange-400 transition-colors hover:bg-orange-500/20 ${
+                  isTrimming || isExporting || !hasTrimRange ? 'cursor-not-allowed opacity-50' : ''
+                }`}
+              >
+                  {isTrimming ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      {trimProgress > 0
+                        ? `Trimming... ${Math.round(trimProgress)}%`
+                        : 'Trimming...'}
+                    </>
+                  ) : (
+                    <>
+                      <Scissors className="h-4 w-4" />
+                      Trim Original
+                    </>
+                  )}
+                </button>
+                {isTrimming && trimProgress > 0 && (
+                  <div className="mt-2 h-1 overflow-hidden rounded-full bg-background-tertiary">
+                    <div
+                      className="h-full bg-orange-500 transition-all duration-300"
+                      style={{ width: `${trimProgress}%` }}
+                    />
+                  </div>
+                )}
+              </div>
           </div>
         </div>
       </div>
@@ -1361,6 +1514,33 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
                 className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trim In Place Confirmation Modal */}
+      {showTrimConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="w-96 rounded-xl border border-border bg-background-secondary p-6 shadow-2xl">
+            <h3 className="mb-2 text-lg font-semibold text-orange-400">Trim Original?</h3>
+            <p className="mb-3 text-sm text-text-muted">
+              This will permanently replace the original clip with the trimmed version
+              ({formatTime(trimStart)} &ndash; {formatTime(trimEnd)}).
+            </p>
+            <p className="mb-4 text-sm font-medium text-red-400">
+              This cannot be undone. The original full-length clip will be lost.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowTrimConfirm(false)} className="btn-secondary">
+                Cancel
+              </button>
+              <button
+                onClick={handleTrimInPlace}
+                className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-600"
+              >
+                Trim Original
               </button>
             </div>
           </div>

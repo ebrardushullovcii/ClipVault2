@@ -88,6 +88,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   editor: {
     exportClip: (params: ExportParams) => ipcRenderer.invoke('editor:exportClip', params),
+    trimInPlace: (params: TrimInPlaceParams) => ipcRenderer.invoke('editor:trimInPlace', params),
     saveState: (clipId: string, state: unknown) =>
       ipcRenderer.invoke('editor:saveState', clipId, state),
     loadState: (clipId: string) => ipcRenderer.invoke('editor:loadState', clipId),
@@ -151,6 +152,13 @@ interface ClipInfo {
   createdAt: string
   modifiedAt: string
   metadata: ClipMetadata | null
+}
+
+interface TrimInPlaceParams {
+  clipId: string
+  clipPath: string
+  trimStart: number
+  trimEnd: number
 }
 
 interface ExportParams {
@@ -235,6 +243,7 @@ declare global {
       }
       editor: {
         exportClip: (params: ExportParams) => Promise<ExportResult>
+        trimInPlace: (params: TrimInPlaceParams) => Promise<{ success: boolean; newDuration: number }>
         saveState: (clipId: string, state: EditorState) => Promise<boolean>
         loadState: (clipId: string) => Promise<EditorState | null>
       }

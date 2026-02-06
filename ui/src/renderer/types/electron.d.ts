@@ -110,6 +110,18 @@ export interface ExportResult {
   error?: string
 }
 
+export interface TrimInPlaceParams {
+  clipId: string
+  clipPath: string
+  trimStart: number
+  trimEnd: number
+}
+
+export interface TrimInPlaceResult {
+  success: boolean
+  newDuration: number
+}
+
 export interface AudioDeviceInfo {
   id: string
   name: string
@@ -124,6 +136,7 @@ export interface DialogAPI {
 
 export interface EditorAPI {
   exportClip: (params: ExportParams) => Promise<ExportResult>
+  trimInPlace: (params: TrimInPlaceParams) => Promise<TrimInPlaceResult>
   saveState: (clipId: string, state: EditorState) => Promise<boolean>
   loadState: (clipId: string) => Promise<EditorState | null>
 }
