@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
+import type { TrimInPlaceParams } from '../shared/types'
 
 // Settings interface
 interface AppSettings {
@@ -152,13 +153,6 @@ interface ClipInfo {
   createdAt: string
   modifiedAt: string
   metadata: ClipMetadata | null
-}
-
-interface TrimInPlaceParams {
-  clipId: string
-  clipPath: string
-  trimStart: number
-  trimEnd: number
 }
 
 interface ExportParams {

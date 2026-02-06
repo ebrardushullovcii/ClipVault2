@@ -110,12 +110,7 @@ export interface ExportResult {
   error?: string
 }
 
-export interface TrimInPlaceParams {
-  clipId: string
-  clipPath: string
-  trimStart: number
-  trimEnd: number
-}
+export type { TrimInPlaceParams } from '../../shared/types'
 
 export interface TrimInPlaceResult {
   success: boolean

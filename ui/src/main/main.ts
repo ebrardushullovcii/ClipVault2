@@ -185,6 +185,7 @@ app.disableHardwareAcceleration()
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false
+let suppressFileWatcher = false
 let backendProcess: ReturnType<typeof spawn> | null = null
 
 type WindowState = {
@@ -2027,18 +2028,24 @@ ipcMain.handle(
       }
 
       // Step 3: Atomic swap via backup - rename original to .bak, rename temp to original
+      // Suppress chokidar watcher during rename to avoid spurious clips:removed/clips:new
       const backupPath = clipPath + '.bak'
       // Guard against stale backup from a previous failed trim
       if (existsSync(backupPath)) {
         await fsUnlinkAsync(backupPath)
       }
-      await rename(clipPath, backupPath)
+      suppressFileWatcher = true
       try {
-        await rename(tempPath, clipPath)
-      } catch (renameErr) {
-        // Restore backup if rename failed
-        await rename(backupPath, clipPath)
-        throw renameErr
+        await rename(clipPath, backupPath)
+        try {
+          await rename(tempPath, clipPath)
+        } catch (renameErr) {
+          // Restore backup if rename failed
+          await rename(backupPath, clipPath)
+          throw renameErr
+        }
+      } finally {
+        suppressFileWatcher = false
       }
 
       // Post-swap: ffprobe, metadata update, and cache cleanup are non-fatal.
@@ -2360,8 +2367,8 @@ app.whenReady().then(async () => {
   })
 
   clipsWatcher.on('add', filePath => {
-    // Only notify for .mp4 files
-    if (filePath.endsWith('.mp4')) {
+    // Only notify for .mp4 files; skip during trim-in-place swap
+    if (filePath.endsWith('.mp4') && !suppressFileWatcher) {
       console.log('[Watcher] New clip detected:', filePath)
       // Notify all windows that a new clip is available
       BrowserWindow.getAllWindows().forEach(window => {
@@ -2371,8 +2378,8 @@ app.whenReady().then(async () => {
   })
 
   clipsWatcher.on('unlink', filePath => {
-    // Notify when a clip is deleted
-    if (filePath.endsWith('.mp4')) {
+    // Notify when a clip is deleted; skip during trim-in-place swap
+    if (filePath.endsWith('.mp4') && !suppressFileWatcher) {
       console.log('[Watcher] Clip deleted:', filePath)
       BrowserWindow.getAllWindows().forEach(window => {
         window.webContents.send('clips:removed', { filename: basename(filePath) })
