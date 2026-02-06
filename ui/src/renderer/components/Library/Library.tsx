@@ -187,20 +187,10 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
     const unsubscribeTrimmed = window.electronAPI.on('clip:trimmed', (data: unknown) => {
       const { filename } = data as { filename: string }
       console.log(`[Library] Clip trimmed, refreshing: ${filename}`)
-      // Reload clip list to get updated file size and metadata
-      void (async () => {
-        try {
-          const clipList = await window.electronAPI.getClipsList()
-          const updatedClip = clipList.find(c => c.filename === filename)
-          if (updatedClip) {
-            setClips(prev =>
-              prev.map(c => (c.filename === filename ? updatedClip : c))
-            )
-          }
-        } catch (error) {
-          console.error('[Library] Failed to refresh trimmed clip:', error)
-        }
-      })()
+      // Use refreshClipData to reload clip info and regenerate thumbnail/metadata
+      refreshClipData(filename).catch(error =>
+        console.error('[Library] Failed to refresh trimmed clip:', error)
+      )
     })
 
     return () => {

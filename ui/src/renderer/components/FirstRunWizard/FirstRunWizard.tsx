@@ -772,6 +772,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     max="320"
                     step="32"
                     value={settings.audio.bitrate ?? 160}
+                    aria-label="Audio bitrate in kbps"
                     onChange={event =>
                       setSettings(prev => ({
                         ...prev,

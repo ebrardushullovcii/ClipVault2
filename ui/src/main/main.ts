@@ -2015,6 +2015,10 @@ ipcMain.handle(
 
       // Step 3: Atomic swap via backup - rename original to .bak, rename temp to original
       const backupPath = clipPath + '.bak'
+      // Guard against stale backup from a previous failed trim
+      if (existsSync(backupPath)) {
+        await fsUnlinkAsync(backupPath)
+      }
       await rename(clipPath, backupPath)
       try {
         await rename(tempPath, clipPath)
@@ -2023,8 +2027,6 @@ ipcMain.handle(
         await rename(backupPath, clipPath)
         throw renameErr
       }
-      // Success - remove backup
-      await fsUnlinkAsync(backupPath)
 
       // Step 4: ffprobe for actual new duration
       const newDuration = await new Promise<number>((resolve, reject) => {
@@ -2047,6 +2049,9 @@ ipcMain.handle(
         existing.lastModified = new Date().toISOString()
         await writeFile(metadataPath, JSON.stringify(existing, null, 2))
       }
+
+      // Step 5b: Post-swap steps succeeded - now safe to remove backup
+      await fsUnlinkAsync(backupPath)
 
       // Step 6: Delete cached thumbnail and audio tracks so they regenerate
       const thumbPath = join(thumbnailsPath, `${clipId}.jpg`)
