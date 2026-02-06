@@ -11,7 +11,7 @@ import {
   Rectangle,
   screen,
 } from 'electron'
-import { dirname, join, basename, resolve, relative } from 'path'
+import { dirname, join, basename, resolve, relative, isAbsolute } from 'path'
 import {
   readFile,
   writeFile,
@@ -1982,7 +1982,7 @@ ipcMain.handle(
     const resolvedClipsDir = resolve(getClipsPath())
     const resolvedClipPath = resolve(clipPath)
     const rel = relative(resolvedClipsDir, resolvedClipPath)
-    if (rel.startsWith('..') || resolve(rel) === resolvedClipPath) {
+    if (rel.startsWith('..') || isAbsolute(rel)) {
       throw new Error(`Invalid clip path: ${clipPath} is outside clips directory`)
     }
 
@@ -1994,6 +1994,11 @@ ipcMain.handle(
     }
 
     const tempPath = clipPath.replace(/\.mp4$/i, '.trimming.mp4')
+
+    // Remove stale temp file from a previous failed trim
+    if (existsSync(tempPath)) {
+      await fsUnlinkAsync(tempPath)
+    }
 
     try {
       // Step 1: FFmpeg stream copy to temp file
