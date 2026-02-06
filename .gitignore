@@ -1,6 +1,6 @@
 # Build output
 bin/
-build/
+/build/
 out/
 
 # But keep config templates
@@ -90,7 +90,9 @@ bun.lock
 ui/dist/
 dist/
 ui/release/
-ui/build/
+ui/build/*
+!ui/build/afterPack.cjs
+!ui/build/installer.nsh
 
 # Allow specific packaged assets under ui/resources/bin
 !ui/resources/bin/

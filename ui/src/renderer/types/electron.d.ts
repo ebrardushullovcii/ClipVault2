@@ -80,6 +80,7 @@ export interface AppSettings {
   }
   ui?: {
     show_notifications?: boolean
+    play_sound?: boolean
     minimize_to_tray?: boolean
     start_with_windows?: boolean
     first_run_completed?: boolean
