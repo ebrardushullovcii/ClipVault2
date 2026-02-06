@@ -560,26 +560,28 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                       {[30, 60, 120, 144].map(fps => {
                         const isActive = settings.video.fps === fps
                         return (
-                          <button
+                          <label
                             key={fps}
-                            type="button"
-                            role="radio"
-                            aria-checked={isActive}
-                            tabIndex={isActive ? 0 : -1}
-                            onClick={() =>
-                              setSettings(prev => ({
-                                ...prev,
-                                video: { ...prev.video, fps },
-                              }))
-                            }
-                            className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                            className={`cursor-pointer rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                               isActive
                                 ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
                                 : 'border-border bg-background-secondary text-text-muted hover:border-accent-primary'
                             }`}
                           >
+                            <input
+                              type="radio"
+                              name="wizard-fps"
+                              className="sr-only"
+                              checked={isActive}
+                              onChange={() =>
+                                setSettings(prev => ({
+                                  ...prev,
+                                  video: { ...prev.video, fps },
+                                }))
+                              }
+                            />
                             {fps} FPS
-                          </button>
+                          </label>
                         )
                       })}
                     </div>
@@ -594,26 +596,28 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                       ] as const).map(enc => {
                         const isActive = settings.video.encoder === enc.value
                         return (
-                          <button
+                          <label
                             key={enc.value}
-                            type="button"
-                            role="radio"
-                            aria-checked={isActive}
-                            tabIndex={isActive ? 0 : -1}
-                            onClick={() =>
-                              setSettings(prev => ({
-                                ...prev,
-                                video: { ...prev.video, encoder: enc.value },
-                              }))
-                            }
-                            className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                            className={`cursor-pointer rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                               isActive
                                 ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
                                 : 'border-border bg-background-secondary text-text-muted hover:border-accent-primary'
                             }`}
                           >
+                            <input
+                              type="radio"
+                              name="wizard-encoder"
+                              className="sr-only"
+                              checked={isActive}
+                              onChange={() =>
+                                setSettings(prev => ({
+                                  ...prev,
+                                  video: { ...prev.video, encoder: enc.value },
+                                }))
+                              }
+                            />
                             {enc.label}
-                          </button>
+                          </label>
                         )
                       })}
                     </div>
@@ -635,26 +639,28 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     {bufferOptions.map(opt => {
                       const isActive = (settings.buffer_seconds ?? 120) === opt.value
                       return (
-                        <button
+                        <label
                           key={opt.value}
-                          type="button"
-                          role="radio"
-                          aria-checked={isActive}
-                          tabIndex={isActive ? 0 : -1}
-                          onClick={() =>
-                            setSettings(prev => ({
-                              ...prev,
-                              buffer_seconds: opt.value,
-                            }))
-                          }
-                          className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                          className={`cursor-pointer rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                             isActive
                               ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
                               : 'border-border bg-background-secondary text-text-muted hover:border-accent-primary'
                           }`}
                         >
+                          <input
+                            type="radio"
+                            name="wizard-buffer"
+                            className="sr-only"
+                            checked={isActive}
+                            onChange={() =>
+                              setSettings(prev => ({
+                                ...prev,
+                                buffer_seconds: opt.value,
+                              }))
+                            }
+                          />
                           {opt.label}
-                        </button>
+                        </label>
                       )
                     })}
                   </div>

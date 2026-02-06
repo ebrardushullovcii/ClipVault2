@@ -11,7 +11,7 @@ import {
   Rectangle,
   screen,
 } from 'electron'
-import { dirname, join, basename } from 'path'
+import { dirname, join, basename, resolve, relative } from 'path'
 import {
   readFile,
   writeFile,
@@ -1978,6 +1978,14 @@ ipcMain.handle(
     const { clipId, clipPath, trimStart, trimEnd } = params
     const duration = trimEnd - trimStart
 
+    // Validate clipPath is inside the clips directory (path traversal guard)
+    const resolvedClipsDir = resolve(getClipsPath())
+    const resolvedClipPath = resolve(clipPath)
+    const rel = relative(resolvedClipsDir, resolvedClipPath)
+    if (rel.startsWith('..') || resolve(rel) === resolvedClipPath) {
+      throw new Error(`Invalid clip path: ${clipPath} is outside clips directory`)
+    }
+
     if (!existsSync(clipPath)) {
       throw new Error(`Clip file not found: ${clipPath}`)
     }
@@ -2028,32 +2036,46 @@ ipcMain.handle(
         throw renameErr
       }
 
-      // Step 4: ffprobe for actual new duration
-      const newDuration = await new Promise<number>((resolve, reject) => {
-        ffmpeg.ffprobe(clipPath, (err, metadata) => {
-          if (err) {
-            reject(err)
-            return
-          }
-          resolve(metadata.format.duration || duration)
-        })
-      })
+      // Post-swap: ffprobe, metadata update, and cache cleanup are non-fatal.
+      // The trim file swap already succeeded, so errors here become warnings.
+      let newDuration = duration
+      let warning: string | undefined
 
-      // Step 5: Update metadata - reset trim markers and playhead
-      const metadataDir = join(dirname(clipPath), 'clips-metadata')
-      const metadataPath = join(metadataDir, `${clipId}.json`)
-      if (existsSync(metadataPath)) {
-        const existing: Record<string, unknown> = JSON.parse(
-          await readFile(metadataPath, 'utf-8')
-        )
-        existing.trim = { start: 0, end: newDuration }
-        existing.playheadPosition = 0
-        existing.lastModified = new Date().toISOString()
-        await writeFile(metadataPath, JSON.stringify(existing, null, 2))
+      try {
+        // Step 4: ffprobe for actual new duration
+        newDuration = await new Promise<number>((res, rej) => {
+          ffmpeg.ffprobe(clipPath, (err, metadata) => {
+            if (err) {
+              rej(err)
+              return
+            }
+            res(metadata.format.duration || duration)
+          })
+        })
+
+        // Step 5: Update metadata - reset trim markers and playhead
+        const metadataDir = join(dirname(clipPath), 'clips-metadata')
+        const metadataPath = join(metadataDir, `${clipId}.json`)
+        if (existsSync(metadataPath)) {
+          const existing: Record<string, unknown> = JSON.parse(
+            await readFile(metadataPath, 'utf-8')
+          )
+          existing.trim = { start: 0, end: newDuration }
+          existing.playheadPosition = 0
+          existing.lastModified = new Date().toISOString()
+          await writeFile(metadataPath, JSON.stringify(existing, null, 2))
+        }
+      } catch (postSwapErr) {
+        console.error(`[Main] Post-swap metadata update failed for ${clipId}:`, postSwapErr)
+        warning = `Trim succeeded but metadata update failed: ${postSwapErr}`
       }
 
-      // Step 5b: Post-swap steps succeeded - now safe to remove backup
-      await fsUnlinkAsync(backupPath)
+      // Step 5b: Remove backup now that swap is complete
+      try {
+        await fsUnlinkAsync(backupPath)
+      } catch {
+        console.error(`[Main] Failed to remove backup: ${backupPath}`)
+      }
 
       // Step 6: Delete cached thumbnail and audio tracks so they regenerate
       try {
@@ -2077,7 +2099,7 @@ ipcMain.handle(
         mainWindow.webContents.send('clip:trimmed', { clipId, filename: basename(clipPath) })
       }
 
-      return { success: true, newDuration }
+      return { success: true, newDuration, warning }
     } catch (error) {
       // Clean up temp file on failure
       if (existsSync(tempPath)) {
