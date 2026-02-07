@@ -1446,7 +1446,7 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
                   disabled={isExporting}
                   className="rounded-md bg-background-tertiary px-2 py-1 text-sm text-text-secondary"
                 >
-                  <option value="original">Original ({metadata.fps})</option>
+                  <option value="original">Original ({Math.round(metadata.fps)})</option>
                   <option value="24">24</option>
                   <option value="30">30</option>
                   <option value="60">60</option>
