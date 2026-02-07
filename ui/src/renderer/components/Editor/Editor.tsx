@@ -517,10 +517,19 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     isAudioPlayingRef.current = false
   }, [])
 
-  // Track whether playhead is inside trim region for loop logic
+  // Track whether playhead is inside trim region (edge detection)
   const insideTrimRef = useRef(false)
+  // Whether playback should loop within trim region (set on play/seek/skip from inside trim)
+  const loopWithinTrimRef = useRef(false)
   // rAF handle stored in ref so play/pause handlers can start/stop loop
   const rafIdRef = useRef<number | null>(null)
+
+  const updateLoopIntent = useCallback(
+    (time: number) => {
+      loopWithinTrimRef.current = time >= trimStart && time < trimEnd
+    },
+    [trimStart, trimEnd]
+  )
 
   const stopRafLoop = useCallback(() => {
     if (rafIdRef.current !== null) {
@@ -536,11 +545,10 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
 
     const tick = () => {
       const t = video.currentTime
-      const wasTrimInside = insideTrimRef.current
       insideTrimRef.current = t >= trimStart && t < trimEnd
 
-      if (wasTrimInside && t >= trimEnd) {
-        // Reached trim end from within trim area — loop to trim start
+      if (loopWithinTrimRef.current && t >= trimEnd) {
+        // Reached trim end while loop intent is active — loop to trim start
         video.currentTime = trimStart
         insideTrimRef.current = true
         setCurrentTime(trimStart)
@@ -570,7 +578,9 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
         void audioContextRef.current.resume()
       }
       startAudioPlaybackRef.current?.(video.currentTime)
-      insideTrimRef.current = video.currentTime >= trimStart && video.currentTime < trimEnd
+      const t = video.currentTime
+      insideTrimRef.current = t >= trimStart && t < trimEnd
+      loopWithinTrimRef.current = t >= trimStart && t < trimEnd
       startRafLoop()
     }
 
@@ -586,6 +596,7 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
       // Video reached the real end — loop to 0 and keep playing
       video.currentTime = 0
       insideTrimRef.current = 0 >= trimStart && 0 < trimEnd
+      loopWithinTrimRef.current = 0 >= trimStart && 0 < trimEnd
       setCurrentTime(0)
       startAudioPlaybackRef.current?.(0)
       video.play().catch(() => {})
@@ -598,7 +609,9 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
 
     // Restart rAF loop if video is currently playing (e.g. trim markers changed mid-playback)
     if (!video.paused && !video.ended) {
-      insideTrimRef.current = video.currentTime >= trimStart && video.currentTime < trimEnd
+      const t = video.currentTime
+      insideTrimRef.current = t >= trimStart && t < trimEnd
+      loopWithinTrimRef.current = t >= trimStart && t < trimEnd
       startRafLoop()
     }
 
@@ -674,14 +687,14 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
         const newTime = Math.max(0, Math.min(duration, currentTime + seconds))
         videoRef.current.currentTime = newTime
         setCurrentTime(newTime)
+        updateLoopIntent(newTime)
 
-        // If playing, restart audio at new position
         if (isPlaying) {
           startAudioPlayback(newTime)
         }
       }
     },
-    [currentTime, duration, isPlaying, startAudioPlayback]
+    [currentTime, duration, isPlaying, startAudioPlayback, updateLoopIntent]
   )
 
   const skipFrame = useCallback(
@@ -692,13 +705,14 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
         const newTime = Math.max(0, Math.min(duration, currentTime + adjustment))
         videoRef.current.currentTime = newTime
         setCurrentTime(newTime)
+        updateLoopIntent(newTime)
 
         if (isPlaying) {
           startAudioPlayback(newTime)
         }
       }
     },
-    [currentTime, duration, metadata.fps, isPlaying, startAudioPlayback]
+    [currentTime, duration, metadata.fps, isPlaying, startAudioPlayback, updateLoopIntent]
   )
 
   const seek = useCallback(
@@ -707,14 +721,14 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
         const newTime = Math.max(0, Math.min(duration, time))
         videoRef.current.currentTime = newTime
         setCurrentTime(newTime)
+        updateLoopIntent(newTime)
 
-        // If playing, restart audio at new position
         if (isPlaying) {
           startAudioPlayback(newTime)
         }
       }
     },
-    [duration, isPlaying, startAudioPlayback]
+    [duration, isPlaying, startAudioPlayback, updateLoopIntent]
   )
 
   const toggleAudioTrack1Mute = useCallback(() => {
