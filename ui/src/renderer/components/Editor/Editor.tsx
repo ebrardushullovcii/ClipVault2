@@ -1447,10 +1447,13 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
                   className="rounded-md bg-background-tertiary px-2 py-1 text-sm text-text-secondary"
                 >
                   <option value="original">Original ({Math.round(metadata.fps)})</option>
-                  <option value="24">24</option>
-                  <option value="30">30</option>
-                  <option value="60">60</option>
-                  <option value="120">120</option>
+                  {[30, 60, 120, 144]
+                    .filter((fps) => fps <= Math.round(metadata.fps))
+                    .map((fps) => (
+                      <option key={fps} value={String(fps)}>
+                        {fps}
+                      </option>
+                    ))}
                 </select>
               </div>
               <div className="flex items-center justify-between">
@@ -1464,11 +1467,18 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
                   <option value="original">
                     Original ({metadata.width}x{metadata.height})
                   </option>
-                  <option value="1920x1080">1080p</option>
-                  <option value="1280x720">720p</option>
-                  <option value="854x480">480p</option>
-                  <option value="2560x1440">1440p</option>
-                  <option value="3840x2160">4K</option>
+                  {[
+                    { label: '720p', value: '1280x720', w: 1280, h: 720 },
+                    { label: '1080p', value: '1920x1080', w: 1920, h: 1080 },
+                    { label: '1440p', value: '2560x1440', w: 2560, h: 1440 },
+                    { label: '4K', value: '3840x2160', w: 3840, h: 2160 },
+                  ]
+                    .filter((r) => r.w <= metadata.width && r.h <= metadata.height)
+                    .map((r) => (
+                      <option key={r.value} value={r.value}>
+                        {r.label}
+                      </option>
+                    ))}
                 </select>
               </div>
             </div>
