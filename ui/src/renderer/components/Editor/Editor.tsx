@@ -596,6 +596,12 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     video.addEventListener('pause', handlePause)
     video.addEventListener('ended', handleEnded)
 
+    // Restart rAF loop if video is currently playing (e.g. trim markers changed mid-playback)
+    if (!video.paused && !video.ended) {
+      insideTrimRef.current = video.currentTime >= trimStart && video.currentTime < trimEnd
+      startRafLoop()
+    }
+
     return () => {
       video.removeEventListener('loadedmetadata', handleLoadedMetadata)
       video.removeEventListener('play', handlePlay)
@@ -652,7 +658,7 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
         return
       }
 
-      if (e.code === 'Space') {
+      if (e.code === 'Space' && !e.repeat) {
         e.preventDefault()
         togglePlay()
       }
