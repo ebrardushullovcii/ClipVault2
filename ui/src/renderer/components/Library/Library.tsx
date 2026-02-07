@@ -200,6 +200,27 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
     }
   }, [isRestored])
 
+  // Poll for new/removed clips as a fallback for unreliable file watcher events on Windows
+  useEffect(() => {
+    if (!isRestored) return
+
+    const interval = setInterval(async () => {
+      try {
+        const freshList = await window.electronAPI.getClipsList()
+        setClips(prev => {
+          if (freshList.length !== prev.length) return freshList
+          const prevNames = new Set(prev.map(c => c.filename))
+          const hasNew = freshList.some(c => !prevNames.has(c.filename))
+          return hasNew ? freshList : prev
+        })
+      } catch {
+        // Silently ignore - this is just a fallback
+      }
+    }, 3000)
+
+    return () => clearInterval(interval)
+  }, [isRestored])
+
   // Refresh data for a specific clip
   const refreshClipData = useCallback(
     async (filename: string, attempt?: number) => {
@@ -391,7 +412,12 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
       if (match) {
         const [, y, mo, d, h, mi, s] = match
         const parsed = new Date(
-          Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)
+          Number(y),
+          Number(mo) - 1,
+          Number(d),
+          Number(h),
+          Number(mi),
+          Number(s)
         )
         if (!isNaN(parsed.getTime())) {
           return parsed.getTime()

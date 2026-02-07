@@ -102,6 +102,8 @@ export interface ExportParams {
   audioTrack1Volume?: number
   audioTrack2Volume?: number
   targetSizeMB?: number | 'original'
+  exportFps?: number
+  exportResolution?: string
 }
 
 export interface ExportResult {
