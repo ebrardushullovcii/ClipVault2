@@ -124,6 +124,8 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
   const [exportStatus, setExportStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [targetSizeMB, setTargetSizeMB] = useState<number | 'original'>('original')
   const [showSizeDropdown, setShowSizeDropdown] = useState(false)
+  const [exportFps, setExportFps] = useState<number | 'original'>('original')
+  const [exportResolution, setExportResolution] = useState<string>('original')
   const [videoSrc, setVideoSrc] = useState(`clipvault://clip/${encodeURIComponent(clip.filename)}`)
 
   // Load settings
@@ -235,7 +237,7 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
               volume: audioTrack2Volume,
             },
           },
-          playheadPosition: currentTime,
+          playheadPosition: videoRef.current?.currentTime ?? currentTime,
           lastModified: new Date().toISOString(),
         }
 
@@ -260,7 +262,7 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     clip.id,
     trimStart,
     trimEnd,
-    currentTime,
+    isPlaying, // save playhead position when playback stops
     audioTrack1,
     audioTrack2,
     audioTrack1Muted,
@@ -479,21 +481,7 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
       videoStartTimeRef.current = fromTime
       isAudioPlayingRef.current = true
 
-      // Handle playback ending
-      const checkPlaybackEnd = () => {
-        if (!isAudioPlayingRef.current) return
-
-        const elapsed = audioContextRef.current!.currentTime - audioStartTimeRef.current
-        const currentAudioTime = videoStartTimeRef.current + elapsed
-
-        if (currentAudioTime >= duration) {
-          isAudioPlayingRef.current = false
-          setIsPlaying(false)
-        } else {
-          requestAnimationFrame(checkPlaybackEnd)
-        }
-      }
-      requestAnimationFrame(checkPlaybackEnd)
+      // Audio end is handled by video events — no separate rAF check needed
     },
     [
       audioTrack1,
@@ -502,7 +490,6 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
       audioTrack2Muted,
       audioTrack1Volume,
       audioTrack2Volume,
-      duration,
     ]
   )
 
@@ -530,14 +517,56 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     isAudioPlayingRef.current = false
   }, [])
 
+  // Track whether playhead is inside trim region (edge detection)
+  const insideTrimRef = useRef(false)
+  // Whether playback should loop within trim region (set on play/seek/skip from inside trim)
+  const loopWithinTrimRef = useRef(false)
+  // rAF handle stored in ref so play/pause handlers can start/stop loop
+  const rafIdRef = useRef<number | null>(null)
+
+  const updateLoopIntent = useCallback(
+    (time: number) => {
+      loopWithinTrimRef.current = time >= trimStart && time < trimEnd
+    },
+    [trimStart, trimEnd]
+  )
+
+  const stopRafLoop = useCallback(() => {
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current)
+      rafIdRef.current = null
+    }
+  }, [])
+
+  const startRafLoop = useCallback(() => {
+    stopRafLoop()
+    const video = videoRef.current
+    if (!video) return
+
+    const tick = () => {
+      const t = video.currentTime
+      insideTrimRef.current = t >= trimStart && t < trimEnd
+
+      if (loopWithinTrimRef.current && t >= trimEnd) {
+        // Reached trim end while loop intent is active — loop to trim start
+        video.currentTime = trimStart
+        insideTrimRef.current = true
+        setCurrentTime(trimStart)
+        startAudioPlaybackRef.current?.(trimStart)
+      } else {
+        setCurrentTime(t)
+      }
+
+      rafIdRef.current = requestAnimationFrame(tick)
+    }
+
+    rafIdRef.current = requestAnimationFrame(tick)
+  }, [trimStart, trimEnd, stopRafLoop])
+
   // Video event handlers
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
-
-    const handleTimeUpdate = () => {
-      setCurrentTime(video.currentTime)
-    }
 
     const handleLoadedMetadata = () => {
       setDuration(video.duration)
@@ -545,31 +574,55 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
 
     const handlePlay = () => {
       setIsPlaying(true)
-      // Resume audio context if suspended
       if (audioContextRef.current?.state === 'suspended') {
         void audioContextRef.current.resume()
       }
-      // Start audio synced to video
-      startAudioPlayback(video.currentTime)
+      startAudioPlaybackRef.current?.(video.currentTime)
+      const t = video.currentTime
+      insideTrimRef.current = t >= trimStart && t < trimEnd
+      loopWithinTrimRef.current = t >= trimStart && t < trimEnd
+      startRafLoop()
     }
 
     const handlePause = () => {
       setIsPlaying(false)
       stopAudioPlayback()
+      stopRafLoop()
+      // Sync final position
+      setCurrentTime(video.currentTime)
     }
 
-    video.addEventListener('timeupdate', handleTimeUpdate)
+    const handleEnded = () => {
+      // Video reached the real end — loop to 0 and keep playing
+      video.currentTime = 0
+      insideTrimRef.current = 0 >= trimStart && 0 < trimEnd
+      loopWithinTrimRef.current = 0 >= trimStart && 0 < trimEnd
+      setCurrentTime(0)
+      startAudioPlaybackRef.current?.(0)
+      video.play().catch(() => {})
+    }
+
     video.addEventListener('loadedmetadata', handleLoadedMetadata)
     video.addEventListener('play', handlePlay)
     video.addEventListener('pause', handlePause)
+    video.addEventListener('ended', handleEnded)
+
+    // Restart rAF loop if video is currently playing (e.g. trim markers changed mid-playback)
+    if (!video.paused && !video.ended) {
+      const t = video.currentTime
+      insideTrimRef.current = t >= trimStart && t < trimEnd
+      loopWithinTrimRef.current = t >= trimStart && t < trimEnd
+      startRafLoop()
+    }
 
     return () => {
-      video.removeEventListener('timeupdate', handleTimeUpdate)
       video.removeEventListener('loadedmetadata', handleLoadedMetadata)
       video.removeEventListener('play', handlePlay)
       video.removeEventListener('pause', handlePause)
+      video.removeEventListener('ended', handleEnded)
+      stopRafLoop()
     }
-  }, [startAudioPlayback, stopAudioPlayback])
+  }, [trimStart, trimEnd, startRafLoop, stopRafLoop, stopAudioPlayback])
 
   // Handle video load errors - fallback to IPC file url
   const handleVideoError = useCallback(async () => {
@@ -605,20 +658,43 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     }
   }, [isPlaying])
 
+  // Global spacebar shortcut for play/pause
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      ) {
+        return
+      }
+
+      if (e.code === 'Space' && !e.repeat) {
+        e.preventDefault()
+        togglePlay()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [togglePlay])
+
   const skip = useCallback(
     (seconds: number) => {
       if (videoRef.current) {
         const newTime = Math.max(0, Math.min(duration, currentTime + seconds))
         videoRef.current.currentTime = newTime
         setCurrentTime(newTime)
+        updateLoopIntent(newTime)
 
-        // If playing, restart audio at new position
         if (isPlaying) {
           startAudioPlayback(newTime)
         }
       }
     },
-    [currentTime, duration, isPlaying, startAudioPlayback]
+    [currentTime, duration, isPlaying, startAudioPlayback, updateLoopIntent]
   )
 
   const skipFrame = useCallback(
@@ -629,13 +705,14 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
         const newTime = Math.max(0, Math.min(duration, currentTime + adjustment))
         videoRef.current.currentTime = newTime
         setCurrentTime(newTime)
+        updateLoopIntent(newTime)
 
         if (isPlaying) {
           startAudioPlayback(newTime)
         }
       }
     },
-    [currentTime, duration, metadata.fps, isPlaying, startAudioPlayback]
+    [currentTime, duration, metadata.fps, isPlaying, startAudioPlayback, updateLoopIntent]
   )
 
   const seek = useCallback(
@@ -644,14 +721,14 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
         const newTime = Math.max(0, Math.min(duration, time))
         videoRef.current.currentTime = newTime
         setCurrentTime(newTime)
+        updateLoopIntent(newTime)
 
-        // If playing, restart audio at new position
         if (isPlaying) {
           startAudioPlayback(newTime)
         }
       }
     },
-    [duration, isPlaying, startAudioPlayback]
+    [duration, isPlaying, startAudioPlayback, updateLoopIntent]
   )
 
   const toggleAudioTrack1Mute = useCallback(() => {
@@ -813,6 +890,8 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
         audioTrack1Volume,
         audioTrack2Volume,
         targetSizeMB,
+        exportFps: exportFps !== 'original' ? exportFps : undefined,
+        exportResolution: exportResolution !== 'original' ? exportResolution : undefined,
       })
 
       if (exportResult.success) {
@@ -857,13 +936,16 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     audioTrack1Volume,
     audioTrack2Volume,
     targetSizeMB,
+    exportFps,
+    exportResolution,
   ])
 
   // Tolerance for floating-point imprecision when comparing trim markers against duration
   const TRIM_EPSILON = 0.1
 
   // Check if trim markers differ from the full clip (i.e. user has trimmed)
-  const hasTrimRange = trimStart > TRIM_EPSILON || (duration > 0 && trimEnd < duration - TRIM_EPSILON)
+  const hasTrimRange =
+    trimStart > TRIM_EPSILON || (duration > 0 && trimEnd < duration - TRIM_EPSILON)
 
   const handleTrimInPlace = useCallback(async () => {
     if (!window.electronAPI?.editor?.trimInPlace) {
@@ -1353,6 +1435,52 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
                   {(audioTrack1 ? 1 : 0) + (audioTrack2 ? 1 : 0)} active
                 </span>
               </div>
+              <div className="flex items-center justify-between">
+                <span>FPS</span>
+                <select
+                  value={exportFps}
+                  onChange={e => {
+                    const v = e.target.value
+                    setExportFps(v === 'original' ? 'original' : Number(v))
+                  }}
+                  disabled={isExporting}
+                  className="rounded-md bg-background-tertiary px-2 py-1 text-sm text-text-secondary"
+                >
+                  <option value="original">Original ({Math.round(metadata.fps)})</option>
+                  {[30, 60, 120, 144]
+                    .filter((fps) => fps <= Math.round(metadata.fps))
+                    .map((fps) => (
+                      <option key={fps} value={String(fps)}>
+                        {fps}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Resolution</span>
+                <select
+                  value={exportResolution}
+                  onChange={e => setExportResolution(e.target.value)}
+                  disabled={isExporting}
+                  className="rounded-md bg-background-tertiary px-2 py-1 text-sm text-text-secondary"
+                >
+                  <option value="original">
+                    Original ({metadata.width}x{metadata.height})
+                  </option>
+                  {[
+                    { label: '720p', value: '1280x720', w: 1280, h: 720 },
+                    { label: '1080p', value: '1920x1080', w: 1920, h: 1080 },
+                    { label: '1440p', value: '2560x1440', w: 2560, h: 1440 },
+                    { label: '4K', value: '3840x2160', w: 3840, h: 2160 },
+                  ]
+                    .filter((r) => r.w <= metadata.width && r.h <= metadata.height)
+                    .map((r) => (
+                      <option key={r.value} value={r.value}>
+                        {r.label}
+                      </option>
+                    ))}
+                </select>
+              </div>
             </div>
             <div className="mt-4 flex gap-2">
               <button
@@ -1398,7 +1526,7 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
                     setShowSizeDropdown(!showSizeDropdown)
                   }}
                   disabled={isExporting}
-                  className={`btn-secondary flex items-center gap-1 px-3 ${
+                  className={`btn-secondary flex h-full items-center gap-1 px-3 ${
                     isExporting ? 'cursor-not-allowed opacity-80' : ''
                   }`}
                   title="Select export size target"
@@ -1481,29 +1609,27 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
                   isTrimming || isExporting || !hasTrimRange ? 'cursor-not-allowed opacity-50' : ''
                 }`}
               >
-                  {isTrimming ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      {trimProgress > 0
-                        ? `Trimming... ${Math.round(trimProgress)}%`
-                        : 'Trimming...'}
-                    </>
-                  ) : (
-                    <>
-                      <Scissors className="h-4 w-4" />
-                      Trim Original
-                    </>
-                  )}
-                </button>
-                {isTrimming && trimProgress > 0 && (
-                  <div className="mt-2 h-1 overflow-hidden rounded-full bg-background-tertiary">
-                    <div
-                      className="h-full bg-orange-500 transition-all duration-300"
-                      style={{ width: `${trimProgress}%` }}
-                    />
-                  </div>
+                {isTrimming ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {trimProgress > 0 ? `Trimming... ${Math.round(trimProgress)}%` : 'Trimming...'}
+                  </>
+                ) : (
+                  <>
+                    <Scissors className="h-4 w-4" />
+                    Trim Original
+                  </>
                 )}
-              </div>
+              </button>
+              {isTrimming && trimProgress > 0 && (
+                <div className="mt-2 h-1 overflow-hidden rounded-full bg-background-tertiary">
+                  <div
+                    className="h-full bg-orange-500 transition-all duration-300"
+                    style={{ width: `${trimProgress}%` }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1538,14 +1664,18 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
           <div className="w-96 rounded-xl border border-border bg-background-secondary p-6 shadow-2xl">
             <h3 className="mb-2 text-lg font-semibold text-orange-400">Trim Original?</h3>
             <p className="mb-3 text-sm text-text-muted">
-              This will permanently replace the original clip with the trimmed version
-              ({formatTime(trimStart)} &ndash; {formatTime(trimEnd)}).
+              This will permanently replace the original clip with the trimmed version (
+              {formatTime(trimStart)} &ndash; {formatTime(trimEnd)}).
             </p>
             <p className="mb-4 text-sm font-medium text-red-400">
               This cannot be undone. The original full-length clip will be lost.
             </p>
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setShowTrimConfirm(false)} className="btn-secondary">
+              <button
+                type="button"
+                onClick={() => setShowTrimConfirm(false)}
+                className="btn-secondary"
+              >
                 Cancel
               </button>
               <button

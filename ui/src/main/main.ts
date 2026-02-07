@@ -814,8 +814,7 @@ const normalizeSettings = (raw: unknown, fileExists: boolean) => {
     },
   }
 
-  const trimmedOutputPath =
-    typeof merged.output_path === 'string' ? merged.output_path.trim() : ''
+  const trimmedOutputPath = typeof merged.output_path === 'string' ? merged.output_path.trim() : ''
   merged.output_path = trimmedOutputPath || defaultSettings.output_path
 
   if (!Number.isFinite(merged.video.monitor)) {
@@ -916,9 +915,9 @@ ipcMain.handle('settings:save', async (_, settings: unknown) => {
       await mkdir(configDir, { recursive: true })
     }
 
-      if (typeof normalized.output_path === 'string' && normalized.output_path.trim()) {
-        try {
-          await mkdir(normalized.output_path, { recursive: true })
+    if (typeof normalized.output_path === 'string' && normalized.output_path.trim()) {
+      try {
+        await mkdir(normalized.output_path, { recursive: true })
       } catch (mkdirError) {
         console.error('Failed to create clips directory:', mkdirError)
       }
@@ -1611,11 +1610,11 @@ function createExportPreviewWindow(filePath: string) {
   }
 
   exportPreviewWindow = new BrowserWindow({
-    width: 600,
-    height: 500,
+    width: 800,
+    height: 650,
     alwaysOnTop: true,
     modal: false,
-    resizable: false,
+    resizable: true,
     title: 'Export Complete',
     backgroundColor: '#1a1a1a',
     webPreferences: {
@@ -1647,8 +1646,8 @@ function createExportPreviewWindow(filePath: string) {
   <meta charset="UTF-8">
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 20px; background: #1a1a1a; color: white; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
-    video { width: 100%; border-radius: 8px; max-height: 320px; object-fit: contain; background: #000; }
+    body { margin: 0; padding: 20px; background: #1a1a1a; color: white; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow-y: auto; }
+    video { width: 100%; border-radius: 8px; max-height: 480px; object-fit: contain; background: #000; }
     .drag-hint { text-align: center; padding: 15px; background: #2a2a2a; border-radius: 8px; margin-top: 10px; cursor: grab; user-select: none; }
     .drag-hint:active { cursor: grabbing; }
     .drag-hint h3 { margin: 0 0 8px 0; font-size: 16px; color: #4ade80; }
@@ -1846,6 +1845,8 @@ ipcMain.handle(
       audioTrack1Volume?: number
       audioTrack2Volume?: number
       targetSizeMB?: number | 'original'
+      exportFps?: number
+      exportResolution?: string
     }
   ) => {
     try {
@@ -1859,6 +1860,8 @@ ipcMain.handle(
         audioTrack1Volume,
         audioTrack2Volume,
         targetSizeMB = 'original',
+        exportFps,
+        exportResolution,
       } = params
       const duration = trimEnd - trimStart
       const vol1 = audioTrack1Volume ?? 1.0
@@ -1889,13 +1892,30 @@ ipcMain.handle(
         )
       }
 
+      const needsReencode = useTargetSize || !!exportFps || !!exportResolution
+
       return new Promise((resolve, reject) => {
         const command = ffmpeg(clipPath).seekInput(trimStart).duration(duration)
 
-        // Configure video encoding based on target size
+        // Build video filter chain for fps/resolution changes
+        const videoFilters: string[] = []
+        if (exportResolution) {
+          const [w, h] = exportResolution.split('x')
+          if (w && h && !isNaN(Number(w)) && !isNaN(Number(h))) {
+            videoFilters.push(
+              `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2`
+            )
+          }
+        }
+        if (exportFps) {
+          videoFilters.push(`fps=${exportFps}`)
+        }
+
+        const hasVideoFilters = videoFilters.length > 0
+        const needsDualAudioMix = audioTrack1 && audioTrack2
+
+        // Configure video encoding
         if (useTargetSize && videoBitrate) {
-          // Use H.264 with target bitrate for size-constrained export
-          // Note: Don't use -crf with -b:v - they conflict (CRF overrides bitrate)
           command.videoCodec('libx264')
           command.outputOptions([
             '-b:v',
@@ -1909,42 +1929,51 @@ ipcMain.handle(
             '-pix_fmt',
             'yuv420p',
           ])
+        } else if (needsReencode) {
+          command.videoCodec('libx264')
+          command.outputOptions(['-crf', '18', '-preset', 'fast', '-pix_fmt', 'yuv420p'])
         } else {
-          // Original quality - just copy video stream
           command.videoCodec('copy')
         }
 
-        // Map audio tracks based on options
-        if (audioTrack1 && audioTrack2) {
-          // Mix both tracks with volume adjustment
-          const filter = `[0:a:0]volume=${vol1}[a0];[0:a:1]volume=${vol2}[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=3[aout]`
+        // Map audio tracks — use filter_complex when mixing both tracks,
+        // and merge video filters into it to avoid -vf + -filter_complex conflict
+        if (needsDualAudioMix) {
+          const videoChain = hasVideoFilters ? `[0:v:0]${videoFilters.join(',')}[vout];` : ''
+          const videoMap = hasVideoFilters ? '[vout]' : '0:v:0'
+          const audioChain = `[0:a:0]volume=${vol1}[a0];[0:a:1]volume=${vol2}[a1];[a0][a1]amix=inputs=2:duration=first:dropout_transition=3[aout]`
           command.outputOptions([
-            '-map 0:v:0',
             '-filter_complex',
-            filter,
+            `${videoChain}${audioChain}`,
+            '-map',
+            videoMap,
             '-map',
             '[aout]',
             '-c:a aac',
             '-b:a 128k',
             '-ac 2',
           ])
-        } else if (audioTrack1) {
-          // Only track 1 with volume
-          if (vol1 < 1.0) {
-            command.outputOptions(['-map 0:v:0', '-map 0:a:0', '-filter:a:0', `volume=${vol1}`])
-          } else {
-            command.outputOptions(['-map 0:v:0', '-map 0:a:0'])
-          }
-        } else if (audioTrack2) {
-          // Only track 2 with volume
-          if (vol2 < 1.0) {
-            command.outputOptions(['-map 0:v:0', '-map 0:a:1', '-filter:a:0', `volume=${vol2}`])
-          } else {
-            command.outputOptions(['-map 0:v:0', '-map 0:a:1'])
-          }
         } else {
-          // No audio - video only
-          command.noAudio()
+          // Apply video filters via -vf (no conflict with -filter_complex)
+          if (hasVideoFilters && needsReencode) {
+            command.outputOptions(['-vf', videoFilters.join(',')])
+          }
+
+          if (audioTrack1) {
+            if (vol1 < 1.0) {
+              command.outputOptions(['-map 0:v:0', '-map 0:a:0', '-filter:a:0', `volume=${vol1}`])
+            } else {
+              command.outputOptions(['-map 0:v:0', '-map 0:a:0'])
+            }
+          } else if (audioTrack2) {
+            if (vol2 < 1.0) {
+              command.outputOptions(['-map 0:v:0', '-map 0:a:1', '-filter:a:0', `volume=${vol2}`])
+            } else {
+              command.outputOptions(['-map 0:v:0', '-map 0:a:1'])
+            }
+          } else {
+            command.noAudio()
+          }
         }
 
         command
@@ -1972,10 +2001,7 @@ ipcMain.handle(
 // Trim clip in place - lossless stream copy, replaces original file
 ipcMain.handle(
   'editor:trimInPlace',
-  async (
-    _,
-    params: { clipId: string; clipPath: string; trimStart: number; trimEnd: number }
-  ) => {
+  async (_, params: { clipId: string; clipPath: string; trimStart: number; trimEnd: number }) => {
     const { clipId, clipPath, trimStart, trimEnd } = params
     const duration = trimEnd - trimStart
 
@@ -2008,13 +2034,13 @@ ipcMain.handle(
           .seekInput(trimStart)
           .duration(duration)
           .outputOptions(['-map 0', '-c copy', '-avoid_negative_ts make_zero'])
-          .on('progress', (progress) => {
+          .on('progress', progress => {
             if (mainWindow && progress.percent) {
               mainWindow.webContents.send('trim:progress', { percent: progress.percent })
             }
           })
           .on('end', () => resolve())
-          .on('error', (err) => {
+          .on('error', err => {
             console.error('Trim error:', err)
             reject(err)
           })

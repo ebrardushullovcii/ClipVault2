@@ -555,8 +555,14 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
 
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div className="space-y-3">
-                    <div id="frame-rate-label" className="text-sm font-medium text-text-secondary">Frame rate</div>
-                    <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="frame-rate-label">
+                    <div id="frame-rate-label" className="text-sm font-medium text-text-secondary">
+                      Frame rate
+                    </div>
+                    <div
+                      className="flex flex-wrap gap-2"
+                      role="radiogroup"
+                      aria-labelledby="frame-rate-label"
+                    >
                       {[30, 60, 120, 144].map(fps => {
                         const isActive = settings.video.fps === fps
                         return (
@@ -587,13 +593,21 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     </div>
                   </div>
                   <div className="space-y-3">
-                    <div id="encoder-label" className="text-sm font-medium text-text-secondary">Encoder</div>
-                    <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="encoder-label">
-                      {([
-                        { value: 'auto', label: 'Auto' },
-                        { value: 'nvenc', label: 'NVENC (GPU)' },
-                        { value: 'x264', label: 'x264 (CPU)' },
-                      ] as const).map(enc => {
+                    <div id="encoder-label" className="text-sm font-medium text-text-secondary">
+                      Encoder
+                    </div>
+                    <div
+                      className="flex flex-wrap gap-2"
+                      role="radiogroup"
+                      aria-labelledby="encoder-label"
+                    >
+                      {(
+                        [
+                          { value: 'auto', label: 'Auto' },
+                          { value: 'nvenc', label: 'NVENC (GPU)' },
+                          { value: 'x264', label: 'x264 (CPU)' },
+                        ] as const
+                      ).map(enc => {
                         const isActive = settings.video.encoder === enc.value
                         return (
                           <label
@@ -628,14 +642,21 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                 </div>
 
                 <div className="space-y-3">
-                  <div id="buffer-duration-label" className="text-sm font-medium text-text-secondary">
+                  <div
+                    id="buffer-duration-label"
+                    className="text-sm font-medium text-text-secondary"
+                  >
                     Buffer duration
                   </div>
                   <p className="text-xs text-text-muted">
-                    How much gameplay is kept in memory. When you press the save
-                    hotkey, this is the maximum clip length.
+                    How much gameplay is kept in memory. When you press the save hotkey, this is the
+                    maximum clip length.
                   </p>
-                  <div className="flex flex-wrap gap-2" role="radiogroup" aria-labelledby="buffer-duration-label">
+                  <div
+                    className="flex flex-wrap gap-2"
+                    role="radiogroup"
+                    aria-labelledby="buffer-duration-label"
+                  >
                     {bufferOptions.map(opt => {
                       const isActive = (settings.buffer_seconds ?? 120) === opt.value
                       return (
@@ -702,7 +723,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                           }
                           className="peer sr-only"
                         />
-                        <div className="relative peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                        <div className="relative h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-checked:after:left-[22px]" />
                       </label>
                     </div>
                     <select
@@ -750,7 +771,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                           }
                           className="peer sr-only"
                         />
-                        <div className="relative peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                        <div className="relative h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-checked:after:left-[22px]" />
                       </label>
                     </div>
                     <select
@@ -821,7 +842,9 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                   <div className="rounded-lg border border-border bg-background-secondary p-4">
                     <div className="mb-3 flex items-center gap-2">
                       <Keyboard className="h-4 w-4 text-accent-primary" />
-                      <div className="text-sm font-semibold text-text-primary">Save clip hotkey</div>
+                      <div className="text-sm font-semibold text-text-primary">
+                        Save clip hotkey
+                      </div>
                     </div>
                     <WizardHotkeyInput
                       value={settings.hotkey?.save_clip ?? 'F9'}
@@ -834,7 +857,8 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                     />
                     <div className="mt-2 text-xs text-text-muted">
                       Press this key anytime to save your last{' '}
-                      {bufferOptions.find(o => o.value === (settings.buffer_seconds ?? 120))?.label ?? '2 min'}{' '}
+                      {bufferOptions.find(o => o.value === (settings.buffer_seconds ?? 120))
+                        ?.label ?? '2 min'}{' '}
                       of gameplay.
                     </div>
                   </div>
@@ -864,7 +888,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                         }
                         className="peer sr-only"
                       />
-                      <div className="relative peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                      <div className="relative h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-checked:after:left-[22px]" />
                     </label>
                   </div>
 
@@ -893,7 +917,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                         }
                         className="peer sr-only"
                       />
-                      <div className="relative peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                      <div className="relative h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-checked:after:left-[22px]" />
                     </label>
                   </div>
 
@@ -922,7 +946,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                         }
                         className="peer sr-only"
                       />
-                      <div className="relative peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary" />
+                      <div className="relative h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-checked:after:left-[22px]" />
                     </label>
                   </div>
                 </div>

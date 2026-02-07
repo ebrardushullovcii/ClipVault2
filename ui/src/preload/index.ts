@@ -165,6 +165,8 @@ interface ExportParams {
   audioTrack1Volume?: number
   audioTrack2Volume?: number
   targetSizeMB?: number | 'original'
+  exportFps?: number
+  exportResolution?: string
 }
 
 interface ExportResult {
@@ -237,7 +239,9 @@ declare global {
       }
       editor: {
         exportClip: (params: ExportParams) => Promise<ExportResult>
-        trimInPlace: (params: TrimInPlaceParams) => Promise<{ success: boolean; newDuration: number }>
+        trimInPlace: (
+          params: TrimInPlaceParams
+        ) => Promise<{ success: boolean; newDuration: number }>
         saveState: (clipId: string, state: EditorState) => Promise<boolean>
         loadState: (clipId: string) => Promise<EditorState | null>
       }

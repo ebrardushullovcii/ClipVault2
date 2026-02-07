@@ -697,7 +697,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                       value={settings.buffer_seconds}
                       onChange={e =>
                         setSettings(prev =>
-                          prev ? { ...prev, buffer_seconds: parseInt(e.target.value, 10) || 120 } : null
+                          prev
+                            ? { ...prev, buffer_seconds: parseInt(e.target.value, 10) || 120 }
+                            : null
                         )
                       }
                       className="w-20 rounded-lg border border-border bg-background-secondary px-3 py-2 text-center text-sm text-text-primary focus:border-accent-primary focus:outline-none"
@@ -820,7 +822,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     onChange={e => updateAudioSetting('system_audio_enabled', e.target.checked)}
                     className="peer sr-only"
                   />
-                  <div className="relative peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-primary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-focus:outline-none" />
+                  <div className="relative h-6 w-11 rounded-full bg-background-primary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-checked:after:left-[22px] peer-focus:outline-none" />
                 </label>
               </div>
 
@@ -863,7 +865,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                     onChange={e => updateAudioSetting('microphone_enabled', e.target.checked)}
                     className="peer sr-only"
                   />
-                  <div className="relative peer-checked:after:left-[22px] h-6 w-11 rounded-full bg-background-primary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-focus:outline-none" />
+                  <div className="relative h-6 w-11 rounded-full bg-background-primary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-checked:after:left-[22px] peer-focus:outline-none" />
                 </label>
               </div>
 
@@ -1064,9 +1066,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                 >
                   <span
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      settings.ui?.show_notifications !== false
-                        ? 'translate-x-6'
-                        : 'translate-x-1'
+                      settings.ui?.show_notifications !== false ? 'translate-x-6' : 'translate-x-1'
                     }`}
                   />
                 </button>
