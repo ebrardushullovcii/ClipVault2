@@ -1184,24 +1184,34 @@ const readNormalizedSettings = async (): Promise<NormalizedSettings> => {
       accessToken: typeof secureSecrets.accessToken === 'string' ? secureSecrets.accessToken.trim() : '',
     }
 
-    let migratedLegacySecrets = false
+    const migrationSecrets: Partial<YouTubeSecretSnapshot> = {}
 
     if (!resolvedSecrets.clientSecret && plaintextSecrets.clientSecret) {
-      resolvedSecrets.clientSecret = plaintextSecrets.clientSecret
-      migratedLegacySecrets = true
+      migrationSecrets.clientSecret = plaintextSecrets.clientSecret
     }
     if (!resolvedSecrets.refreshToken && plaintextSecrets.refreshToken) {
-      resolvedSecrets.refreshToken = plaintextSecrets.refreshToken
-      migratedLegacySecrets = true
+      migrationSecrets.refreshToken = plaintextSecrets.refreshToken
     }
     if (!resolvedSecrets.accessToken && plaintextSecrets.accessToken) {
-      resolvedSecrets.accessToken = plaintextSecrets.accessToken
-      migratedLegacySecrets = true
+      migrationSecrets.accessToken = plaintextSecrets.accessToken
     }
 
-    if (migratedLegacySecrets) {
+    if (
+      migrationSecrets.clientSecret ||
+      migrationSecrets.refreshToken ||
+      migrationSecrets.accessToken
+    ) {
       try {
-        await persistSecureYouTubeSecrets(resolvedSecrets)
+        const nextSecrets: YouTubeSecretSnapshot = {
+          clientSecret: resolvedSecrets.clientSecret || migrationSecrets.clientSecret || '',
+          refreshToken: resolvedSecrets.refreshToken || migrationSecrets.refreshToken || '',
+          accessToken: resolvedSecrets.accessToken || migrationSecrets.accessToken || '',
+        }
+
+        await persistSecureYouTubeSecrets(nextSecrets)
+        resolvedSecrets.clientSecret = nextSecrets.clientSecret
+        resolvedSecrets.refreshToken = nextSecrets.refreshToken
+        resolvedSecrets.accessToken = nextSecrets.accessToken
 
         const migratedSanitizedSettings = normalizeSettings(normalized, true)
         migratedSanitizedSettings.social.youtube.client_secret = ''
@@ -3907,6 +3917,32 @@ ipcMain.handle(
   try {
     const forceReextract = options?.forceReextract === true
 
+    if (typeof videoPath !== 'string' || !videoPath.trim()) {
+      throw new Error('Invalid video path provided for audio extraction.')
+    }
+
+    const clipsRoot = resolve(getClipsPath())
+    const resolvedVideoPath = resolve(videoPath)
+
+    let canonicalClipsRoot: string
+    let canonicalVideoPath: string
+
+    try {
+      canonicalClipsRoot = await fsRealpath(clipsRoot)
+      canonicalVideoPath = await fsRealpath(resolvedVideoPath)
+    } catch {
+      throw new Error('Audio extraction path could not be resolved.')
+    }
+
+    if (!isPathWithinRoot(canonicalClipsRoot, canonicalVideoPath)) {
+      throw new Error('Audio extraction rejected for unauthorized path.')
+    }
+
+    const videoStats = await stat(canonicalVideoPath)
+    if (!videoStats.isFile()) {
+      throw new Error('Audio extraction source must be a file.')
+    }
+
     // Ensure audio cache directory exists
     const audioCachePath = join(thumbnailsPath, 'audio')
     if (!existsSync(audioCachePath)) {
@@ -3947,7 +3983,7 @@ ipcMain.handle(
 
     // Get video metadata to check audio tracks
     const metadata = await new Promise<ffmpeg.FfprobeData>((resolve, reject) => {
-      ffmpeg.ffprobe(videoPath, (err, data) => {
+      ffmpeg.ffprobe(canonicalVideoPath, (err, data) => {
         if (err) reject(err)
         else resolve(data)
       })
@@ -3956,11 +3992,11 @@ ipcMain.handle(
     const audioStreams = metadata.streams.filter(s => s.codec_type === 'audio')
 
     const extractTrack = async (streamIndex: number, outputPath: string): Promise<void> => {
-      await waitForStableFileSize(videoPath)
+      await waitForStableFileSize(canonicalVideoPath)
       await deleteIfExists(outputPath)
 
       await new Promise<void>((resolve, reject) => {
-        ffmpeg(videoPath)
+        ffmpeg(canonicalVideoPath)
           .outputOptions([`-map 0:a:${streamIndex}`, '-vn', '-c:a aac', '-b:a 128k'])
           .save(outputPath)
           .on('end', () => resolve())

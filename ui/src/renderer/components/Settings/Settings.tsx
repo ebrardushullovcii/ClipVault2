@@ -367,10 +367,10 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
     !youtubeManagedAvailable || showYouTubeAdvancedSetup || effectiveYouTubeAuthMode === 'custom'
 
   useEffect(() => {
-    if (effectiveYouTubeAuthMode === 'custom') {
+    if (youtubeManagedAvailable && effectiveYouTubeAuthMode === 'custom') {
       setShowYouTubeAdvancedSetup(true)
     }
-  }, [effectiveYouTubeAuthMode])
+  }, [effectiveYouTubeAuthMode, youtubeManagedAvailable])
 
   const handleSave = async () => {
     if (!settings) return
@@ -1655,7 +1655,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
 
                 <p className="mt-3 text-xs text-text-muted">
                   Placeholders for title template: {'{clip_name}'}, {'{filename}'}, {'{date}'},
-                  {' {time}'}
+                  {'{time}'}
                 </p>
               </div>
             </div>

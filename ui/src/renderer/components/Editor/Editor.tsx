@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import type { FC } from 'react'
 import {
   Play,
@@ -318,7 +318,7 @@ export const Editor: FC<EditorProps> = ({
           volume: audioTrack2Volume,
         },
       },
-      playheadPosition: videoRef.current?.currentTime ?? 0,
+      playheadPosition: videoRef.current?.currentTime ?? currentTime,
       lastModified: new Date().toISOString(),
     }
   }, [
@@ -333,6 +333,7 @@ export const Editor: FC<EditorProps> = ({
     audioTrack2Muted,
     audioTrack1Volume,
     audioTrack2Volume,
+    currentTime,
   ])
 
   const persistEditorState = useCallback(async () => {
@@ -721,8 +722,19 @@ export const Editor: FC<EditorProps> = ({
     isAudioPlayingRef.current = false
   }, [])
 
-  const previousClip = getAdjacentClip ? getAdjacentClip(clip.id, 'previous') : null
-  const nextClip = getAdjacentClip ? getAdjacentClip(clip.id, 'next') : null
+  const { previousClip, nextClip } = useMemo(() => {
+    if (!getAdjacentClip) {
+      return {
+        previousClip: null,
+        nextClip: null,
+      }
+    }
+
+    return {
+      previousClip: getAdjacentClip(clip.id, 'previous'),
+      nextClip: getAdjacentClip(clip.id, 'next'),
+    }
+  }, [clip.id, getAdjacentClip])
 
   const handleNavigateClip = useCallback(
     async (direction: 'previous' | 'next') => {
@@ -1311,6 +1323,11 @@ export const Editor: FC<EditorProps> = ({
                 }}
                 disabled={!previousClip}
                 className="rounded-md p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
+                aria-label={
+                  previousClip
+                    ? `Previous clip: ${previousClip.clip.filename.replace('.mp4', '')}`
+                    : 'Previous clip'
+                }
                 title={
                 previousClip
                   ? `Previous clip: ${previousClip.clip.filename.replace('.mp4', '')}`
@@ -1326,6 +1343,9 @@ export const Editor: FC<EditorProps> = ({
                 }}
                 disabled={!nextClip}
                 className="rounded-md p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
+                aria-label={
+                  nextClip ? `Next clip: ${nextClip.clip.filename.replace('.mp4', '')}` : 'Next clip'
+                }
                 title={
                 nextClip
                   ? `Next clip: ${nextClip.clip.filename.replace('.mp4', '')}`
