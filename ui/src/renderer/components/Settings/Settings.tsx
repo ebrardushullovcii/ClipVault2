@@ -10,6 +10,7 @@ import {
   Monitor,
   HardDrive,
   Power,
+  Share2,
 } from 'lucide-react'
 
 interface AppSettings {
@@ -42,12 +43,34 @@ interface AppSettings {
     play_sound?: boolean
     minimize_to_tray?: boolean
     start_with_windows?: boolean
+    library_hover_preview?: boolean
     first_run_completed?: boolean
+  }
+  social?: {
+    discord?: {
+      webhook_url?: string
+      default_message_template?: string
+    }
+    youtube?: {
+      auth_mode?: 'managed' | 'custom'
+      client_id?: string
+      client_secret?: string
+      refresh_token?: string
+      access_token?: string
+      token_expiry?: number
+      channel_id?: string
+      channel_title?: string
+      default_privacy?: 'private' | 'unlisted' | 'public'
+      default_title_template?: string
+      default_description?: string
+      default_tags?: string[]
+    }
   }
 }
 
 interface SettingsProps {
   onClose: () => void
+  onSettingsSaved?: (settings: AppSettings) => void
 }
 
 interface MonitorInfo {
@@ -71,6 +94,16 @@ type OpenDialogResult = {
   canceled: boolean
   filePaths: string[]
 }
+
+type YouTubeDeviceAuthSession = {
+  deviceCode: string
+  userCode: string
+  verificationUrl: string
+  expiresAt: number
+  intervalSeconds: number
+}
+
+type YouTubeAuthMode = 'managed' | 'custom'
 
 // Quality presets with realistic bitrates for file size calculation
 // Based on real-world x264 CQP encoding (measured from actual clips)
@@ -305,7 +338,7 @@ const HotkeyInput: React.FC<HotkeyInputProps> = ({
   )
 }
 
-export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
+export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) => {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [originalSettings, setOriginalSettings] = useState<AppSettings | null>(null)
   const [loading, setLoading] = useState(true)
@@ -315,10 +348,22 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
   const [monitors, setMonitors] = useState<MonitorInfo[]>([])
   const [audioOutputDevices, setAudioOutputDevices] = useState<AudioDeviceInfo[]>([])
   const [audioInputDevices, setAudioInputDevices] = useState<AudioDeviceInfo[]>([])
+  const [discordTestStatus, setDiscordTestStatus] = useState<'idle' | 'loading' | 'success' | 'error'>(
+    'idle'
+  )
+  const [discordTestMessage, setDiscordTestMessage] = useState('')
+  const [youtubeAuthSession, setYoutubeAuthSession] = useState<YouTubeDeviceAuthSession | null>(null)
+  const [youtubeAuthState, setYoutubeAuthState] = useState<'idle' | 'pending' | 'success' | 'error'>(
+    'idle'
+  )
+  const [youtubeAuthMessage, setYoutubeAuthMessage] = useState('')
+  const [youtubeManagedAvailable, setYoutubeManagedAvailable] = useState(false)
+  const [showYouTubeAdvancedSetup, setShowYouTubeAdvancedSetup] = useState(false)
 
   // Load settings, monitors and audio devices on mount
   useEffect(() => {
     loadSettings()
+    loadYouTubeProviderInfo()
     loadMonitors()
     loadAudioDevices()
   }, [])
@@ -370,6 +415,34 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
     }
   }
 
+  const loadYouTubeProviderInfo = async () => {
+    try {
+      const result = await window.electronAPI.social.youtubeGetProviderInfo()
+      if (result.success) {
+        setYoutubeManagedAvailable(result.managedAvailable)
+      }
+    } catch (err) {
+      console.error('Error loading YouTube provider info:', err)
+    }
+  }
+
+  const effectiveYouTubeAuthMode = useMemo<YouTubeAuthMode>(() => {
+    if (!youtubeManagedAvailable) {
+      return 'custom'
+    }
+
+    return settings?.social?.youtube?.auth_mode === 'custom' ? 'custom' : 'managed'
+  }, [settings?.social?.youtube?.auth_mode, youtubeManagedAvailable])
+
+  const showYouTubeAdvancedControls =
+    !youtubeManagedAvailable || showYouTubeAdvancedSetup || effectiveYouTubeAuthMode === 'custom'
+
+  useEffect(() => {
+    if (effectiveYouTubeAuthMode === 'custom') {
+      setShowYouTubeAdvancedSetup(true)
+    }
+  }, [effectiveYouTubeAuthMode])
+
   const handleSave = async () => {
     if (!settings) return
 
@@ -379,6 +452,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       const result = await window.electronAPI.saveSettings(settings)
       setSaveSuccess(true)
       setOriginalSettings(cloneSettings(settings))
+      onSettingsSaved?.(cloneSettings(settings))
 
       // Show restart message
       if (result.restarted) {
@@ -427,6 +501,261 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
       }
     })
   }, [])
+
+  const updateDiscordSetting = useCallback(
+    (key: 'webhook_url' | 'default_message_template', value: string) => {
+      setSettings(prev => {
+        if (!prev) return null
+        return {
+          ...prev,
+          social: {
+            ...(prev.social || {}),
+            discord: {
+              ...(prev.social?.discord || {}),
+              [key]: value,
+            },
+          },
+        }
+      })
+    },
+    []
+  )
+
+  const updateYouTubeSetting = useCallback(
+    (
+      key:
+        | 'auth_mode'
+        | 'client_id'
+        | 'client_secret'
+        | 'default_privacy'
+        | 'default_title_template'
+        | 'default_description'
+        | 'default_tags',
+      value: string | string[]
+    ) => {
+      setSettings(prev => {
+        if (!prev) return null
+        return {
+          ...prev,
+          social: {
+            ...(prev.social || {}),
+            youtube: {
+              ...(prev.social?.youtube || {}),
+              [key]: value,
+            },
+          },
+        }
+      })
+    },
+    []
+  )
+
+  const handleTestDiscordWebhook = useCallback(async () => {
+    const webhookUrl = settings?.social?.discord?.webhook_url?.trim() || ''
+    if (!webhookUrl) {
+      setDiscordTestStatus('error')
+      setDiscordTestMessage('Enter a webhook URL first.')
+      return
+    }
+
+    setDiscordTestStatus('loading')
+    setDiscordTestMessage('Testing webhook...')
+
+    try {
+      const result = await window.electronAPI.social.testDiscordWebhook(webhookUrl)
+      if (result.success) {
+        setDiscordTestStatus('success')
+        setDiscordTestMessage('Webhook is valid and reachable.')
+      } else {
+        setDiscordTestStatus('error')
+        setDiscordTestMessage(result.error || 'Webhook test failed.')
+      }
+    } catch (err) {
+      setDiscordTestStatus('error')
+      setDiscordTestMessage(`Webhook test failed: ${String(err)}`)
+    }
+  }, [settings?.social?.discord?.webhook_url])
+
+  const handleStartYouTubeConnect = useCallback(async () => {
+    const clientId = settings?.social?.youtube?.client_id?.trim() || ''
+    const clientSecret = settings?.social?.youtube?.client_secret?.trim() || ''
+
+    setYoutubeAuthState('pending')
+    setYoutubeAuthMessage('Starting YouTube authorization...')
+
+    try {
+      const result = await window.electronAPI.social.youtubeStartDeviceAuth(
+        effectiveYouTubeAuthMode === 'managed'
+          ? { mode: 'managed' }
+          : {
+              mode: 'custom',
+              clientId,
+              clientSecret,
+            }
+      )
+
+      if (!result.success || !result.deviceCode || !result.userCode || !result.verificationUrl) {
+        setYoutubeAuthState('error')
+        setYoutubeAuthMessage(result.error || 'Unable to start YouTube authorization.')
+        return
+      }
+
+      setYoutubeAuthSession({
+        deviceCode: result.deviceCode,
+        userCode: result.userCode,
+        verificationUrl: result.verificationUrl,
+        expiresAt: Date.now() + (result.expiresInSeconds || 1800) * 1000,
+        intervalSeconds: result.intervalSeconds || 5,
+      })
+      setYoutubeAuthState('pending')
+      setYoutubeAuthMessage('Authorize in browser, then ClipVault will finish automatically.')
+      void window.electronAPI.openExternal(result.verificationUrl)
+    } catch (err) {
+      setYoutubeAuthState('error')
+      setYoutubeAuthMessage(`Unable to start YouTube authorization: ${String(err)}`)
+    }
+  }, [
+    effectiveYouTubeAuthMode,
+    settings?.social?.youtube?.client_id,
+    settings?.social?.youtube?.client_secret,
+  ])
+
+  const openExternalLink = useCallback((url: string) => {
+    void window.electronAPI.openExternal(url)
+  }, [])
+
+  const handleDisconnectYouTube = useCallback(async () => {
+    setYoutubeAuthState('idle')
+    setYoutubeAuthMessage('Disconnecting YouTube...')
+
+    try {
+      const result = await window.electronAPI.social.youtubeDisconnect()
+      if (!result.success) {
+        setYoutubeAuthState('error')
+        setYoutubeAuthMessage(result.error || 'Failed to disconnect YouTube.')
+        return
+      }
+
+      const clearConnection = (prev: AppSettings | null): AppSettings | null => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          social: {
+            ...(prev.social || {}),
+            youtube: {
+              ...(prev.social?.youtube || {}),
+              access_token: '',
+              refresh_token: '',
+              token_expiry: 0,
+              channel_id: '',
+              channel_title: '',
+            },
+          },
+        }
+      }
+
+      setSettings(prev => clearConnection(prev))
+      setOriginalSettings(prev => clearConnection(prev))
+      setYoutubeAuthSession(null)
+      setYoutubeAuthState('success')
+      setYoutubeAuthMessage('YouTube account disconnected.')
+    } catch (err) {
+      setYoutubeAuthState('error')
+      setYoutubeAuthMessage(`Failed to disconnect YouTube: ${String(err)}`)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!youtubeAuthSession) {
+      return
+    }
+
+    let cancelled = false
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+
+    const scheduleNext = (intervalSeconds: number) => {
+      timeoutId = setTimeout(
+        () => {
+          void pollAuth()
+        },
+        Math.max(1, intervalSeconds) * 1000
+      )
+    }
+
+    const pollAuth = async () => {
+      if (cancelled || Date.now() > youtubeAuthSession.expiresAt) {
+        setYoutubeAuthSession(null)
+        setYoutubeAuthState('error')
+        setYoutubeAuthMessage('YouTube authorization expired. Start again.')
+        return
+      }
+
+      try {
+        const result = await window.electronAPI.social.youtubePollDeviceAuth({
+          deviceCode: youtubeAuthSession.deviceCode,
+        })
+
+        if (cancelled) {
+          return
+        }
+
+        if (result.success) {
+          const applyConnectedState = (prev: AppSettings | null): AppSettings | null => {
+            if (!prev) return prev
+            return {
+              ...prev,
+              social: {
+                ...(prev.social || {}),
+                youtube: {
+                  ...(prev.social?.youtube || {}),
+                  channel_id: result.channelId || prev.social?.youtube?.channel_id || '',
+                  channel_title: result.channelTitle || prev.social?.youtube?.channel_title || '',
+                },
+              },
+            }
+          }
+
+          setSettings(prev => applyConnectedState(prev))
+          setOriginalSettings(prev => applyConnectedState(prev))
+          setYoutubeAuthSession(null)
+          setYoutubeAuthState('success')
+          setYoutubeAuthMessage(
+            result.channelTitle
+              ? `Connected to YouTube: ${result.channelTitle}`
+              : 'Connected to YouTube successfully.'
+          )
+          return
+        }
+
+        if (result.pending) {
+          setYoutubeAuthState('pending')
+          setYoutubeAuthMessage('Waiting for Google authorization...')
+          scheduleNext(result.intervalSeconds || youtubeAuthSession.intervalSeconds)
+          return
+        }
+
+        setYoutubeAuthSession(null)
+        setYoutubeAuthState('error')
+        setYoutubeAuthMessage(result.error || 'YouTube authorization failed.')
+      } catch (err) {
+        if (cancelled) {
+          return
+        }
+        setYoutubeAuthSession(null)
+        setYoutubeAuthState('error')
+        setYoutubeAuthMessage(`YouTube authorization failed: ${String(err)}`)
+      }
+    }
+
+    scheduleNext(youtubeAuthSession.intervalSeconds)
+
+    return () => {
+      cancelled = true
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+    }
+  }, [youtubeAuthSession])
 
   const applyQualityPreset = (preset: keyof typeof qualityPresets) => {
     const { quality } = qualityPresets[preset]
@@ -954,6 +1283,416 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
             </div>
           </section>
 
+          {/* Social Sharing */}
+          <section className="rounded-xl border border-border bg-background-secondary p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <Share2 className="h-5 w-5 text-accent-primary" />
+              <h2 className="text-lg font-semibold text-text-primary">Social Sharing</h2>
+            </div>
+
+            <div className="space-y-6">
+              <div className="rounded-lg border border-border bg-background-tertiary p-4">
+                <div className="mb-2 text-sm font-semibold text-text-primary">Discord</div>
+                <p className="mb-4 text-xs text-text-muted">
+                  Use a Discord channel webhook for direct uploads from export preview.
+                </p>
+
+                <div className="mb-4 rounded-lg border border-border/70 bg-background-secondary p-3">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                    Setup Guide
+                  </div>
+                  <ol className="list-decimal space-y-1 pl-5 text-xs text-text-muted">
+                    <li>Open your Discord server and go to the channel you want uploads in.</li>
+                    <li>Open channel settings, then go to Integrations, then Webhooks.</li>
+                    <li>Create a new webhook, choose a name/icon, and pick the channel.</li>
+                    <li>Copy the webhook URL and paste it below in ClipVault.</li>
+                    <li>Click Test Webhook to verify everything before exporting clips.</li>
+                  </ol>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openExternalLink(
+                          'https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks'
+                        )
+                      }
+                      className="rounded-lg border border-border bg-background-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent-primary hover:text-accent-primary"
+                    >
+                      Open Discord webhook guide
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-text-secondary">
+                      Webhook URL
+                    </label>
+                    <input
+                      type="password"
+                      value={settings.social?.discord?.webhook_url ?? ''}
+                      onChange={e => updateDiscordSetting('webhook_url', e.target.value)}
+                      className="w-full rounded-lg border border-border bg-background-secondary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+                      placeholder="https://discord.com/api/webhooks/..."
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleTestDiscordWebhook()
+                      }}
+                      disabled={discordTestStatus === 'loading'}
+                      className="rounded-lg border border-border bg-background-secondary px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:border-accent-primary hover:text-accent-primary disabled:opacity-60"
+                    >
+                      {discordTestStatus === 'loading' ? 'Testing...' : 'Test Webhook'}
+                    </button>
+                    {discordTestMessage && (
+                      <span
+                        className={`text-xs ${
+                          discordTestStatus === 'success'
+                            ? 'text-success'
+                            : discordTestStatus === 'error'
+                              ? 'text-error'
+                              : 'text-text-muted'
+                        }`}
+                      >
+                        {discordTestMessage}
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-text-secondary">
+                      Default Discord Message Template
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.social?.discord?.default_message_template ?? ''}
+                      onChange={e =>
+                        updateDiscordSetting('default_message_template', e.target.value)
+                      }
+                      className="w-full rounded-lg border border-border bg-background-secondary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+                      placeholder="New clip from ClipVault: {clip_name}"
+                    />
+                    <p className="mt-1 text-xs text-text-muted">
+                      Placeholders: {'{clip_name}'}, {'{filename}'}, {'{date}'}, {'{time}'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border bg-background-tertiary p-4">
+                <div className="mb-2 text-sm font-semibold text-text-primary">YouTube</div>
+                <p className="mb-4 text-xs text-text-muted">
+                  Connect via Google OAuth and upload exports directly from the preview window.
+                </p>
+
+                {youtubeManagedAvailable && !showYouTubeAdvancedControls && (
+                  <div className="mb-4 rounded-lg border border-border/70 bg-background-secondary p-3">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                      Quick Connect (Recommended)
+                    </div>
+                    <ol className="list-decimal space-y-1 pl-5 text-xs text-text-muted">
+                      <li>Click Connect YouTube below.</li>
+                      <li>ClipVault opens Google automatically.</li>
+                      <li>Enter the code shown here and approve access.</li>
+                      <li>Return to ClipVault and uploads are ready.</li>
+                    </ol>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowYouTubeAdvancedSetup(true)
+                      }}
+                      className="mt-3 rounded-lg border border-border bg-background-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent-primary hover:text-accent-primary"
+                    >
+                      Need custom setup?
+                    </button>
+                  </div>
+                )}
+
+                {showYouTubeAdvancedControls && (
+                  <>
+                    <div className="mb-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updateYouTubeSetting('auth_mode', 'managed')}
+                        disabled={!youtubeManagedAvailable}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          effectiveYouTubeAuthMode === 'managed'
+                            ? 'border-accent-primary text-accent-primary'
+                            : 'border-border text-text-secondary hover:border-accent-primary hover:text-accent-primary'
+                        } disabled:cursor-not-allowed disabled:opacity-50`}
+                      >
+                        ClipVault managed
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateYouTubeSetting('auth_mode', 'custom')}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          effectiveYouTubeAuthMode === 'custom'
+                            ? 'border-accent-primary text-accent-primary'
+                            : 'border-border text-text-secondary hover:border-accent-primary hover:text-accent-primary'
+                        }`}
+                      >
+                        Custom credentials
+                      </button>
+                      {youtubeManagedAvailable && showYouTubeAdvancedSetup && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateYouTubeSetting('auth_mode', 'managed')
+                            setShowYouTubeAdvancedSetup(false)
+                          }}
+                          className="rounded-lg border border-border bg-background-secondary px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent-primary hover:text-accent-primary"
+                        >
+                          Back to easy setup
+                        </button>
+                      )}
+                    </div>
+
+                    <p className="mb-3 text-xs text-text-muted">
+                      {youtubeManagedAvailable
+                        ? 'Managed mode is available and recommended. Use custom only if you run your own OAuth app.'
+                        : 'Managed mode is not available in this build yet, so custom credentials are required.'}
+                    </p>
+
+                    <div className="mb-4 rounded-lg border border-border/70 bg-background-secondary p-3">
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                        {effectiveYouTubeAuthMode === 'managed'
+                          ? 'Managed Connect Flow'
+                          : 'Guided OAuth Setup'}
+                      </div>
+                      {effectiveYouTubeAuthMode === 'managed' ? (
+                        <ol className="list-decimal space-y-1 pl-5 text-xs text-text-muted">
+                          <li>Click Connect YouTube below.</li>
+                          <li>ClipVault opens the Google device verification page automatically.</li>
+                          <li>Enter the shown code and approve access.</li>
+                          <li>Return to ClipVault and uploads will be enabled.</li>
+                        </ol>
+                      ) : (
+                        <>
+                          <ol className="list-decimal space-y-1 pl-5 text-xs text-text-muted">
+                            <li>Create or pick a Google Cloud project.</li>
+                            <li>Enable YouTube Data API v3 for that project.</li>
+                            <li>
+                              Configure OAuth consent screen (External) and add your account as test
+                              user.
+                            </li>
+                            <li>Create OAuth credentials for Desktop App and copy Client ID and Secret.</li>
+                            <li>
+                              Paste credentials below, click Connect YouTube, and approve in Google.
+                            </li>
+                          </ol>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openExternalLink('https://console.cloud.google.com/')}
+                              className="rounded-lg border border-border bg-background-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent-primary hover:text-accent-primary"
+                            >
+                              Open Google Cloud
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openExternalLink(
+                                  'https://console.cloud.google.com/apis/library/youtube.googleapis.com'
+                                )
+                              }
+                              className="rounded-lg border border-border bg-background-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent-primary hover:text-accent-primary"
+                            >
+                              Open API page
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openExternalLink('https://console.cloud.google.com/apis/credentials')
+                              }
+                              className="rounded-lg border border-border bg-background-tertiary px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:border-accent-primary hover:text-accent-primary"
+                            >
+                              Open credentials page
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {effectiveYouTubeAuthMode === 'custom' && (
+                      <>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-text-secondary">
+                              OAuth Client ID
+                            </label>
+                            <input
+                              type="text"
+                              value={settings.social?.youtube?.client_id ?? ''}
+                              onChange={e => updateYouTubeSetting('client_id', e.target.value)}
+                              className="w-full rounded-lg border border-border bg-background-secondary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+                              placeholder="Google OAuth desktop client ID"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-text-secondary">
+                              OAuth Client Secret
+                            </label>
+                            <input
+                              type="password"
+                              value={settings.social?.youtube?.client_secret ?? ''}
+                              onChange={e => updateYouTubeSetting('client_secret', e.target.value)}
+                              className="w-full rounded-lg border border-border bg-background-secondary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+                              placeholder="Google OAuth client secret"
+                            />
+                          </div>
+                        </div>
+                        <p className="mt-2 text-xs text-text-muted">
+                          Client secret is hidden after load for security. Leave it blank to keep
+                          the stored value.
+                        </p>
+                      </>
+                    )}
+                  </>
+                )}
+
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-text-secondary">
+                      Default Privacy
+                    </label>
+                    <select
+                      value={settings.social?.youtube?.default_privacy ?? 'unlisted'}
+                      onChange={e => updateYouTubeSetting('default_privacy', e.target.value)}
+                      className="w-full rounded-lg border border-border bg-background-secondary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+                    >
+                      <option value="private">Private</option>
+                      <option value="unlisted">Unlisted</option>
+                      <option value="public">Public</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-text-secondary">
+                      Default Title Template
+                    </label>
+                    <input
+                      type="text"
+                      value={settings.social?.youtube?.default_title_template ?? ''}
+                      onChange={e => updateYouTubeSetting('default_title_template', e.target.value)}
+                      className="w-full rounded-lg border border-border bg-background-secondary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+                      placeholder="{clip_name}"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <label className="mb-1 block text-sm font-medium text-text-secondary">
+                    Default Description
+                  </label>
+                  <textarea
+                    value={settings.social?.youtube?.default_description ?? ''}
+                    onChange={e => updateYouTubeSetting('default_description', e.target.value)}
+                    className="h-24 w-full rounded-lg border border-border bg-background-secondary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+                    placeholder="Shared from ClipVault"
+                  />
+                </div>
+
+                <div className="mt-3">
+                  <label className="mb-1 block text-sm font-medium text-text-secondary">
+                    Default Tags (comma separated)
+                  </label>
+                  <input
+                    type="text"
+                    value={(settings.social?.youtube?.default_tags ?? []).join(', ')}
+                    onChange={e =>
+                      updateYouTubeSetting(
+                        'default_tags',
+                        e.target.value
+                          .split(',')
+                          .map(tag => tag.trim())
+                          .filter(Boolean)
+                      )
+                    }
+                    className="w-full rounded-lg border border-border bg-background-secondary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
+                    placeholder="clipvault, gaming, highlights"
+                  />
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleStartYouTubeConnect()
+                    }}
+                    className="rounded-lg bg-accent-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-primary/90"
+                  >
+                    {settings.social?.youtube?.channel_title
+                      ? 'Reconnect YouTube'
+                      : effectiveYouTubeAuthMode === 'managed'
+                        ? 'Connect YouTube'
+                        : 'Connect YouTube (Custom)'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleDisconnectYouTube()
+                    }}
+                    disabled={!settings.social?.youtube?.channel_title}
+                    className="rounded-lg border border-border bg-background-secondary px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:border-red-400 hover:text-red-400 disabled:opacity-50"
+                  >
+                    Disconnect
+                  </button>
+
+                  {youtubeAuthSession && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void window.electronAPI.openExternal(youtubeAuthSession.verificationUrl)
+                      }}
+                      className="rounded-lg border border-border bg-background-secondary px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:border-accent-primary hover:text-accent-primary"
+                    >
+                      Open Google Device Page
+                    </button>
+                  )}
+                </div>
+
+                {youtubeAuthSession && (
+                  <div className="mt-3 rounded-lg border border-accent-primary/30 bg-accent-primary/10 p-3 text-sm text-text-primary">
+                    <div className="text-xs text-text-muted">Enter this code in Google:</div>
+                    <div className="mt-1 font-mono text-lg tracking-wider text-accent-primary">
+                      {youtubeAuthSession.userCode}
+                    </div>
+                  </div>
+                )}
+
+                {settings.social?.youtube?.channel_title && (
+                  <p className="mt-2 text-xs text-success">
+                    Connected channel: {settings.social.youtube.channel_title}
+                  </p>
+                )}
+
+                {youtubeAuthMessage && (
+                  <p
+                    className={`mt-2 text-xs ${
+                      youtubeAuthState === 'success'
+                        ? 'text-success'
+                        : youtubeAuthState === 'error'
+                          ? 'text-error'
+                          : 'text-text-muted'
+                    }`}
+                  >
+                    {youtubeAuthMessage}
+                  </p>
+                )}
+
+                <p className="mt-3 text-xs text-text-muted">
+                  Placeholders for title template: {'{clip_name}'}, {'{filename}'}, {'{date}'},
+                  {' {time}'}
+                </p>
+              </div>
+            </div>
+          </section>
+
           {/* Hotkey Settings */}
           <section className="rounded-xl border border-border bg-background-secondary p-6">
             <div className="mb-4 flex items-center gap-2">
@@ -1025,6 +1764,50 @@ export const Settings: React.FC<SettingsProps> = ({ onClose }) => {
                   <span
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
                       settings.ui?.start_with_windows ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Library Hover Preview */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="block text-sm font-medium text-text-primary">
+                    Library hover preview
+                  </div>
+                  <p className="text-xs text-text-muted">
+                    Play a muted video preview when hovering clips in the library
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={settings.ui?.library_hover_preview !== false}
+                  aria-label="Library hover preview"
+                  onClick={() =>
+                    setSettings(prev =>
+                      prev
+                        ? {
+                            ...prev,
+                            ui: {
+                              ...(prev.ui || {}),
+                              library_hover_preview: !(prev.ui?.library_hover_preview ?? true),
+                            },
+                          }
+                        : null
+                    )
+                  }
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    settings.ui?.library_hover_preview !== false
+                      ? 'bg-accent-primary'
+                      : 'bg-background-tertiary'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      settings.ui?.library_hover_preview !== false
+                        ? 'translate-x-6'
+                        : 'translate-x-1'
                     }`}
                   />
                 </button>

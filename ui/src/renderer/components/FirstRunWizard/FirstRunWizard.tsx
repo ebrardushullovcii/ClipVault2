@@ -162,6 +162,7 @@ const normalizeSettings = (value: AppSettings): AppSettings => {
       show_notifications: ui.show_notifications ?? true,
       play_sound: ui.play_sound ?? true,
       start_with_windows: ui.start_with_windows ?? false,
+      library_hover_preview: ui.library_hover_preview ?? true,
       first_run_completed: ui.first_run_completed ?? false,
     },
   }
@@ -327,6 +328,7 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
   const systemAudioLabelId = 'first-run-system-audio-label'
   const microphoneLabelId = 'first-run-microphone-label'
   const startWithWindowsLabelId = 'first-run-start-windows-label'
+  const libraryHoverPreviewLabelId = 'first-run-library-hover-preview-label'
   const showNotificationsLabelId = 'first-run-show-notifications-label'
   const playSoundLabelId = 'first-run-play-sound-label'
 
@@ -883,6 +885,35 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
                             ui: {
                               ...prev.ui,
                               start_with_windows: event.target.checked,
+                            },
+                          }))
+                        }
+                        className="peer sr-only"
+                      />
+                      <div className="relative h-6 w-11 rounded-full bg-background-tertiary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent-primary peer-checked:after:left-[22px]" />
+                    </label>
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-lg border border-border bg-background-secondary p-4">
+                    <div id={libraryHoverPreviewLabelId}>
+                      <div className="text-sm font-semibold text-text-primary">
+                        Library hover preview
+                      </div>
+                      <div className="text-xs text-text-muted">
+                        Play muted video previews when you hover clips in the library.
+                      </div>
+                    </div>
+                    <label className="relative inline-flex cursor-pointer items-center">
+                      <input
+                        type="checkbox"
+                        aria-labelledby={libraryHoverPreviewLabelId}
+                        checked={settings.ui?.library_hover_preview ?? true}
+                        onChange={event =>
+                          setSettings(prev => ({
+                            ...prev,
+                            ui: {
+                              ...prev.ui,
+                              library_hover_preview: event.target.checked,
                             },
                           }))
                         }

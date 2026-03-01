@@ -26,14 +26,36 @@ interface AppSettings {
   }
   ui?: {
     show_notifications: boolean
+    play_sound?: boolean
     minimize_to_tray: boolean
     start_with_windows: boolean
+    library_hover_preview?: boolean
     first_run_completed?: boolean
   }
   launcher?: {
     autostart_backend: boolean
     backend_mode: string
     single_instance: boolean
+  }
+  social?: {
+    discord?: {
+      webhook_url?: string
+      default_message_template?: string
+    }
+    youtube?: {
+      auth_mode?: 'managed' | 'custom'
+      client_id?: string
+      client_secret?: string
+      refresh_token?: string
+      access_token?: string
+      token_expiry?: number
+      channel_id?: string
+      channel_title?: string
+      default_privacy?: 'private' | 'unlisted' | 'public'
+      default_title_template?: string
+      default_description?: string
+      default_tags?: string[]
+    }
   }
 }
 
@@ -61,14 +83,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getVideoMetadata: (videoPath: string) => ipcRenderer.invoke('clips:getVideoMetadata', videoPath),
 
   // Audio tracks
-  extractAudioTracks: (clipId: string, videoPath: string) =>
-    ipcRenderer.invoke('audio:extractTracks', clipId, videoPath),
+  extractAudioTracks: (
+    clipId: string,
+    videoPath: string,
+    options?: { forceReextract?: boolean }
+  ) => ipcRenderer.invoke('audio:extractTracks', clipId, videoPath, options),
 
   // Video loading
   getVideoFileUrl: (filename: string) => ipcRenderer.invoke('video:getFileUrl', filename),
 
   // Export preview
   showExportPreview: (filePath: string) => ipcRenderer.invoke('export:showPreview', filePath),
+
+  // External links
+  openExternal: (url: string) => ipcRenderer.invoke('system:openExternal', url),
+
+  // Social sharing integrations
+  social: {
+    testDiscordWebhook: (webhookUrl: string) =>
+      ipcRenderer.invoke('social:discord:testWebhook', webhookUrl),
+    youtubeGetProviderInfo: () => ipcRenderer.invoke('social:youtube:getProviderInfo'),
+    youtubeStartDeviceAuth: (params: {
+      mode?: 'managed' | 'custom'
+      clientId?: string
+      clientSecret?: string
+    }) =>
+      ipcRenderer.invoke('social:youtube:startDeviceAuth', params),
+    youtubePollDeviceAuth: (params: { deviceCode: string }) =>
+      ipcRenderer.invoke('social:youtube:pollDeviceAuth', params),
+    youtubeDisconnect: () => ipcRenderer.invoke('social:youtube:disconnect'),
+  },
 
   // Cleanup - permanent deletion of cache files (bypasses recycle bin)
   cleanupOrphanedCache: () => ipcRenderer.invoke('cleanup:orphans'),
@@ -204,7 +248,7 @@ declare global {
   interface Window {
     electronAPI: {
       getSettings: () => Promise<AppSettings>
-      saveSettings: (settings: AppSettings) => Promise<{ success: boolean }>
+      saveSettings: (settings: AppSettings) => Promise<{ success: boolean; restarted?: boolean }>
       setStartup: (enabled: boolean) => Promise<{ success: boolean }>
       getClipsList: () => Promise<ClipInfo[]>
       saveClipMetadata: (clipId: string, metadata: ClipMetadata) => Promise<boolean>
@@ -212,10 +256,15 @@ declare global {
       generateThumbnail: (clipId: string, videoPath: string) => Promise<string>
       getExistingThumbnails: () => Promise<{ [clipId: string]: string }>
       getVideoMetadata: (videoPath: string) => Promise<VideoMetadata>
-      extractAudioTracks: (clipId: string, videoPath: string) => Promise<AudioTrackUrls>
+      extractAudioTracks: (
+        clipId: string,
+        videoPath: string,
+        options?: { forceReextract?: boolean }
+      ) => Promise<AudioTrackUrls>
       getVideoFileUrl: (
         filename: string
       ) => Promise<{ success: boolean; url?: string; path?: string; error?: string }>
+      openExternal: (url: string) => Promise<{ success: boolean; error?: string }>
       cleanupOrphanedCache: () => Promise<{ deletedCount: number; errors: string[] }>
       getCacheStats: () => Promise<{
         thumbnailCount: number
@@ -233,6 +282,40 @@ declare global {
       showSaveDialog: (
         options: Electron.SaveDialogOptions
       ) => Promise<Electron.SaveDialogReturnValue>
+      social: {
+        testDiscordWebhook: (webhookUrl: string) => Promise<{ success: boolean; error?: string }>
+        youtubeGetProviderInfo: () => Promise<{
+          success: boolean
+          error?: string
+          managedAvailable: boolean
+          activeMode: 'managed' | 'custom'
+          recommendedMode: 'managed' | 'custom'
+        }>
+        youtubeStartDeviceAuth: (params: {
+          mode?: 'managed' | 'custom'
+          clientId?: string
+          clientSecret?: string
+        }) => Promise<{
+          success: boolean
+          error?: string
+          mode?: 'managed' | 'custom'
+          deviceCode?: string
+          userCode?: string
+          verificationUrl?: string
+          expiresInSeconds?: number
+          intervalSeconds?: number
+        }>
+        youtubePollDeviceAuth: (params: { deviceCode: string }) => Promise<{
+          success: boolean
+          pending?: boolean
+          intervalSeconds?: number
+          error?: string
+          mode?: 'managed' | 'custom'
+          channelId?: string
+          channelTitle?: string
+        }>
+        youtubeDisconnect: () => Promise<{ success: boolean; error?: string }>
+      }
       dialog: {
         save: (options: Electron.SaveDialogOptions) => Promise<Electron.SaveDialogReturnValue>
         openFolder: () => Promise<Electron.OpenDialogReturnValue>

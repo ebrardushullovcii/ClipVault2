@@ -33,6 +33,10 @@ interface ClipCardProps {
     event: React.MouseEvent<HTMLButtonElement>
   ) => void
   onEditGame?: (clip: ClipInfo) => void
+  previewSrc?: string
+  isPreviewActive?: boolean
+  onPreviewStart?: (clipId: string) => void
+  onPreviewStop?: (clipId: string) => void
 }
 
 export const ClipCard: React.FC<ClipCardProps> = memo(
@@ -52,9 +56,15 @@ export const ClipCard: React.FC<ClipCardProps> = memo(
     onCardClick,
     onToggleSelect,
     onEditGame,
+    previewSrc,
+    isPreviewActive = false,
+    onPreviewStart,
+    onPreviewStop,
   }) => {
     const cardRef = useRef<HTMLDivElement>(null)
+    const previewVideoRef = useRef<HTMLVideoElement>(null)
     const [isVisible, setIsVisible] = useState(false)
+    const [isPreviewReady, setIsPreviewReady] = useState(false)
     const hasAttemptedRef = useRef(false)
     const timeoutRef = useRef<NodeJS.Timeout | null>(null)
     const observerRef = useRef<IntersectionObserver | null>(null)
@@ -129,6 +139,20 @@ export const ClipCard: React.FC<ClipCardProps> = memo(
       }
     }, [clip.id, clip.path, thumbnailUrl, metadata, onGenerateThumbnail, onFetchMetadata])
 
+    useEffect(() => {
+      if (!isPreviewActive) {
+        setIsPreviewReady(false)
+      }
+
+      const video = previewVideoRef.current
+      if (!video) return
+
+      if (!isPreviewActive) {
+        video.pause()
+        video.currentTime = 0
+      }
+    }, [isPreviewActive])
+
     const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
       if (onCardClick) {
         onCardClick(clip, clipIndex ?? 0, event)
@@ -165,6 +189,18 @@ export const ClipCard: React.FC<ClipCardProps> = memo(
       }
     }
 
+    const handleMouseEnter = () => {
+      if (onPreviewStart) {
+        onPreviewStart(clip.id)
+      }
+    }
+
+    const handleMouseLeave = () => {
+      if (onPreviewStop) {
+        onPreviewStop(clip.id)
+      }
+    }
+
     const isGrid = viewMode === 'grid'
     const selectionLabel = isSelected ? 'Deselect clip' : 'Select clip'
 
@@ -178,6 +214,8 @@ export const ClipCard: React.FC<ClipCardProps> = memo(
       <div
         ref={cardRef}
         onClick={handleClick}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         className={`card group cursor-pointer overflow-hidden ${
           isSelected ? 'ring-2 ring-accent-primary' : ''
         } ${isGrid ? '' : 'flex items-center gap-4 p-4'}`}
@@ -223,8 +261,36 @@ export const ClipCard: React.FC<ClipCardProps> = memo(
             </div>
           )}
 
+          {isPreviewActive && previewSrc && (
+            <video
+              ref={previewVideoRef}
+              src={previewSrc}
+              className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-150 ${
+                isPreviewReady ? 'opacity-100' : 'opacity-0'
+              }`}
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              disablePictureInPicture
+              onCanPlay={() => {
+                setIsPreviewReady(true)
+                const video = previewVideoRef.current
+                if (video) {
+                  void video.play().catch(() => {})
+                }
+              }}
+              onWaiting={() => setIsPreviewReady(false)}
+              onError={() => setIsPreviewReady(false)}
+            />
+          )}
+
           {/* Play overlay on hover */}
-          <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+          <div
+            className={`absolute inset-0 flex items-center justify-center bg-black/50 transition-opacity ${
+              isPreviewActive && isPreviewReady ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'
+            }`}
+          >
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-primary">
               <Play className="ml-1 h-6 w-6 text-background-primary" />
             </div>
@@ -326,6 +392,8 @@ export const ClipCard: React.FC<ClipCardProps> = memo(
       prevProps.clip.id === nextProps.clip.id &&
       prevProps.viewMode === nextProps.viewMode &&
       prevProps.thumbnailUrl === nextProps.thumbnailUrl &&
+      prevProps.previewSrc === nextProps.previewSrc &&
+      prevProps.isPreviewActive === nextProps.isPreviewActive &&
       prevProps.isSelected === nextProps.isSelected &&
       prevProps.showSelection === nextProps.showSelection &&
       prevProps.metadata?.duration === nextProps.metadata?.duration &&
