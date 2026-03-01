@@ -83,12 +83,33 @@ export interface AppSettings {
     play_sound?: boolean
     minimize_to_tray?: boolean
     start_with_windows?: boolean
+    library_hover_preview?: boolean
     first_run_completed?: boolean
   }
   launcher?: {
     autostart_backend?: boolean
     backend_mode?: string
     single_instance?: boolean
+  }
+  social?: {
+    discord?: {
+      webhook_url?: string
+      default_message_template?: string
+    }
+    youtube?: {
+      auth_mode?: 'managed' | 'custom'
+      client_id?: string
+      client_secret?: string
+      refresh_token?: string
+      access_token?: string
+      token_expiry?: number
+      channel_id?: string
+      channel_title?: string
+      default_privacy?: 'private' | 'unlisted' | 'public'
+      default_title_template?: string
+      default_description?: string
+      default_tags?: string[]
+    }
   }
 }
 
@@ -162,11 +183,50 @@ export interface ElectronAPI {
   generateThumbnail: (clipId: string, videoPath: string) => Promise<string>
   getExistingThumbnails: () => Promise<{ [clipId: string]: string }>
   getVideoMetadata: (videoPath: string) => Promise<VideoMetadata>
-  extractAudioTracks: (clipId: string, videoPath: string) => Promise<AudioTrackUrls>
+  extractAudioTracks: (
+    clipId: string,
+    videoPath: string,
+    options?: { forceReextract?: boolean }
+  ) => Promise<AudioTrackUrls>
   getVideoFileUrl: (
     filename: string
   ) => Promise<{ success: boolean; url?: string; path?: string; error?: string }>
-  showExportPreview: (filePath: string) => Promise<void>
+  showExportPreview: (filePath: string) => Promise<{ success: boolean; error?: string }>
+  openExternal: (url: string) => Promise<{ success: boolean; error?: string }>
+  social: {
+    testDiscordWebhook: (webhookUrl: string) => Promise<{ success: boolean; error?: string }>
+    youtubeGetProviderInfo: () => Promise<{
+      success: boolean
+      error?: string
+      managedAvailable: boolean
+      activeMode: 'managed' | 'custom'
+      recommendedMode: 'managed' | 'custom'
+    }>
+    youtubeStartDeviceAuth: (params: {
+      mode?: 'managed' | 'custom'
+      clientId?: string
+      clientSecret?: string
+    }) => Promise<{
+      success: boolean
+      error?: string
+      mode?: 'managed' | 'custom'
+      deviceCode?: string
+      userCode?: string
+      verificationUrl?: string
+      expiresInSeconds?: number
+      intervalSeconds?: number
+    }>
+    youtubePollDeviceAuth: (params: { deviceCode: string }) => Promise<{
+      success: boolean
+      pending?: boolean
+      intervalSeconds?: number
+      error?: string
+      mode?: 'managed' | 'custom'
+      channelId?: string
+      channelTitle?: string
+    }>
+    youtubeDisconnect: () => Promise<{ success: boolean; error?: string }>
+  }
   cleanupOrphanedCache: () => Promise<{ deletedCount: number; errors: string[] }>
   getCacheStats: () => Promise<{
     thumbnailCount: number

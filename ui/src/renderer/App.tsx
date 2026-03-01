@@ -16,6 +16,18 @@ interface HistoryEntry {
   metadata?: VideoMetadata
 }
 
+type ClipNavigationDirection = 'previous' | 'next'
+
+type AdjacentClipResult = {
+  clip: ClipInfo
+  metadata: VideoMetadata
+}
+
+type LibraryNavigationResolver = (
+  clipId: string,
+  direction: ClipNavigationDirection
+) => AdjacentClipResult | null
+
 function App() {
   const [currentView, setCurrentView] = useState<View>('library')
   const [selectedClip, setSelectedClip] = useState<ClipInfo | null>(null)
@@ -23,11 +35,14 @@ function App() {
   const [showEditor, setShowEditor] = useState(false)
   const [showFirstRun, setShowFirstRun] = useState(false)
   const [firstRunSettings, setFirstRunSettings] = useState<AppSettings | null>(null)
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null)
   // Navigation history for browser-like back/forward
   const [history, setHistory] = useState<HistoryEntry[]>([{ type: 'library' }])
   const [historyIndex, setHistoryIndex] = useState(0)
   // Ref to hold the Library's update function
   const libraryUpdateRef = useRef<((clipId: string, metadata: ClipMetadata) => void) | null>(null)
+  // Ref to hold the Library's clip navigation resolver
+  const libraryNavigationRef = useRef<LibraryNavigationResolver | null>(null)
   // Ref to track if we're navigating programmatically
   const isNavigatingRef = useRef(false)
 
@@ -38,6 +53,7 @@ function App() {
         const settings = await window.electronAPI.getSettings()
         if (!mounted) return
         setFirstRunSettings(settings)
+        setAppSettings(settings)
         setShowFirstRun(!settings.ui?.first_run_completed)
       } catch (error) {
         console.error('Failed to load settings for first run:', error)
@@ -56,10 +72,15 @@ function App() {
       await window.electronAPI.saveSettings(settings)
       await window.electronAPI.setStartup(settings.ui?.start_with_windows ?? false)
       setFirstRunSettings(settings)
+      setAppSettings(settings)
       setShowFirstRun(false)
     } catch (error) {
       console.error('Failed to save first-run settings:', error)
     }
+  }, [])
+
+  const handleSettingsSaved = useCallback((settings: AppSettings) => {
+    setAppSettings(settings)
   }, [])
 
   // Add entry to history when opening a clip
@@ -210,6 +231,20 @@ function App() {
     []
   )
 
+  const handleRegisterLibraryNavigation = useCallback((resolver: LibraryNavigationResolver) => {
+    libraryNavigationRef.current = resolver
+  }, [])
+
+  const getAdjacentClip = useCallback(
+    (clipId: string, direction: ClipNavigationDirection): AdjacentClipResult | null => {
+      if (!libraryNavigationRef.current) {
+        return null
+      }
+      return libraryNavigationRef.current(clipId, direction)
+    },
+    []
+  )
+
   // Save metadata and trigger update in Library
   const handleSaveMetadata = useCallback(async (clipId: string, metadata: ClipMetadata) => {
     try {
@@ -246,13 +281,18 @@ function App() {
             showEditor || currentView === 'settings' || showFirstRun ? 'hidden' : 'visible',
         }}
       >
-        <Library onOpenEditor={handleOpenEditor} onRegisterUpdate={handleRegisterLibraryUpdate} />
+        <Library
+          onOpenEditor={handleOpenEditor}
+          onRegisterUpdate={handleRegisterLibraryUpdate}
+          onRegisterNavigation={handleRegisterLibraryNavigation}
+          hoverPreviewEnabled={appSettings?.ui?.library_hover_preview !== false}
+        />
       </div>
 
       {/* Settings overlay */}
       {currentView === 'settings' && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 50 }}>
-          <Settings onClose={handleCloseSettings} />
+          <Settings onClose={handleCloseSettings} onSettingsSaved={handleSettingsSaved} />
         </div>
       )}
 
@@ -267,10 +307,13 @@ function App() {
           }}
         >
           <Editor
+            key={selectedClip.id}
             clip={selectedClip}
             metadata={selectedClipMetadata}
             onClose={handleCloseEditor}
             onSave={handleSaveMetadata}
+            onOpenClip={handleOpenEditor}
+            getAdjacentClip={getAdjacentClip}
           />
         </div>
       )}
