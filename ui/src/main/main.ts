@@ -10,6 +10,7 @@ import {
   Tray,
   Rectangle,
   screen,
+  safeStorage,
 } from 'electron'
 import { dirname, join, basename, resolve, relative, isAbsolute } from 'path'
 import {
@@ -17,15 +18,18 @@ import {
   writeFile,
   readdir,
   stat,
+  realpath as fsRealpath,
   mkdir,
   unlink as fsUnlinkAsync,
   rename,
 } from 'fs/promises'
-import { existsSync, readFileSync, createWriteStream } from 'fs'
+import { existsSync, readFileSync, createWriteStream, createReadStream } from 'fs'
+import { request as httpsRequest } from 'https'
 import ffmpeg from 'fluent-ffmpeg'
 import { spawn, execSync, execFile } from 'child_process'
 import { promisify } from 'util'
 import { cleanupOrphanedCache, getCacheStats, formatBytes } from './cleanup'
+import { exportPreviewTemplate } from './exportPreviewTemplate'
 import chokidar from 'chokidar'
 
 const thumbnailLogPath = join(app.getPath('userData'), 'thumbnail.log')
@@ -778,6 +782,7 @@ const defaultSettings = {
     play_sound: true,
     minimize_to_tray: true,
     start_with_windows: false,
+    library_hover_preview: true,
     first_run_completed: false,
   },
   launcher: {
@@ -785,10 +790,32 @@ const defaultSettings = {
     backend_mode: 'tray',
     single_instance: true,
   },
+  social: {
+    discord: {
+      webhook_url: '',
+      default_message_template: 'New clip from ClipVault: {clip_name}',
+    },
+    youtube: {
+      auth_mode: 'managed' as 'managed' | 'custom',
+      client_id: '',
+      client_secret: '',
+      refresh_token: '',
+      access_token: '',
+      token_expiry: 0,
+      channel_id: '',
+      channel_title: '',
+      default_privacy: 'unlisted',
+      default_title_template: '{clip_name}',
+      default_description: 'Shared from ClipVault',
+      default_tags: [] as string[],
+    },
+  },
 }
 
 const normalizeSettings = (raw: unknown, fileExists: boolean) => {
   const base = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const socialBase =
+    base.social && typeof base.social === 'object' ? (base.social as Record<string, unknown>) : {}
   const merged = {
     ...defaultSettings,
     ...base,
@@ -812,6 +839,18 @@ const normalizeSettings = (raw: unknown, fileExists: boolean) => {
       ...defaultSettings.launcher,
       ...(base.launcher && typeof base.launcher === 'object' ? base.launcher : {}),
     },
+    social: {
+      ...defaultSettings.social,
+      ...socialBase,
+      discord: {
+        ...defaultSettings.social.discord,
+        ...(socialBase.discord && typeof socialBase.discord === 'object' ? socialBase.discord : {}),
+      },
+      youtube: {
+        ...defaultSettings.social.youtube,
+        ...(socialBase.youtube && typeof socialBase.youtube === 'object' ? socialBase.youtube : {}),
+      },
+    },
   }
 
   const trimmedOutputPath = typeof merged.output_path === 'string' ? merged.output_path.trim() : ''
@@ -829,6 +868,10 @@ const normalizeSettings = (raw: unknown, fileExists: boolean) => {
     merged.audio.microphone_device_id = 'default'
   }
 
+  if (typeof merged.ui.library_hover_preview !== 'boolean') {
+    merged.ui.library_hover_preview = true
+  }
+
   if (fileExists && typeof merged.ui.first_run_completed !== 'boolean') {
     merged.ui.first_run_completed = true
   }
@@ -837,40 +880,423 @@ const normalizeSettings = (raw: unknown, fileExists: boolean) => {
     merged.ui.first_run_completed = false
   }
 
+  if (typeof merged.social.discord.webhook_url !== 'string') {
+    merged.social.discord.webhook_url = ''
+  }
+  merged.social.discord.webhook_url = merged.social.discord.webhook_url.trim()
+
+  if (typeof merged.social.discord.default_message_template !== 'string') {
+    merged.social.discord.default_message_template = defaultSettings.social.discord.default_message_template
+  }
+
+  if (typeof merged.social.youtube.client_id !== 'string') {
+    merged.social.youtube.client_id = ''
+  }
+  merged.social.youtube.client_id = merged.social.youtube.client_id.trim()
+  if (!['managed', 'custom'].includes(merged.social.youtube.auth_mode)) {
+    merged.social.youtube.auth_mode = 'managed'
+  }
+  if (typeof merged.social.youtube.client_secret !== 'string') {
+    merged.social.youtube.client_secret = ''
+  }
+  merged.social.youtube.client_secret = merged.social.youtube.client_secret.trim()
+  if (typeof merged.social.youtube.refresh_token !== 'string') {
+    merged.social.youtube.refresh_token = ''
+  }
+  merged.social.youtube.refresh_token = merged.social.youtube.refresh_token.trim()
+  if (typeof merged.social.youtube.access_token !== 'string') {
+    merged.social.youtube.access_token = ''
+  }
+  merged.social.youtube.access_token = merged.social.youtube.access_token.trim()
+  if (typeof merged.social.youtube.channel_id !== 'string') {
+    merged.social.youtube.channel_id = ''
+  }
+  if (typeof merged.social.youtube.channel_title !== 'string') {
+    merged.social.youtube.channel_title = ''
+  }
+  if (typeof merged.social.youtube.default_title_template !== 'string') {
+    merged.social.youtube.default_title_template = defaultSettings.social.youtube.default_title_template
+  }
+  if (typeof merged.social.youtube.default_description !== 'string') {
+    merged.social.youtube.default_description = defaultSettings.social.youtube.default_description
+  }
+  if (
+    typeof merged.social.youtube.token_expiry !== 'number' ||
+    !Number.isFinite(merged.social.youtube.token_expiry)
+  ) {
+    merged.social.youtube.token_expiry = 0
+  }
+
+  if (!['private', 'unlisted', 'public'].includes(merged.social.youtube.default_privacy)) {
+    merged.social.youtube.default_privacy = 'unlisted'
+  }
+
+  if (!Array.isArray(merged.social.youtube.default_tags)) {
+    merged.social.youtube.default_tags = []
+  }
+  merged.social.youtube.default_tags = merged.social.youtube.default_tags
+    .filter((tag): tag is string => typeof tag === 'string')
+    .map(tag => tag.trim())
+    .filter(Boolean)
+    .slice(0, 15)
+
   return merged
 }
 
-// Get settings
-ipcMain.handle('settings:get', async () => {
-  try {
-    const settingsPath = getSettingsPath()
-    console.log('Settings path:', settingsPath)
+type NormalizedSettings = ReturnType<typeof normalizeSettings>
 
-    const fileExists = existsSync(settingsPath)
-    if (!fileExists) {
-      console.log('Settings file not found, returning defaults')
-      return normalizeSettings(null, false)
+type YouTubeAuthMode = 'managed' | 'custom'
+
+type ResolvedYouTubeCredentials = {
+  mode: YouTubeAuthMode
+  clientId: string
+  clientSecret: string
+}
+
+const getManagedYouTubeCredentials = () => {
+  const clientId =
+    process.env.CLIPVAULT_YOUTUBE_CLIENT_ID?.trim() || process.env.YOUTUBE_CLIENT_ID?.trim() || ''
+  const clientSecret =
+    process.env.CLIPVAULT_YOUTUBE_CLIENT_SECRET?.trim() ||
+    process.env.YOUTUBE_CLIENT_SECRET?.trim() ||
+    ''
+
+  return {
+    clientId,
+    clientSecret,
+    available: Boolean(clientId && clientSecret),
+  }
+}
+
+const resolveYouTubeAuthMode = (
+  settings: NormalizedSettings,
+  requestedMode?: string
+): YouTubeAuthMode => {
+  if (requestedMode === 'managed' || requestedMode === 'custom') {
+    return requestedMode
+  }
+
+  if (settings.social.youtube.auth_mode === 'custom') {
+    return 'custom'
+  }
+
+  const managed = getManagedYouTubeCredentials()
+  return managed.available ? 'managed' : 'custom'
+}
+
+const resolveYouTubeCredentials = (
+  settings: NormalizedSettings,
+  requestedMode?: string,
+  overrides?: { clientId?: string; clientSecret?: string }
+): ResolvedYouTubeCredentials => {
+  const mode = resolveYouTubeAuthMode(settings, requestedMode)
+
+  if (mode === 'managed') {
+    const managed = getManagedYouTubeCredentials()
+    if (!managed.available) {
+      throw new Error('ClipVault-managed YouTube sign-in is unavailable in this build.')
     }
 
-    console.log('Reading settings from:', settingsPath)
-    const content = await readFile(settingsPath, 'utf-8')
+    return {
+      mode,
+      clientId: managed.clientId,
+      clientSecret: managed.clientSecret,
+    }
+  }
 
-    try {
-      const parsed = JSON.parse(content)
-      return normalizeSettings(parsed, true)
-    } catch (parseError) {
-      console.error('JSON parse error, returning defaults:', parseError)
-      return normalizeSettings(null, false)
+  const clientId =
+    overrides?.clientId?.trim() || settings.social.youtube.client_id.trim() || ''
+  const clientSecret =
+    overrides?.clientSecret?.trim() || settings.social.youtube.client_secret.trim() || ''
+
+  if (!clientId || !clientSecret) {
+    throw new Error('Client ID and Client Secret are required for custom YouTube setup.')
+  }
+
+  return {
+    mode,
+    clientId,
+    clientSecret,
+  }
+}
+
+const getYouTubeProviderInfo = (settings: NormalizedSettings) => {
+  const managed = getManagedYouTubeCredentials()
+  return {
+    managedAvailable: managed.available,
+    activeMode: resolveYouTubeAuthMode(settings),
+    recommendedMode: managed.available ? ('managed' as const) : ('custom' as const),
+  }
+}
+
+const getConfigDir = (): string => {
+  const appDataPath = process.env.APPDATA || app.getPath('appData')
+  return join(appDataPath, 'ClipVault')
+}
+
+type PersistedSecureYouTubeSecrets = {
+  version: number
+  provider: 'youtube'
+  clientSecret?: string
+  refreshToken?: string
+  accessToken?: string
+}
+
+type YouTubeSecretSnapshot = {
+  clientSecret: string
+  refreshToken: string
+  accessToken: string
+}
+
+const getSecureSettingsPath = (): string => {
+  return join(getConfigDir(), 'settings.secure.json')
+}
+
+const encryptSecretForStorage = (secretValue: string): string => {
+  const trimmedValue = secretValue.trim()
+  if (!trimmedValue) {
+    return ''
+  }
+
+  const encryptedValue = safeStorage.encryptString(trimmedValue)
+  return encryptedValue.toString('base64')
+}
+
+const decryptSecretFromStorage = (encryptedValue: unknown): string => {
+  if (typeof encryptedValue !== 'string' || !encryptedValue.trim()) {
+    return ''
+  }
+
+  try {
+    const encryptedBuffer = Buffer.from(encryptedValue, 'base64')
+    return safeStorage.decryptString(encryptedBuffer)
+  } catch {
+    return ''
+  }
+}
+
+const persistSecureYouTubeSecrets = async (secrets: YouTubeSecretSnapshot): Promise<void> => {
+  const secureSettingsPath = getSecureSettingsPath()
+  const hasSecrets = Boolean(secrets.clientSecret || secrets.refreshToken || secrets.accessToken)
+
+  if (!hasSecrets) {
+    if (existsSync(secureSettingsPath)) {
+      await fsUnlinkAsync(secureSettingsPath).catch(() => {})
+    }
+    return
+  }
+
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('Secure credential storage is unavailable on this system.')
+  }
+
+  const payload: PersistedSecureYouTubeSecrets = {
+    version: 1,
+    provider: 'youtube',
+    clientSecret: encryptSecretForStorage(secrets.clientSecret),
+    refreshToken: encryptSecretForStorage(secrets.refreshToken),
+    accessToken: encryptSecretForStorage(secrets.accessToken),
+  }
+
+  await writeFile(secureSettingsPath, JSON.stringify(payload, null, 2), 'utf-8')
+}
+
+const readSecureYouTubeSecrets = async (): Promise<Partial<YouTubeSecretSnapshot>> => {
+  const secureSettingsPath = getSecureSettingsPath()
+  if (!existsSync(secureSettingsPath)) {
+    return {}
+  }
+
+  if (!safeStorage.isEncryptionAvailable()) {
+    console.error('[Settings] Secure credential storage is unavailable; cannot decrypt YouTube secrets.')
+    return {}
+  }
+
+  try {
+    const content = await readFile(secureSettingsPath, 'utf-8')
+    const parsed = JSON.parse(content) as PersistedSecureYouTubeSecrets
+
+    return {
+      clientSecret: decryptSecretFromStorage(parsed.clientSecret),
+      refreshToken: decryptSecretFromStorage(parsed.refreshToken),
+      accessToken: decryptSecretFromStorage(parsed.accessToken),
     }
   } catch (error) {
-    console.error('Failed to read settings:', error)
+    console.error('[Settings] Failed to read secure YouTube secrets:', error)
+    return {}
+  }
+}
+
+const persistNormalizedSettings = async (settings: NormalizedSettings): Promise<void> => {
+  const configDir = getConfigDir()
+  const settingsPath = getSettingsPath()
+
+  if (!existsSync(configDir)) {
+    await mkdir(configDir, { recursive: true })
+  }
+
+  const normalizedToPersist = normalizeSettings(settings, true)
+  const secretSnapshot: YouTubeSecretSnapshot = {
+    clientSecret: normalizedToPersist.social.youtube.client_secret.trim(),
+    refreshToken: normalizedToPersist.social.youtube.refresh_token.trim(),
+    accessToken: normalizedToPersist.social.youtube.access_token.trim(),
+  }
+
+  try {
+    await persistSecureYouTubeSecrets(secretSnapshot)
+  } catch (error) {
+    console.error('[Settings] Failed to persist secure YouTube secrets:', error)
+    throw error
+  }
+
+  const sanitizedSettings = normalizeSettings(normalizedToPersist, true)
+  sanitizedSettings.social.youtube.client_secret = ''
+  sanitizedSettings.social.youtube.refresh_token = ''
+  sanitizedSettings.social.youtube.access_token = ''
+
+  await writeFile(settingsPath, JSON.stringify(sanitizedSettings, null, 2), 'utf-8')
+}
+
+const readNormalizedSettings = async (): Promise<NormalizedSettings> => {
+  const settingsPath = getSettingsPath()
+  const fileExists = existsSync(settingsPath)
+
+  if (!fileExists) {
     return normalizeSettings(null, false)
   }
-})
 
-// Load games database - tries multiple paths for dev and production
-ipcMain.handle('games:getDatabase', async () => {
-  const possiblePaths = [
+  try {
+    const content = await readFile(settingsPath, 'utf-8')
+    const normalized = normalizeSettings(JSON.parse(content), true)
+
+    const secureSecrets = await readSecureYouTubeSecrets()
+
+    const plaintextSecrets: YouTubeSecretSnapshot = {
+      clientSecret: normalized.social.youtube.client_secret.trim(),
+      refreshToken: normalized.social.youtube.refresh_token.trim(),
+      accessToken: normalized.social.youtube.access_token.trim(),
+    }
+
+    const resolvedSecrets: YouTubeSecretSnapshot = {
+      clientSecret:
+        typeof secureSecrets.clientSecret === 'string' ? secureSecrets.clientSecret.trim() : '',
+      refreshToken:
+        typeof secureSecrets.refreshToken === 'string' ? secureSecrets.refreshToken.trim() : '',
+      accessToken: typeof secureSecrets.accessToken === 'string' ? secureSecrets.accessToken.trim() : '',
+    }
+
+    const migrationSecrets: Partial<YouTubeSecretSnapshot> = {}
+
+    if (!resolvedSecrets.clientSecret && plaintextSecrets.clientSecret) {
+      migrationSecrets.clientSecret = plaintextSecrets.clientSecret
+    }
+    if (!resolvedSecrets.refreshToken && plaintextSecrets.refreshToken) {
+      migrationSecrets.refreshToken = plaintextSecrets.refreshToken
+    }
+    if (!resolvedSecrets.accessToken && plaintextSecrets.accessToken) {
+      migrationSecrets.accessToken = plaintextSecrets.accessToken
+    }
+
+    if (
+      migrationSecrets.clientSecret ||
+      migrationSecrets.refreshToken ||
+      migrationSecrets.accessToken
+    ) {
+      try {
+        const nextSecrets: YouTubeSecretSnapshot = {
+          clientSecret: resolvedSecrets.clientSecret || migrationSecrets.clientSecret || '',
+          refreshToken: resolvedSecrets.refreshToken || migrationSecrets.refreshToken || '',
+          accessToken: resolvedSecrets.accessToken || migrationSecrets.accessToken || '',
+        }
+
+        await persistSecureYouTubeSecrets(nextSecrets)
+        resolvedSecrets.clientSecret = nextSecrets.clientSecret
+        resolvedSecrets.refreshToken = nextSecrets.refreshToken
+        resolvedSecrets.accessToken = nextSecrets.accessToken
+
+        const migratedSanitizedSettings = normalizeSettings(normalized, true)
+        migratedSanitizedSettings.social.youtube.client_secret = ''
+        migratedSanitizedSettings.social.youtube.refresh_token = ''
+        migratedSanitizedSettings.social.youtube.access_token = ''
+
+        await writeFile(settingsPath, JSON.stringify(migratedSanitizedSettings, null, 2), 'utf-8')
+      } catch (error) {
+        console.error('[Settings] Failed to migrate legacy plaintext YouTube secrets:', error)
+      }
+    }
+
+    normalized.social.youtube.client_secret = ''
+    normalized.social.youtube.refresh_token = ''
+    normalized.social.youtube.access_token = ''
+
+    if (resolvedSecrets.clientSecret) {
+      normalized.social.youtube.client_secret = resolvedSecrets.clientSecret
+    }
+    if (resolvedSecrets.refreshToken) {
+      normalized.social.youtube.refresh_token = resolvedSecrets.refreshToken
+    }
+    if (resolvedSecrets.accessToken) {
+      normalized.social.youtube.access_token = resolvedSecrets.accessToken
+    }
+
+    return normalized
+  } catch (error) {
+    console.error('Failed to parse settings, using defaults:', error)
+    return normalizeSettings(null, false)
+  }
+}
+
+const sanitizeSettingsForRenderer = (settings: NormalizedSettings): NormalizedSettings => {
+  const safe = normalizeSettings(settings, true)
+  safe.social.youtube.access_token = ''
+  safe.social.youtube.refresh_token = ''
+  safe.social.youtube.client_secret = ''
+  return safe
+}
+
+interface GamesDatabaseEntry {
+  name: string
+  processNames?: string[]
+  twitchId?: string
+}
+
+interface GamesDatabaseFile {
+  version?: string
+  description?: string
+  games: GamesDatabaseEntry[]
+}
+
+type GamesDatabaseResult = {
+  success: boolean
+  data?: GamesDatabaseFile | null
+  sourcePath?: string
+  sourceMtimeMs?: number
+  error?: string
+}
+
+const GAME_TAG_SMALL_WORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'as',
+  'at',
+  'by',
+  'for',
+  'from',
+  'in',
+  'of',
+  'on',
+  'or',
+  'the',
+  'to',
+])
+
+let cachedGameAliasMap: Map<string, string> | null = null
+let cachedGameAliasMapSourcePath: string | null = null
+let cachedGameAliasMapSourceMtimeMs = 0
+
+const getGamesDatabasePaths = (): string[] => {
+  return [
     // Development paths
     join(process.cwd(), 'config', 'games_database.json'),
     join(app.getAppPath(), '..', '..', 'config', 'games_database.json'),
@@ -880,15 +1306,115 @@ ipcMain.handle('games:getDatabase', async () => {
     // Fallback to app directory
     join(app.getAppPath(), 'config', 'games_database.json'),
   ]
+}
+
+const normalizeGameLookupKey = (value: string): string => {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\.[a-z0-9]{1,4}$/i, '')
+    .replace(/[\s_.-]+/g, '')
+}
+
+const looksLikeProcessName = (value: string): boolean => {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return false
+  }
+
+  if (/\.[a-z0-9]{1,4}$/i.test(trimmed)) {
+    return true
+  }
+
+  return /(?:win64|win32|shipping|launcher|client)/i.test(trimmed)
+}
+
+const toDisplayGameName = (value: string): string => {
+  const cleaned = value
+    .replace(/\.[a-z0-9]{1,4}$/i, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_.-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!cleaned) {
+    return value.trim()
+  }
+
+  const words = cleaned.split(' ')
+  return words
+    .map((word, index) => {
+      const lower = word.toLowerCase()
+      const isMiddleWord = index > 0 && index < words.length - 1
+
+      if (/^[A-Z0-9]{2,5}$/.test(word)) {
+        return word
+      }
+
+      if (isMiddleWord && GAME_TAG_SMALL_WORDS.has(lower)) {
+        return lower
+      }
+
+      return lower.charAt(0).toUpperCase() + lower.slice(1)
+    })
+    .join(' ')
+}
+
+const buildGameAliasMap = (games: GamesDatabaseEntry[]): Map<string, string> => {
+  const aliases = new Map<string, string>()
+
+  const addAlias = (alias: string, gameName: string) => {
+    const key = normalizeGameLookupKey(alias)
+    if (!key || aliases.has(key)) {
+      return
+    }
+    aliases.set(key, gameName)
+  }
+
+  for (const game of games) {
+    const canonicalName = typeof game.name === 'string' ? game.name.trim() : ''
+    if (!canonicalName) {
+      continue
+    }
+
+    addAlias(canonicalName, canonicalName)
+
+    if (Array.isArray(game.processNames)) {
+      for (const processName of game.processNames) {
+        if (typeof processName === 'string' && processName.trim()) {
+          addAlias(processName, canonicalName)
+        }
+      }
+    }
+  }
+
+  return aliases
+}
+
+const loadGamesDatabaseFromDisk = async (): Promise<GamesDatabaseResult> => {
+  const possiblePaths = getGamesDatabasePaths()
 
   for (const dbPath of possiblePaths) {
     try {
-      if (existsSync(dbPath)) {
-        console.log('[GamesDB] Loading from:', dbPath)
-        const content = await readFile(dbPath, 'utf-8')
-        const data = JSON.parse(content)
-        console.log('[GamesDB] Successfully loaded', data.games?.length || 0, 'games')
-        return { success: true, data }
+      if (!existsSync(dbPath)) {
+        continue
+      }
+
+      const fileStats = await stat(dbPath)
+      console.log('[GamesDB] Loading from:', dbPath)
+      const content = await readFile(dbPath, 'utf-8')
+      const parsed = JSON.parse(content) as GamesDatabaseFile
+
+      if (!parsed || !Array.isArray(parsed.games)) {
+        throw new Error('Invalid games database format')
+      }
+
+      console.log('[GamesDB] Successfully loaded', parsed.games.length, 'games')
+      return {
+        success: true,
+        data: parsed,
+        sourcePath: dbPath,
+        sourceMtimeMs: fileStats.mtimeMs,
       }
     } catch (error) {
       console.log('[GamesDB] Failed to load from:', dbPath, '-', error)
@@ -897,14 +1423,144 @@ ipcMain.handle('games:getDatabase', async () => {
 
   console.error('[GamesDB] Could not find games_database.json in any location')
   return { success: false, error: 'Games database not found', data: null }
+}
+
+const ensureGameAliasMapLoaded = async (): Promise<Map<string, string>> => {
+  const result = await loadGamesDatabaseFromDisk()
+  const sourcePath = result.sourcePath ?? null
+  const sourceMtimeMs = result.sourceMtimeMs ?? 0
+
+  if (
+    cachedGameAliasMap &&
+    cachedGameAliasMapSourcePath === sourcePath &&
+    cachedGameAliasMapSourceMtimeMs === sourceMtimeMs
+  ) {
+    return cachedGameAliasMap
+  }
+
+  const games = result.success && result.data?.games ? result.data.games : []
+
+  cachedGameAliasMap = buildGameAliasMap(games)
+  cachedGameAliasMapSourcePath = sourcePath
+  cachedGameAliasMapSourceMtimeMs = sourceMtimeMs
+
+  return cachedGameAliasMap
+}
+
+const canonicalizeGameTag = (rawGameTag: string, aliasMap: Map<string, string>): string => {
+  const trimmed = rawGameTag.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  const aliasMatch = aliasMap.get(normalizeGameLookupKey(trimmed))
+  if (aliasMatch) {
+    return aliasMatch
+  }
+
+  if (!looksLikeProcessName(trimmed)) {
+    return trimmed
+  }
+
+  return toDisplayGameName(trimmed)
+}
+
+const normalizeGameTagInMetadata = (
+  metadata: Record<string, unknown> | null,
+  aliasMap: Map<string, string>
+): { metadata: Record<string, unknown> | null; changed: boolean } => {
+  if (!metadata) {
+    return { metadata, changed: false }
+  }
+
+  const existingGame = metadata.game
+  if (typeof existingGame !== 'string') {
+    return { metadata, changed: false }
+  }
+
+  const canonicalGame = canonicalizeGameTag(existingGame, aliasMap)
+  if (!canonicalGame || canonicalGame === existingGame) {
+    return { metadata, changed: false }
+  }
+
+  return {
+    metadata: {
+      ...metadata,
+      game: canonicalGame,
+      lastModified: new Date().toISOString(),
+    },
+    changed: true,
+  }
+}
+
+// Get settings
+ipcMain.handle('settings:get', async () => {
+  try {
+    const settingsPath = getSettingsPath()
+    console.log('Settings path:', settingsPath)
+    const normalized = await readNormalizedSettings()
+    return sanitizeSettingsForRenderer(normalized)
+  } catch (error) {
+    console.error('Failed to read settings:', error)
+    return normalizeSettings(null, false)
+  }
+})
+
+// Load games database - tries multiple paths for dev and production
+ipcMain.handle('games:getDatabase', async () => {
+  return await loadGamesDatabaseFromDisk()
 })
 
 // Save settings and restart backend
 ipcMain.handle('settings:save', async (_, settings: unknown) => {
   try {
     const settingsPath = getSettingsPath()
-    const configDir = join(app.getPath('appData'), 'ClipVault')
+    const configDir = getConfigDir()
     const normalized = normalizeSettings(settings, true)
+    const existingSettings = await readNormalizedSettings()
+
+    const incomingClientId = normalized.social.youtube.client_id.trim()
+    const incomingClientSecret = normalized.social.youtube.client_secret.trim()
+    const authModeChanged =
+      normalized.social.youtube.auth_mode !== existingSettings.social.youtube.auth_mode
+    const clientIdChanged =
+      incomingClientId.length > 0 && incomingClientId !== existingSettings.social.youtube.client_id.trim()
+    const clientSecretChanged =
+      incomingClientSecret.length > 0 &&
+      incomingClientSecret !== existingSettings.social.youtube.client_secret.trim()
+
+    // Preserve sensitive YouTube credentials/tokens unless explicitly provided.
+    if (!normalized.social.youtube.client_id && existingSettings.social.youtube.client_id) {
+      normalized.social.youtube.client_id = existingSettings.social.youtube.client_id
+    }
+    if (!normalized.social.youtube.client_secret && existingSettings.social.youtube.client_secret) {
+      normalized.social.youtube.client_secret = existingSettings.social.youtube.client_secret
+    }
+
+    if (authModeChanged || clientIdChanged || clientSecretChanged) {
+      // OAuth client/mode changed; clear connection state and require reconnect.
+      normalized.social.youtube.refresh_token = ''
+      normalized.social.youtube.access_token = ''
+      normalized.social.youtube.token_expiry = 0
+      normalized.social.youtube.channel_id = ''
+      normalized.social.youtube.channel_title = ''
+    } else {
+      if (!normalized.social.youtube.refresh_token && existingSettings.social.youtube.refresh_token) {
+        normalized.social.youtube.refresh_token = existingSettings.social.youtube.refresh_token
+      }
+      if (!normalized.social.youtube.access_token && existingSettings.social.youtube.access_token) {
+        normalized.social.youtube.access_token = existingSettings.social.youtube.access_token
+      }
+      if (!normalized.social.youtube.token_expiry && existingSettings.social.youtube.token_expiry) {
+        normalized.social.youtube.token_expiry = existingSettings.social.youtube.token_expiry
+      }
+      if (!normalized.social.youtube.channel_id && existingSettings.social.youtube.channel_id) {
+        normalized.social.youtube.channel_id = existingSettings.social.youtube.channel_id
+      }
+      if (!normalized.social.youtube.channel_title && existingSettings.social.youtube.channel_title) {
+        normalized.social.youtube.channel_title = existingSettings.social.youtube.channel_title
+      }
+    }
 
     if (normalized.ui.first_run_completed == null) {
       normalized.ui.first_run_completed = true
@@ -923,7 +1579,7 @@ ipcMain.handle('settings:save', async (_, settings: unknown) => {
       }
     }
 
-    await writeFile(settingsPath, JSON.stringify(normalized, null, 2), 'utf-8')
+    await persistNormalizedSettings(normalized)
     console.log('Settings saved to:', settingsPath)
 
     // Restart backend to apply new settings
@@ -933,7 +1589,7 @@ ipcMain.handle('settings:save', async (_, settings: unknown) => {
     return { success: true, restarted }
   } catch (error) {
     console.error('Failed to save settings:', error)
-    throw error
+    return { success: false, error: String(error) }
   }
 })
 
@@ -1055,6 +1711,10 @@ ipcMain.handle('clips:getList', async () => {
       await mkdir(metadataDir, { recursive: true })
     }
 
+    const gameAliasMap = await ensureGameAliasMapLoaded()
+    const pendingMetadataUpdates: Array<{ metadataPath: string; metadata: Record<string, unknown> }> = []
+    let migratedGameTags = 0
+
     const files = await readdir(getClipsPath())
     const clips = await Promise.all(
       files
@@ -1069,7 +1729,18 @@ ipcMain.handle('clips:getList', async () => {
           try {
             if (existsSync(metadataPath)) {
               const content = await readFile(metadataPath, 'utf-8')
-              metadata = JSON.parse(content)
+              const parsed = JSON.parse(content)
+              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                const normalized = normalizeGameTagInMetadata(
+                  parsed as Record<string, unknown>,
+                  gameAliasMap
+                )
+                metadata = normalized.metadata
+
+                if (normalized.changed && metadata) {
+                  pendingMetadataUpdates.push({ metadataPath, metadata })
+                }
+              }
             }
           } catch (e) {
             console.error('Failed to read metadata:', e)
@@ -1087,6 +1758,19 @@ ipcMain.handle('clips:getList', async () => {
         })
     )
 
+    for (const update of pendingMetadataUpdates) {
+      try {
+        await writeFile(update.metadataPath, JSON.stringify(update.metadata, null, 2), 'utf-8')
+        migratedGameTags += 1
+      } catch (error) {
+        console.error('Failed to write migrated metadata:', error)
+      }
+    }
+
+    if (migratedGameTags > 0) {
+      console.log(`[METADATA] Migrated ${migratedGameTags} game tags to canonical names`)
+    }
+
     return clips.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   } catch (error) {
     console.error('Failed to get clips list:', error)
@@ -1103,7 +1787,18 @@ ipcMain.handle('clips:saveMetadata', async (_, clipId: string, metadata: unknown
       await mkdir(metadataDir, { recursive: true })
     }
     const metadataPath = join(metadataDir, `${clipId}.json`)
-    await writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8')
+    const gameAliasMap = await ensureGameAliasMapLoaded()
+
+    let metadataToSave: unknown = metadata
+    if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+      const normalized = normalizeGameTagInMetadata(
+        { ...(metadata as Record<string, unknown>) },
+        gameAliasMap
+      )
+      metadataToSave = normalized.metadata
+    }
+
+    await writeFile(metadataPath, JSON.stringify(metadataToSave, null, 2), 'utf-8')
     console.log('[METADATA] Saved to:', metadataPath)
     return true
   } catch (error) {
@@ -1121,7 +1816,19 @@ ipcMain.handle('clips:getMetadata', async (_, clipId: string) => {
       return null
     }
     const content = await readFile(metadataPath, 'utf-8')
-    return JSON.parse(content)
+    const parsed = JSON.parse(content)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return parsed
+    }
+
+    const gameAliasMap = await ensureGameAliasMapLoaded()
+    const normalized = normalizeGameTagInMetadata(parsed as Record<string, unknown>, gameAliasMap)
+
+    if (normalized.changed && normalized.metadata) {
+      await writeFile(metadataPath, JSON.stringify(normalized.metadata, null, 2), 'utf-8')
+    }
+
+    return normalized.metadata
   } catch (error) {
     console.error('Failed to get metadata:', error)
     return null
@@ -1190,7 +1897,11 @@ ipcMain.handle('editor:saveState', async (_, clipId: string, state: unknown) => 
       typeof existingContent === 'object' && existingContent !== null ? existingContent : {}
     const stateObj = typeof state === 'object' && state !== null ? state : {}
     const mergedState = { ...existingObj, ...stateObj } as Record<string, unknown>
-    await writeFile(statePath, JSON.stringify(mergedState, null, 2), 'utf-8')
+
+    const gameAliasMap = await ensureGameAliasMapLoaded()
+    const normalized = normalizeGameTagInMetadata(mergedState, gameAliasMap)
+
+    await writeFile(statePath, JSON.stringify(normalized.metadata, null, 2), 'utf-8')
     console.log(`[Editor] Saved state for clip ${clipId}`)
     return true
   } catch (error) {
@@ -1211,7 +1922,19 @@ ipcMain.handle('editor:loadState', async (_, clipId: string) => {
 
     const content = await readFile(statePath, 'utf-8')
     console.log(`[Editor] Loaded state for clip ${clipId}`)
-    return JSON.parse(content)
+    const parsed = JSON.parse(content)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return parsed
+    }
+
+    const gameAliasMap = await ensureGameAliasMapLoaded()
+    const normalized = normalizeGameTagInMetadata(parsed as Record<string, unknown>, gameAliasMap)
+
+    if (normalized.changed && normalized.metadata) {
+      await writeFile(statePath, JSON.stringify(normalized.metadata, null, 2), 'utf-8')
+    }
+
+    return normalized.metadata
   } catch (error) {
     console.error('Failed to load editor state:', error)
     return null
@@ -1381,7 +2104,9 @@ ipcMain.handle('clips:getVideoMetadata', async (_, videoPath: string) => {
           duration: metadata.format.duration || 0,
           width: videoStream?.width || 0,
           height: videoStream?.height || 0,
-          fps: videoStream ? eval(videoStream.r_frame_rate || '0') : 0,
+          fps: parseFps(
+            typeof videoStream?.r_frame_rate === 'string' ? videoStream.r_frame_rate : undefined
+          ),
           bitrate: metadata.format.bit_rate || 0,
           size: metadata.format.size || 0,
           format: metadata.format.format_name || '',
@@ -1599,28 +2324,816 @@ function stopClipsWatcher() {
   }
 }
 
+type HttpTextResponse = {
+  statusCode: number
+  headers: Record<string, string | string[] | undefined>
+  body: string
+}
+
+type YouTubePrivacy = 'private' | 'unlisted' | 'public'
+
+const encodeFormBody = (params: Record<string, string>): string => {
+  return Object.entries(params)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&')
+}
+
+const parseJsonSafe = <T>(raw: string): T | null => {
+  if (!raw.trim()) {
+    return null
+  }
+
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return null
+  }
+}
+
+const parseFps = (rateString: string | undefined): number => {
+  if (!rateString) {
+    return 0
+  }
+
+  const value = rateString.trim()
+  if (!value) {
+    return 0
+  }
+
+  if (value.includes('/')) {
+    const [numeratorRaw, denominatorRaw] = value.split('/', 2)
+    const numerator = Number(numeratorRaw)
+    const denominator = Number(denominatorRaw)
+
+    if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) {
+      return 0
+    }
+
+    return numerator / denominator
+  }
+
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const performHttpRequest = async (
+  method: 'GET' | 'POST' | 'PUT',
+  urlString: string,
+  headers: Record<string, string | number> = {},
+  body?: string | Buffer,
+  timeoutMs = 60_000
+): Promise<HttpTextResponse> => {
+  const url = new URL(urlString)
+
+  return await new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      {
+        method,
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port ? Number(url.port) : undefined,
+        path: `${url.pathname}${url.search}`,
+        headers,
+      },
+      res => {
+        const chunks: Buffer[] = []
+        res.on('data', chunk => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        res.on('end', () => {
+          resolve({
+            statusCode: res.statusCode || 0,
+            headers: res.headers,
+            body: Buffer.concat(chunks).toString('utf-8'),
+          })
+        })
+      }
+    )
+
+    req.on('error', reject)
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`Request timed out after ${timeoutMs}ms`))
+    })
+
+    if (body) {
+      req.write(body)
+    }
+
+    req.end()
+  })
+}
+
+const uploadFileToUrl = async (
+  uploadUrl: string,
+  filePath: string,
+  headers: Record<string, string | number>,
+  timeoutMs = 10 * 60_000,
+  startByte = 0
+): Promise<HttpTextResponse> => {
+  const stats = await stat(filePath)
+  if (stats.size <= 0) {
+    throw new Error('Cannot upload empty file to YouTube.')
+  }
+
+  if (startByte < 0 || startByte >= stats.size) {
+    throw new Error(`Invalid upload offset (${startByte}) for file size ${stats.size}.`)
+  }
+
+  const safeStartByte = startByte
+  const remainingBytes = stats.size - safeStartByte
+  const url = new URL(uploadUrl)
+
+  return await new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      {
+        method: 'PUT',
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port ? Number(url.port) : undefined,
+        path: `${url.pathname}${url.search}`,
+        headers: {
+          ...headers,
+          'Content-Length': remainingBytes,
+          'Content-Range': `bytes ${safeStartByte}-${stats.size - 1}/${stats.size}`,
+        },
+      },
+      res => {
+        const chunks: Buffer[] = []
+        res.on('data', chunk => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        res.on('end', () => {
+          resolve({
+            statusCode: res.statusCode || 0,
+            headers: res.headers,
+            body: Buffer.concat(chunks).toString('utf-8'),
+          })
+        })
+      }
+    )
+
+    req.on('error', reject)
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`Upload timed out after ${timeoutMs}ms`))
+    })
+
+    const stream = createReadStream(filePath, { start: safeStartByte })
+    stream.on('error', error => {
+      req.destroy(error)
+      reject(error)
+    })
+    stream.pipe(req)
+  })
+}
+
+type ShareTemplateContext = {
+  clip_name: string
+  filename: string
+  date: string
+  time: string
+}
+
+const getShareTemplateContext = (filePath: string): ShareTemplateContext => {
+  const filename = basename(filePath)
+  const clipName = filename.replace(/\.[^.]+$/, '')
+  const now = new Date()
+
+  return {
+    clip_name: clipName,
+    filename,
+    date: now.toISOString().slice(0, 10),
+    time: now.toTimeString().slice(0, 8),
+  }
+}
+
+const renderShareTemplate = (template: string, context: ShareTemplateContext): string => {
+  if (!template.trim()) {
+    return ''
+  }
+
+  return template.replace(/\{(clip_name|filename|date|time)\}/g, (_, key: keyof ShareTemplateContext) => {
+    return context[key] || ''
+  })
+}
+
+const renderHtmlTemplate = (template: string, replacements: Record<string, string>): string => {
+  let rendered = template
+
+  for (const [placeholder, value] of Object.entries(replacements)) {
+    rendered = rendered.split(`{{${placeholder}}}`).join(value)
+  }
+
+  return rendered
+}
+
+const isPathWithinRoot = (rootPath: string, candidatePath: string): boolean => {
+  const relativePath = relative(resolve(rootPath), resolve(candidatePath))
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
+}
+
+const validateExportSharePath = async (
+  candidatePath: string
+): Promise<{ valid: true; filePath: string } | { valid: false; error: string }> => {
+  if (!candidatePath || typeof candidatePath !== 'string') {
+    return { valid: false, error: 'Missing share file path.' }
+  }
+
+  const resolvedPath = resolve(candidatePath)
+  const exportedClipsRoot = resolve(join(getClipsPath(), 'exported-clips'))
+
+  let canonicalExportedClipsRoot: string
+  try {
+    canonicalExportedClipsRoot = await fsRealpath(exportedClipsRoot)
+  } catch {
+    return {
+      valid: false,
+      error: 'Exported clips directory is unavailable.',
+    }
+  }
+
+  let canonicalCandidatePath: string
+  try {
+    canonicalCandidatePath = await fsRealpath(resolvedPath)
+  } catch {
+    return {
+      valid: false,
+      error: 'Export file path could not be resolved.',
+    }
+  }
+
+  if (!isPathWithinRoot(canonicalExportedClipsRoot, canonicalCandidatePath)) {
+    return {
+      valid: false,
+      error: 'Invalid share path. Only files in exported-clips can be shared.',
+    }
+  }
+
+  if (!canonicalCandidatePath.toLowerCase().endsWith('.mp4')) {
+    return {
+      valid: false,
+      error: 'Only MP4 exports can be shared.',
+    }
+  }
+
+  return {
+    valid: true,
+    filePath: canonicalCandidatePath,
+  }
+}
+
+const isValidDiscordWebhookUrl = (candidate: string): boolean => {
+  try {
+    const parsed = new URL(candidate)
+    const hostname = parsed.hostname.toLowerCase()
+    const isDiscordHost =
+      hostname === 'discord.com' || hostname === 'discordapp.com' || hostname.endsWith('.discord.com')
+
+    return parsed.protocol === 'https:' && isDiscordHost && parsed.pathname.startsWith('/api/webhooks/')
+  } catch {
+    return false
+  }
+}
+
+const sanitizeMultipartFilename = (fileName: string): string => {
+  const sanitized = fileName
+    .replace(/[\r\n\0]/g, '')
+    .replace(/[^A-Za-z0-9._-]/g, '_')
+    .replace(/^[_\-.]+/, '')
+    .replace(/[_\-.]+$/, '')
+
+  return sanitized || 'clip.mp4'
+}
+
+const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
+
+const validateExternalUrl = (
+  candidateUrl: string
+): { valid: true; url: string } | { valid: false; error: string } => {
+  if (typeof candidateUrl !== 'string' || !candidateUrl.trim()) {
+    return {
+      valid: false,
+      error: 'invalid URL',
+    }
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(candidateUrl.trim())
+  } catch {
+    return {
+      valid: false,
+      error: 'invalid URL',
+    }
+  }
+
+  if (!ALLOWED_EXTERNAL_PROTOCOLS.has(parsed.protocol)) {
+    return {
+      valid: false,
+      error: 'unsupported URL protocol',
+    }
+  }
+
+  if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.hostname) {
+    return {
+      valid: false,
+      error: 'invalid URL',
+    }
+  }
+
+  return {
+    valid: true,
+    url: parsed.toString(),
+  }
+}
+
+const getSocialShareConfig = (settings: NormalizedSettings, filePath: string) => {
+  const context = getShareTemplateContext(filePath)
+  const discordTemplate = settings.social.discord.default_message_template
+  const youtubeTemplate = settings.social.youtube.default_title_template
+
+  return {
+    context,
+    discordConfigured: Boolean(settings.social.discord.webhook_url),
+    youtubeConnected: Boolean(settings.social.youtube.refresh_token),
+    youtubeChannelTitle: settings.social.youtube.channel_title,
+    defaultDiscordMessage: renderShareTemplate(discordTemplate, context),
+    defaultYouTubeTitle: renderShareTemplate(youtubeTemplate, context),
+    defaultYouTubeDescription: settings.social.youtube.default_description,
+    defaultYouTubePrivacy: settings.social.youtube.default_privacy,
+    defaultYouTubeTags: settings.social.youtube.default_tags,
+  }
+}
+
+type DiscordWebhookMessage = {
+  id?: string
+  channel_id?: string
+  attachments?: Array<{ url?: string }>
+}
+
+const uploadToDiscord = async (
+  webhookUrl: string,
+  filePath: string,
+  message: string
+): Promise<{ messageId?: string; messageUrl?: string; attachmentUrl?: string }> => {
+  const url = new URL(webhookUrl)
+  url.searchParams.set('wait', 'true')
+
+  const fileName = sanitizeMultipartFilename(basename(filePath))
+  const fileStats = await stat(filePath)
+  const boundary = `----ClipVaultBoundary${Date.now()}`
+
+  const payload = {
+    content: message.slice(0, 2000),
+  }
+
+  const preamble = Buffer.from(
+    `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="payload_json"\r\n\r\n` +
+      `${JSON.stringify(payload)}\r\n` +
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="files[0]"; filename="${fileName}"\r\n` +
+      `Content-Type: video/mp4\r\n\r\n`,
+    'utf-8'
+  )
+  const ending = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf-8')
+  const contentLength = preamble.byteLength + fileStats.size + ending.byteLength
+
+  const response = await new Promise<HttpTextResponse>((resolve, reject) => {
+    const req = httpsRequest(
+      {
+        method: 'POST',
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port ? Number(url.port) : undefined,
+        path: `${url.pathname}${url.search}`,
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': contentLength,
+        },
+      },
+      res => {
+        const chunks: Buffer[] = []
+        res.on('data', chunk => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        res.on('end', () => {
+          resolve({
+            statusCode: res.statusCode || 0,
+            headers: res.headers,
+            body: Buffer.concat(chunks).toString('utf-8'),
+          })
+        })
+      }
+    )
+
+    req.on('error', reject)
+    req.setTimeout(60_000, () => {
+      req.destroy(new Error('Discord upload request timed out after 60000ms'))
+    })
+
+    req.write(preamble)
+    const fileStream = createReadStream(filePath)
+    fileStream.on('error', error => {
+      req.destroy(error)
+    })
+    fileStream.on('end', () => {
+      req.end(ending)
+    })
+    fileStream.pipe(req, { end: false })
+  })
+
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new Error(`Discord upload failed (${response.statusCode}): ${response.body}`)
+  }
+
+  const payloadResult = parseJsonSafe<DiscordWebhookMessage>(response.body)
+  const attachmentUrl = payloadResult?.attachments?.[0]?.url
+  const messageId = payloadResult?.id
+  const channelId = payloadResult?.channel_id
+  const messageUrl =
+    messageId && channelId ? `https://discord.com/channels/@me/${channelId}/${messageId}` : undefined
+
+  return {
+    messageId,
+    messageUrl,
+    attachmentUrl,
+  }
+}
+
+type YouTubeChannelResponse = {
+  items?: Array<{
+    id?: string
+    snippet?: {
+      title?: string
+    }
+  }>
+}
+
+type YouTubeTokenResponse = {
+  access_token?: string
+  expires_in?: number
+  refresh_token?: string
+  error?: string
+  error_description?: string
+}
+
+type YouTubeDeviceAuthSession = {
+  mode: YouTubeAuthMode
+  clientId: string
+  clientSecret: string
+  expiresAt: number
+}
+
+const youtubeDeviceAuthSessions = new Map<string, YouTubeDeviceAuthSession>()
+const youtubeDeviceAuthSessionCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+const clearYouTubeDeviceAuthCleanupTimer = (deviceCode: string): void => {
+  const existingTimer = youtubeDeviceAuthSessionCleanupTimers.get(deviceCode)
+  if (existingTimer) {
+    clearTimeout(existingTimer)
+    youtubeDeviceAuthSessionCleanupTimers.delete(deviceCode)
+  }
+}
+
+const removeYouTubeDeviceAuthSession = (deviceCode: string): void => {
+  youtubeDeviceAuthSessions.delete(deviceCode)
+  clearYouTubeDeviceAuthCleanupTimer(deviceCode)
+}
+
+const scheduleYouTubeDeviceAuthSessionCleanup = (deviceCode: string, expiresAt: number): void => {
+  clearYouTubeDeviceAuthCleanupTimer(deviceCode)
+
+  const delayMs = Math.max(0, expiresAt - Date.now())
+  const cleanupTimer = setTimeout(() => {
+    youtubeDeviceAuthSessions.delete(deviceCode)
+    youtubeDeviceAuthSessionCleanupTimers.delete(deviceCode)
+  }, delayMs)
+
+  cleanupTimer.unref?.()
+  youtubeDeviceAuthSessionCleanupTimers.set(deviceCode, cleanupTimer)
+}
+
+const fetchYouTubeChannel = async (accessToken: string) => {
+  const response = await performHttpRequest(
+    'GET',
+    'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true',
+    {
+      Authorization: `Bearer ${accessToken}`,
+    }
+  )
+
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw new Error(`Failed to fetch YouTube channel (${response.statusCode})`)
+  }
+
+  const payload = parseJsonSafe<YouTubeChannelResponse>(response.body)
+  const firstChannel = payload?.items?.[0]
+
+  return {
+    channelId: firstChannel?.id || '',
+    channelTitle: firstChannel?.snippet?.title || 'Connected account',
+  }
+}
+
+const refreshYouTubeAccessToken = async (
+  settings: NormalizedSettings
+): Promise<{ accessToken: string; updatedSettings: NormalizedSettings }> => {
+  const credentials = resolveYouTubeCredentials(settings)
+  const refreshToken = settings.social.youtube.refresh_token.trim()
+
+  if (!refreshToken) {
+    throw new Error('YouTube is not configured. Connect your account in Settings first.')
+  }
+
+  const body = encodeFormBody({
+    client_id: credentials.clientId,
+    client_secret: credentials.clientSecret,
+    refresh_token: refreshToken,
+    grant_type: 'refresh_token',
+  })
+
+  const tokenResponse = await performHttpRequest(
+    'POST',
+    'https://oauth2.googleapis.com/token',
+    {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Length': Buffer.byteLength(body),
+    },
+    body
+  )
+
+  const tokenPayload = parseJsonSafe<YouTubeTokenResponse>(tokenResponse.body)
+
+  if (tokenResponse.statusCode < 200 || tokenResponse.statusCode >= 300 || !tokenPayload?.access_token) {
+    const reason = tokenPayload?.error_description || tokenPayload?.error || tokenResponse.body
+    throw new Error(`Failed to refresh YouTube token: ${reason}`)
+  }
+
+  const nextSettings = normalizeSettings(settings, true)
+  nextSettings.social.youtube.access_token = tokenPayload.access_token
+  nextSettings.social.youtube.token_expiry = Date.now() + (tokenPayload.expires_in || 3600) * 1000
+  await persistNormalizedSettings(nextSettings)
+
+  return {
+    accessToken: tokenPayload.access_token,
+    updatedSettings: nextSettings,
+  }
+}
+
+const ensureYouTubeAccessToken = async (): Promise<{
+  accessToken: string
+  settings: NormalizedSettings
+}> => {
+  const settings = await readNormalizedSettings()
+  const currentToken = settings.social.youtube.access_token
+  const tokenExpiry = settings.social.youtube.token_expiry
+
+  if (currentToken && tokenExpiry > Date.now() + 60_000) {
+    return {
+      accessToken: currentToken,
+      settings,
+    }
+  }
+
+  const refreshed = await refreshYouTubeAccessToken(settings)
+  return {
+    accessToken: refreshed.accessToken,
+    settings: refreshed.updatedSettings,
+  }
+}
+
+const isRetryableYouTubeUploadStatus = (statusCode: number): boolean => {
+  return statusCode === 308 || statusCode === 429 || statusCode >= 500
+}
+
+const getYouTubeUploadRetryDelayMs = (attempt: number): number => {
+  const baseDelayMs = Math.min(1000 * 2 ** Math.max(0, attempt - 1), 10_000)
+  const jitterMs = Math.floor(Math.random() * 250)
+  return baseDelayMs + jitterMs
+}
+
+type YouTubeUploadResumeState = {
+  nextByte: number
+  completedResponse?: HttpTextResponse
+}
+
+const queryYouTubeUploadResumeState = async (
+  uploadUrl: string,
+  accessToken: string,
+  totalSize: number
+): Promise<YouTubeUploadResumeState> => {
+  try {
+    const response = await performHttpRequest(
+      'PUT',
+      uploadUrl,
+      {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Length': 0,
+        'Content-Range': `bytes */${totalSize}`,
+      },
+      undefined,
+      30_000
+    )
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return {
+        nextByte: totalSize,
+        completedResponse: response,
+      }
+    }
+
+    if (response.statusCode !== 308) {
+      return { nextByte: 0 }
+    }
+
+    const rangeHeader = response.headers.range
+    const rangeValue = Array.isArray(rangeHeader) ? rangeHeader[0] : rangeHeader
+    const rangeMatch = typeof rangeValue === 'string' ? /bytes=0-(\d+)/i.exec(rangeValue) : null
+
+    if (!rangeMatch) {
+      return { nextByte: 0 }
+    }
+
+    const uploadedLastByte = Number.parseInt(rangeMatch[1], 10)
+    if (!Number.isFinite(uploadedLastByte)) {
+      return { nextByte: 0 }
+    }
+
+    return {
+      nextByte: Math.max(0, Math.min(uploadedLastByte + 1, totalSize)),
+    }
+  } catch {
+    return { nextByte: 0 }
+  }
+}
+
+const uploadToYouTube = async (
+  accessToken: string,
+  filePath: string,
+  details: {
+    title: string
+    description: string
+    privacy: YouTubePrivacy
+    tags: string[]
+  }
+): Promise<{ videoId: string; videoUrl: string }> => {
+  const fileStats = await stat(filePath)
+  const metadataBody = JSON.stringify({
+    snippet: {
+      title: details.title.slice(0, 100),
+      description: details.description.slice(0, 5000),
+      tags: details.tags,
+      categoryId: '20',
+    },
+    status: {
+      privacyStatus: details.privacy,
+    },
+  })
+
+  const initResponse = await performHttpRequest(
+    'POST',
+    'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+    {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=UTF-8',
+      'Content-Length': Buffer.byteLength(metadataBody),
+      'X-Upload-Content-Type': 'video/mp4',
+      'X-Upload-Content-Length': fileStats.size,
+    },
+    metadataBody
+  )
+
+  const locationHeader = initResponse.headers.location
+  const uploadUrl = Array.isArray(locationHeader) ? locationHeader[0] : locationHeader
+
+  if (initResponse.statusCode < 200 || initResponse.statusCode >= 300 || !uploadUrl) {
+    throw new Error(`Failed to initialize YouTube upload (${initResponse.statusCode}): ${initResponse.body}`)
+  }
+
+  let uploadResponse: HttpTextResponse | null = null
+  let resumeStartByte = 0
+  const maxUploadAttempts = 4
+
+  for (let attempt = 1; attempt <= maxUploadAttempts; attempt += 1) {
+    try {
+      uploadResponse = await uploadFileToUrl(
+        uploadUrl,
+        filePath,
+        {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'video/mp4',
+        },
+        10 * 60_000,
+        resumeStartByte
+      )
+    } catch (error) {
+      if (attempt >= maxUploadAttempts) {
+        throw error
+      }
+
+      const resumeState = await queryYouTubeUploadResumeState(uploadUrl, accessToken, fileStats.size)
+      if (resumeState.completedResponse) {
+        uploadResponse = resumeState.completedResponse
+        break
+      }
+
+      if (resumeState.nextByte >= fileStats.size) {
+        throw new Error(
+          'YouTube upload session reports completion without returning a final response. Please retry the upload.'
+        )
+      }
+
+      if (resumeState.nextByte > 0) {
+        resumeStartByte = resumeState.nextByte
+      }
+
+      const retryDelayMs = getYouTubeUploadRetryDelayMs(attempt)
+      await new Promise(resolve => setTimeout(resolve, retryDelayMs))
+      continue
+    }
+
+    if (uploadResponse.statusCode >= 200 && uploadResponse.statusCode < 300) {
+      break
+    }
+
+    if (!isRetryableYouTubeUploadStatus(uploadResponse.statusCode) || attempt >= maxUploadAttempts) {
+      throw new Error(`Failed to upload to YouTube (${uploadResponse.statusCode}): ${uploadResponse.body}`)
+    }
+
+    const resumeState = await queryYouTubeUploadResumeState(uploadUrl, accessToken, fileStats.size)
+    if (resumeState.completedResponse) {
+      uploadResponse = resumeState.completedResponse
+      break
+    }
+
+    if (resumeState.nextByte >= fileStats.size) {
+      throw new Error(
+        'YouTube upload session reports completion without returning a final response. Please retry the upload.'
+      )
+    }
+
+    if (resumeState.nextByte > 0) {
+      resumeStartByte = resumeState.nextByte
+    }
+
+    const retryDelayMs = getYouTubeUploadRetryDelayMs(attempt)
+    await new Promise(resolve => setTimeout(resolve, retryDelayMs))
+  }
+
+  if (!uploadResponse) {
+    throw new Error('YouTube upload failed before receiving a server response.')
+  }
+
+  if (uploadResponse.statusCode < 200 || uploadResponse.statusCode >= 300) {
+    throw new Error(`Failed to upload to YouTube (${uploadResponse.statusCode}): ${uploadResponse.body}`)
+  }
+
+  const uploadPayload = parseJsonSafe<{ id?: string }>(uploadResponse.body)
+  if (!uploadPayload?.id) {
+    throw new Error('YouTube upload completed but no video ID was returned')
+  }
+
+  return {
+    videoId: uploadPayload.id,
+    videoUrl: `https://www.youtube.com/watch?v=${uploadPayload.id}`,
+  }
+}
+
 // Keep reference to export preview window
 let exportPreviewWindow: BrowserWindow | null = null
+let exportPreviewCreationQueue: Promise<void> = Promise.resolve()
 
 // Create export preview window
-function createExportPreviewWindow(filePath: string) {
+async function createExportPreviewWindow(filePath: string) {
+  const pathValidation = await validateExportSharePath(filePath)
+  if (!pathValidation.valid) {
+    throw new Error(pathValidation.error)
+  }
+
+  const safeFilePath = pathValidation.filePath
+
   // Close existing preview window if open
   if (exportPreviewWindow && !exportPreviewWindow.isDestroyed()) {
     exportPreviewWindow.close()
   }
 
+  const settings = await readNormalizedSettings()
+  const shareConfig = getSocialShareConfig(settings, safeFilePath)
+  const safeShareConfig = JSON.stringify(shareConfig).replace(/</g, '\\u003c')
+
   exportPreviewWindow = new BrowserWindow({
-    width: 800,
-    height: 650,
+    width: 980,
+    height: 760,
     alwaysOnTop: true,
     modal: false,
     resizable: true,
     title: 'Export Complete',
     backgroundColor: '#1a1a1a',
     webPreferences: {
-      contextIsolation: false,
-      nodeIntegration: true,
-      webSecurity: false,
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: true,
+      preload: join(__dirname, 'exportPreviewPreload.js'),
     },
   })
 
@@ -1635,134 +3148,562 @@ function createExportPreviewWindow(filePath: string) {
   })
 
   // Convert file path to clipvault protocol URL
-  const filename = filePath.split('\\').pop() || ''
+  const filename = safeFilePath.split('\\').pop() || ''
   // Use 'exported' protocol for files in exported-clips directory
-  const isExported = filePath.includes('exported-clips')
+  const isExported = safeFilePath.includes('exported-clips')
   const videoUrl = `clipvault://${isExported ? 'exported' : 'clip'}/${encodeURIComponent(filename)}`
+  const escapedFilePath = safeFilePath
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
 
-  const htmlContent = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; padding: 20px; background: #1a1a1a; color: white; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow-y: auto; }
-    video { width: 100%; border-radius: 8px; max-height: 480px; object-fit: contain; background: #000; }
-    .drag-hint { text-align: center; padding: 15px; background: #2a2a2a; border-radius: 8px; margin-top: 10px; cursor: grab; user-select: none; }
-    .drag-hint:active { cursor: grabbing; }
-    .drag-hint h3 { margin: 0 0 8px 0; font-size: 16px; color: #4ade80; }
-    .drag-hint p { margin: 0; font-size: 13px; color: #aaa; }
-    .timer { position: absolute; top: 10px; right: 10px; font-size: 12px; color: #666; }
-    .file-icon { font-size: 24px; margin-bottom: 8px; }
-    .actions { display: flex; gap: 10px; margin-top: 10px; }
-    .btn { flex: 1; padding: 10px; background: #3a3a3a; border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 13px; }
-    .btn:hover { background: #4a4a4a; }
-    .btn-primary { background: #4ade80; color: #0f0f0f; }
-    .btn-primary:hover { background: #22c55e; }
-  </style>
-</head>
-<body>
-  <div class="timer" id="timer">Closing in 30s</div>
-  <video src="${videoUrl}" controls autoplay></video>
-  <div class="drag-hint" id="dragHint" draggable="true">
-    <div class="file-icon">📹</div>
-    <h3>Export Complete!</h3>
-    <p>Drag from here to share the file anywhere</p>
-  </div>
-  <div class="actions">
-    <button class="btn" onclick="copyPath()">Copy Path</button>
-    <button class="btn btn-primary" onclick="openFolder()">Open Folder</button>
-  </div>
-  <script>
-    const { ipcRenderer } = require('electron');
-    const filePath = '${filePath.replace(/\\/g, '\\\\')}';
-    let timeLeft = 30;
-    const timerEl = document.getElementById('timer');
-    const interval = setInterval(() => {
-      timeLeft--;
-      timerEl.textContent = 'Closing in ' + timeLeft + 's';
-      if (timeLeft <= 0) {
-        clearInterval(interval);
-        window.close();
-      }
-    }, 1000);
-    
-    // Handle drag start - send IPC to main process for native drag
-    const dragHint = document.getElementById('dragHint');
-    dragHint.addEventListener('dragstart', (e) => {
-      e.preventDefault();
-      // Send IPC to main process to initiate native drag
-      ipcRenderer.send('export:startDrag', filePath);
-    });
-    
-    function copyPath() {
-      navigator.clipboard.writeText(filePath);
-      const btn = event.target;
-      const originalText = btn.textContent;
-      btn.textContent = 'Copied!';
-      setTimeout(() => btn.textContent = originalText, 1500);
-    }
-    
-    function openFolder() {
-      ipcRenderer.send('export:openFolder', filePath);
-    }
-  </script>
-</body>
-</html>`
+  const htmlContent = renderHtmlTemplate(exportPreviewTemplate, {
+    VIDEO_URL: videoUrl,
+    ESCAPED_FILE_PATH: escapedFilePath,
+    SAFE_SHARE_CONFIG: safeShareConfig,
+  })
 
   exportPreviewWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent))
 
-  // Auto-close after 30 seconds
-  const autoCloseTimeout = setTimeout(() => {
-    if (exportPreviewWindow && !exportPreviewWindow.isDestroyed()) {
-      exportPreviewWindow.close()
-    }
-  }, 30000)
-
   exportPreviewWindow.on('closed', () => {
-    clearTimeout(autoCloseTimeout)
     exportPreviewWindow = null
   })
 
-  // Handle drag start - use native startDrag API for external file drops
-  exportPreviewWindow.webContents.on('ipc-message', (event, channel, data) => {
-    if (channel === 'export:startDrag') {
-      console.log('Starting native drag for:', data)
-      try {
-        // Create nativeImage from the icon file
-        let dragIcon: Electron.NativeImage | undefined
-        if (existsSync(dragIconPath)) {
-          dragIcon = nativeImage.createFromPath(dragIconPath)
-          console.log('Drag icon loaded from:', dragIconPath)
-        } else {
-          console.warn('Drag icon not found at:', dragIconPath)
-        }
-
-        // Use webContents.startDrag for native file drag (required for external apps like Discord)
-        exportPreviewWindow?.webContents.startDrag({
-          file: data as string,
-          icon: dragIcon || nativeImage.createEmpty(),
-        })
-      } catch (error) {
-        console.error('Error starting drag:', error)
-      }
-    } else if (channel === 'export:openFolder') {
-      // Open the folder containing the exported file
-      const folderPath = dirname(data as string)
-      shell.openPath(folderPath)
-    }
-  })
 }
+
+ipcMain.on('export:startDrag', async (event, data: unknown) => {
+  if (!exportPreviewWindow || event.sender !== exportPreviewWindow.webContents) {
+    return
+  }
+
+  const filePath = typeof data === 'string' ? data : ''
+  const pathValidation = await validateExportSharePath(filePath)
+  if (!pathValidation.valid) {
+    console.warn('Rejected export drag request:', pathValidation.error)
+    return
+  }
+
+  try {
+    let dragIcon: Electron.NativeImage | undefined
+    if (existsSync(dragIconPath)) {
+      dragIcon = nativeImage.createFromPath(dragIconPath)
+    }
+
+    event.sender.startDrag({
+      file: pathValidation.filePath,
+      icon: dragIcon || nativeImage.createEmpty(),
+    })
+  } catch (error) {
+    console.error('Error starting drag:', error)
+  }
+})
+
+ipcMain.on('export:openFolder', async (event, data: unknown) => {
+  if (!exportPreviewWindow || event.sender !== exportPreviewWindow.webContents) {
+    return
+  }
+
+  const filePath = typeof data === 'string' ? data : ''
+  const pathValidation = await validateExportSharePath(filePath)
+  if (!pathValidation.valid) {
+    console.warn('Rejected open-folder request:', pathValidation.error)
+    return
+  }
+
+  const folderPath = dirname(pathValidation.filePath)
+  void shell.openPath(folderPath)
+})
+
+ipcMain.handle('system:openExternal', async (_, targetUrl: string) => {
+  const validation = validateExternalUrl(targetUrl)
+  if (!validation.valid) {
+    return {
+      success: false,
+      error: validation.error,
+    }
+  }
+
+  try {
+    await shell.openExternal(validation.url)
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('social:discord:testWebhook', async (_, webhookUrl: string) => {
+  try {
+    const sanitizedWebhook = webhookUrl.trim()
+    if (!sanitizedWebhook) {
+      return { success: false, error: 'Webhook URL is required' }
+    }
+
+    if (!isValidDiscordWebhookUrl(sanitizedWebhook)) {
+      return {
+        success: false,
+        error: 'Enter a valid Discord webhook URL (https://discord.com/api/webhooks/...)',
+      }
+    }
+
+    const url = new URL(sanitizedWebhook)
+    url.searchParams.set('wait', 'true')
+    const body = JSON.stringify({ content: 'ClipVault test message: webhook connected successfully.' })
+
+    const response = await performHttpRequest(
+      'POST',
+      url.toString(),
+      {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+      body
+    )
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return {
+        success: false,
+        error: `Discord webhook test failed (${response.statusCode}): ${response.body}`,
+      }
+    }
+
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
+})
+
+ipcMain.handle('social:youtube:getProviderInfo', async () => {
+  try {
+    const settings = await readNormalizedSettings()
+    const info = getYouTubeProviderInfo(settings)
+    return {
+      success: true,
+      ...info,
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: String(error),
+      managedAvailable: false,
+      activeMode: 'custom' as const,
+      recommendedMode: 'custom' as const,
+    }
+  }
+})
+
+ipcMain.handle(
+  'social:youtube:startDeviceAuth',
+  async (
+    _,
+    params: { mode?: YouTubeAuthMode; clientId?: string; clientSecret?: string } = {}
+  ) => {
+    try {
+      const settings = await readNormalizedSettings()
+      const credentials = resolveYouTubeCredentials(settings, params.mode, {
+        clientId: params.clientId,
+        clientSecret: params.clientSecret,
+      })
+
+      const body = encodeFormBody({
+        client_id: credentials.clientId,
+        scope:
+          'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly',
+      })
+
+      const response = await performHttpRequest(
+        'POST',
+        'https://oauth2.googleapis.com/device/code',
+        {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(body),
+        },
+        body
+      )
+
+      const payload = parseJsonSafe<{
+        device_code?: string
+        user_code?: string
+        verification_uri?: string
+        verification_url?: string
+        expires_in?: number
+        interval?: number
+        error?: string
+        error_description?: string
+      }>(response.body)
+
+      if (response.statusCode < 200 || response.statusCode >= 300 || !payload?.device_code) {
+        return {
+          success: false,
+          error:
+            payload?.error_description ||
+            payload?.error ||
+            `Failed to start YouTube auth (${response.statusCode})`,
+        }
+      }
+
+      const sessionExpiresAt = Date.now() + (payload.expires_in || 1800) * 1000
+
+      youtubeDeviceAuthSessions.set(payload.device_code, {
+        mode: credentials.mode,
+        clientId: credentials.clientId,
+        clientSecret: credentials.clientSecret,
+        expiresAt: sessionExpiresAt,
+      })
+      scheduleYouTubeDeviceAuthSessionCleanup(payload.device_code, sessionExpiresAt)
+
+      return {
+        success: true,
+        mode: credentials.mode,
+        deviceCode: payload.device_code,
+        userCode: payload.user_code,
+        verificationUrl: payload.verification_url || payload.verification_uri || 'https://google.com/device',
+        expiresInSeconds: payload.expires_in || 1800,
+        intervalSeconds: payload.interval || 5,
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: String(error),
+      }
+    }
+  }
+)
+
+ipcMain.handle(
+  'social:youtube:pollDeviceAuth',
+  async (_, params: { deviceCode: string }) => {
+    try {
+      const deviceCode = params.deviceCode.trim()
+
+      if (!deviceCode) {
+        return {
+          success: false,
+          error: 'Device code is required.',
+        }
+      }
+
+      const authSession = youtubeDeviceAuthSessions.get(deviceCode)
+      if (!authSession) {
+        return {
+          success: false,
+          error: 'YouTube authorization session not found. Start connect again.',
+        }
+      }
+
+      if (Date.now() > authSession.expiresAt) {
+        removeYouTubeDeviceAuthSession(deviceCode)
+        return {
+          success: false,
+          error: 'YouTube authorization expired. Start connect again.',
+        }
+      }
+
+      const body = encodeFormBody({
+        client_id: authSession.clientId,
+        client_secret: authSession.clientSecret,
+        device_code: deviceCode,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      })
+
+      const response = await performHttpRequest(
+        'POST',
+        'https://oauth2.googleapis.com/token',
+        {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': Buffer.byteLength(body),
+        },
+        body
+      )
+
+      const payload = parseJsonSafe<YouTubeTokenResponse>(response.body)
+
+      if (payload?.error === 'authorization_pending') {
+        return { success: false, pending: true }
+      }
+
+      if (payload?.error === 'slow_down') {
+        return { success: false, pending: true, intervalSeconds: 10 }
+      }
+
+      if (payload?.error) {
+        removeYouTubeDeviceAuthSession(deviceCode)
+        return {
+          success: false,
+          error: payload.error_description || payload.error,
+        }
+      }
+
+      if (!payload?.access_token) {
+        removeYouTubeDeviceAuthSession(deviceCode)
+        return {
+          success: false,
+          error: 'No access token returned from YouTube OAuth.',
+        }
+      }
+
+      const channel = await fetchYouTubeChannel(payload.access_token)
+      const settings = await readNormalizedSettings()
+      settings.social.youtube.auth_mode = authSession.mode
+      if (authSession.mode === 'custom') {
+        settings.social.youtube.client_id = authSession.clientId
+        settings.social.youtube.client_secret = authSession.clientSecret
+      }
+      settings.social.youtube.access_token = payload.access_token
+      settings.social.youtube.refresh_token = payload.refresh_token || settings.social.youtube.refresh_token
+      settings.social.youtube.token_expiry = Date.now() + (payload.expires_in || 3600) * 1000
+      settings.social.youtube.channel_id = channel.channelId
+      settings.social.youtube.channel_title = channel.channelTitle
+
+      if (!settings.social.youtube.refresh_token) {
+        removeYouTubeDeviceAuthSession(deviceCode)
+        return {
+          success: false,
+          error: 'No refresh token returned. Revoke ClipVault access in Google Account and try connecting again.',
+        }
+      }
+
+      await persistNormalizedSettings(settings)
+      removeYouTubeDeviceAuthSession(deviceCode)
+
+      return {
+        success: true,
+        mode: authSession.mode,
+        channelId: channel.channelId,
+        channelTitle: channel.channelTitle,
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: String(error),
+      }
+    }
+  }
+)
+
+ipcMain.handle('social:youtube:disconnect', async () => {
+  try {
+    youtubeDeviceAuthSessions.clear()
+    for (const cleanupTimer of youtubeDeviceAuthSessionCleanupTimers.values()) {
+      clearTimeout(cleanupTimer)
+    }
+    youtubeDeviceAuthSessionCleanupTimers.clear()
+    const settings = await readNormalizedSettings()
+    settings.social.youtube.access_token = ''
+    settings.social.youtube.refresh_token = ''
+    settings.social.youtube.token_expiry = 0
+    settings.social.youtube.channel_id = ''
+    settings.social.youtube.channel_title = ''
+    await persistNormalizedSettings(settings)
+
+    return {
+      success: true,
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: String(error),
+    }
+  }
+})
+
+ipcMain.handle(
+  'social:shareDiscord',
+  async (_, params: { filePath: string; message?: string }) => {
+    try {
+      const pathValidation = await validateExportSharePath(params?.filePath)
+      if (!pathValidation.valid) {
+        return {
+          success: false,
+          error: pathValidation.error,
+        }
+      }
+
+      if (!existsSync(pathValidation.filePath)) {
+        return {
+          success: false,
+          error: 'Export file not found.',
+        }
+      }
+
+      const settings = await readNormalizedSettings()
+      const webhookUrl = settings.social.discord.webhook_url
+      if (!webhookUrl) {
+        return {
+          success: false,
+          error: 'Discord webhook is not configured. Add it in Settings > Social Sharing.',
+        }
+      }
+
+      if (!isValidDiscordWebhookUrl(webhookUrl)) {
+        return {
+          success: false,
+          error: 'Configured Discord webhook URL is invalid. Update it in Settings.',
+        }
+      }
+
+      const context = getShareTemplateContext(pathValidation.filePath)
+      const defaultMessage = renderShareTemplate(
+        settings.social.discord.default_message_template,
+        context
+      )
+      const finalMessage =
+        (typeof params.message === 'string' && params.message.trim()) ||
+        defaultMessage ||
+        `New clip from ClipVault: ${context.clip_name}`
+
+      const upload = await uploadToDiscord(webhookUrl, pathValidation.filePath, finalMessage)
+      return {
+        success: true,
+        ...upload,
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: String(error),
+      }
+    }
+  }
+)
+
+ipcMain.handle(
+  'social:shareYouTube',
+  async (
+    _,
+    params: {
+      filePath: string
+      title?: string
+      description?: string
+      privacy?: YouTubePrivacy
+      tags?: string[]
+    }
+  ) => {
+    try {
+      const pathValidation = await validateExportSharePath(params?.filePath)
+      if (!pathValidation.valid) {
+        return {
+          success: false,
+          error: pathValidation.error,
+        }
+      }
+
+      if (!existsSync(pathValidation.filePath)) {
+        return {
+          success: false,
+          error: 'Export file not found.',
+        }
+      }
+
+      const { accessToken, settings } = await ensureYouTubeAccessToken()
+      const context = getShareTemplateContext(pathValidation.filePath)
+
+      const defaultTitle = renderShareTemplate(settings.social.youtube.default_title_template, context)
+      const defaultDescription = settings.social.youtube.default_description
+      const rawPrivacy = params.privacy || settings.social.youtube.default_privacy
+      const allowedPrivacy: YouTubePrivacy[] = ['private', 'unlisted', 'public']
+      const privacy: YouTubePrivacy = allowedPrivacy.includes(rawPrivacy as YouTubePrivacy)
+        ? (rawPrivacy as YouTubePrivacy)
+        : 'unlisted'
+
+      const tagsInput = Array.isArray(params.tags) ? params.tags : settings.social.youtube.default_tags
+      const tags = tagsInput
+        .filter((tag): tag is string => typeof tag === 'string')
+        .map(tag => tag.trim())
+        .filter(Boolean)
+        .slice(0, 15)
+
+      const upload = await uploadToYouTube(accessToken, pathValidation.filePath, {
+        title: (params.title || defaultTitle || context.clip_name).trim(),
+        description: (params.description || defaultDescription || '').trim(),
+        privacy,
+        tags,
+      })
+
+      return {
+        success: true,
+        videoId: upload.videoId,
+        videoUrl: upload.videoUrl,
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: String(error),
+      }
+    }
+  }
+)
 
 // IPC handler to show export preview
 ipcMain.handle('export:showPreview', async (_, filePath: string) => {
-  createExportPreviewWindow(filePath)
-  return { success: true }
+  try {
+    exportPreviewCreationQueue = exportPreviewCreationQueue
+      .catch(() => {
+        // Keep queue alive after failures
+      })
+      .then(async () => {
+        await createExportPreviewWindow(filePath)
+      })
+
+    await exportPreviewCreationQueue
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: String(error) }
+  }
 })
 
+type ExtractAudioTracksOptions = {
+  forceReextract?: boolean
+}
+
+const waitForStableFileSize = async (filePath: string, attempts = 6, delayMs = 250): Promise<void> => {
+  let previousSize = -1
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const fileStats = await stat(filePath)
+    if (fileStats.size === previousSize) {
+      return
+    }
+
+    previousSize = fileStats.size
+    if (attempt < attempts - 1) {
+      await new Promise(resolve => setTimeout(resolve, delayMs))
+    }
+  }
+}
+
 // Extract audio tracks from video file
-ipcMain.handle('audio:extractTracks', async (_, clipId: string, videoPath: string) => {
+ipcMain.handle(
+  'audio:extractTracks',
+  async (_, clipId: string, videoPath: string, options?: ExtractAudioTracksOptions) => {
   try {
+    const forceReextract = options?.forceReextract === true
+
+    if (typeof videoPath !== 'string' || !videoPath.trim()) {
+      throw new Error('Invalid video path provided for audio extraction.')
+    }
+
+    const clipsRoot = resolve(getClipsPath())
+    const resolvedVideoPath = resolve(videoPath)
+
+    let canonicalClipsRoot: string
+    let canonicalVideoPath: string
+
+    try {
+      canonicalClipsRoot = await fsRealpath(clipsRoot)
+      canonicalVideoPath = await fsRealpath(resolvedVideoPath)
+    } catch {
+      throw new Error('Audio extraction path could not be resolved.')
+    }
+
+    if (!isPathWithinRoot(canonicalClipsRoot, canonicalVideoPath)) {
+      throw new Error('Audio extraction rejected for unauthorized path.')
+    }
+
+    const videoStats = await stat(canonicalVideoPath)
+    if (!videoStats.isFile()) {
+      throw new Error('Audio extraction source must be a file.')
+    }
+
     // Ensure audio cache directory exists
     const audioCachePath = join(thumbnailsPath, 'audio')
     if (!existsSync(audioCachePath)) {
@@ -1773,16 +3714,28 @@ ipcMain.handle('audio:extractTracks', async (_, clipId: string, videoPath: strin
     const track2Path = join(audioCachePath, `${clipId}_track2.m4a`)
 
     const results: { track1?: string; track2?: string; error?: string } = {}
+    const track1Url = `clipvault://audio/${encodeURIComponent(`${clipId}_track1.m4a`)}`
+    const track2Url = `clipvault://audio/${encodeURIComponent(`${clipId}_track2.m4a`)}`
+
+    const deleteIfExists = async (filePath: string): Promise<void> => {
+      if (existsSync(filePath)) {
+        await fsUnlinkAsync(filePath).catch(() => {})
+      }
+    }
+
+    if (forceReextract) {
+      await Promise.all([deleteIfExists(track1Path), deleteIfExists(track2Path)])
+    }
 
     // Check if already cached
-    const track1Exists = existsSync(track1Path)
-    const track2Exists = existsSync(track2Path)
+    const track1Exists = !forceReextract && existsSync(track1Path)
+    const track2Exists = !forceReextract && existsSync(track2Path)
 
     if (track1Exists) {
-      results.track1 = `clipvault://audio/${encodeURIComponent(`${clipId}_track1.m4a`)}`
+      results.track1 = track1Url
     }
     if (track2Exists) {
-      results.track2 = `clipvault://audio/${encodeURIComponent(`${clipId}_track2.m4a`)}`
+      results.track2 = track2Url
     }
 
     if (track1Exists && track2Exists) {
@@ -1791,7 +3744,7 @@ ipcMain.handle('audio:extractTracks', async (_, clipId: string, videoPath: strin
 
     // Get video metadata to check audio tracks
     const metadata = await new Promise<ffmpeg.FfprobeData>((resolve, reject) => {
-      ffmpeg.ffprobe(videoPath, (err, data) => {
+      ffmpeg.ffprobe(canonicalVideoPath, (err, data) => {
         if (err) reject(err)
         else resolve(data)
       })
@@ -1799,28 +3752,27 @@ ipcMain.handle('audio:extractTracks', async (_, clipId: string, videoPath: strin
 
     const audioStreams = metadata.streams.filter(s => s.codec_type === 'audio')
 
-    // Extract track 1 if not cached and exists
-    if (!track1Exists && audioStreams.length >= 1) {
+    const extractTrack = async (streamIndex: number, outputPath: string): Promise<void> => {
+      await waitForStableFileSize(canonicalVideoPath)
+      await deleteIfExists(outputPath)
+
       await new Promise<void>((resolve, reject) => {
-        ffmpeg(videoPath)
-          .outputOptions(['-map 0:a:0', '-c:a aac', '-b:a 128k'])
-          .save(track1Path)
+        ffmpeg(canonicalVideoPath)
+          .outputOptions([`-map 0:a:${streamIndex}`, '-vn', '-c:a aac', '-b:a 128k'])
+          .save(outputPath)
           .on('end', () => resolve())
           .on('error', err => reject(err))
       })
-      results.track1 = `clipvault://audio/${encodeURIComponent(`${clipId}_track1.m4a`)}`
     }
 
-    // Extract track 2 if not cached and exists
+    if (!track1Exists && audioStreams.length >= 1) {
+      await extractTrack(0, track1Path)
+      results.track1 = track1Url
+    }
+
     if (!track2Exists && audioStreams.length >= 2) {
-      await new Promise<void>((resolve, reject) => {
-        ffmpeg(videoPath)
-          .outputOptions(['-map 0:a:1', '-c:a aac', '-b:a 128k'])
-          .save(track2Path)
-          .on('end', () => resolve())
-          .on('error', err => reject(err))
-      })
-      results.track2 = `clipvault://audio/${encodeURIComponent(`${clipId}_track2.m4a`)}`
+      await extractTrack(1, track2Path)
+      results.track2 = track2Url
     }
 
     return results
@@ -1828,7 +3780,8 @@ ipcMain.handle('audio:extractTracks', async (_, clipId: string, videoPath: strin
     console.error('Failed to extract audio tracks:', error)
     return { error: String(error) }
   }
-})
+  }
+)
 
 // Export clip with trim and audio track selection
 ipcMain.handle(

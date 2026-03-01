@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import type { FC } from 'react'
 import {
   Play,
@@ -38,6 +38,11 @@ interface EditorProps {
   metadata: VideoMetadata
   onClose: () => void
   onSave?: (clipId: string, metadata: ClipMetadata) => void
+  onOpenClip?: (clip: ClipInfo, metadata: VideoMetadata) => void
+  getAdjacentClip?: (
+    clipId: string,
+    direction: 'previous' | 'next'
+  ) => { clip: ClipInfo; metadata: VideoMetadata } | null
 }
 
 const resolveAudioEnabled = (track?: AudioTrackSetting): boolean => {
@@ -55,13 +60,19 @@ const resolveAudioVolume = (track?: AudioTrackSetting): number => {
   return track?.volume ?? 0.7
 }
 
-export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => {
+export const Editor: FC<EditorProps> = ({
+  clip,
+  metadata,
+  onClose,
+  onSave,
+  onOpenClip,
+  getAdjacentClip,
+}) => {
   const videoRef = useRef<HTMLVideoElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(metadata.duration || 0)
-  const [_isFullscreen, setIsFullscreen] = useState(false)
 
   // Web Audio API refs
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -114,6 +125,8 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
   const [trimProgress, setTrimProgress] = useState(0)
   const [showTrimConfirm, setShowTrimConfirm] = useState(false)
   const [audioExtractionKey, setAudioExtractionKey] = useState(0)
+  const hasRetriedAudioDecodeRef = useRef(false)
+  const forceAudioReextractRef = useRef(false)
 
   // Editor settings
   const [skipSeconds, setSkipSeconds] = useState(5)
@@ -127,6 +140,9 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
   const [exportFps, setExportFps] = useState<number | 'original'>('original')
   const [exportResolution, setExportResolution] = useState<string>('original')
   const [videoSrc, setVideoSrc] = useState(`clipvault://clip/${encodeURIComponent(clip.filename)}`)
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const flushPendingEditorStateRef = useRef<(() => Promise<boolean>) | null>(null)
+  const [isEditorHydrated, setIsEditorHydrated] = useState(false)
 
   // Load settings
   useEffect(() => {
@@ -145,20 +161,52 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
 
   // Load editor state from disk
   useEffect(() => {
+    let cancelled = false
+    setIsEditorHydrated(false)
+
     const loadEditorState = async () => {
       try {
         // Load from clips-metadata folder (single source of truth)
         const clipMetadata = await window.electronAPI.editor.loadState(clip.id)
+        if (cancelled) {
+          return
+        }
+
+        const fallbackTrack1 = clip.metadata?.audio?.track1
+        const fallbackTrack2 = clip.metadata?.audio?.track2
+        const fallbackTrimStart = clip.metadata?.trim?.start ?? 0
+        const fallbackTrimEnd = clip.metadata?.trim?.end ?? metadata.duration ?? 0
+        const fallbackPlayhead = clip.metadata?.playheadPosition ?? 0
+
+        isVideoDurationSetRef.current = false
+        isTrimEndFromMetadataRef.current = clip.metadata?.trim?.end !== undefined
+
+        // Reset all editor state to clip-specific defaults before applying persisted metadata.
+        setDuration(metadata.duration || 0)
+        setTrimStart(fallbackTrimStart)
+        setTrimEnd(fallbackTrimEnd)
+        setAudioTrack1(resolveAudioEnabled(fallbackTrack1))
+        setAudioTrack2(resolveAudioEnabled(fallbackTrack2))
+        setAudioTrack1Muted(resolveAudioMuted(fallbackTrack1))
+        setAudioTrack2Muted(resolveAudioMuted(fallbackTrack2))
+        setAudioTrack1Volume(resolveAudioVolume(fallbackTrack1))
+        setAudioTrack2Volume(resolveAudioVolume(fallbackTrack2))
+        setIsFavorite(Boolean(clip.metadata?.favorite))
+        setTags(Array.isArray(clip.metadata?.tags) ? clip.metadata.tags : [])
+        setGame(typeof clip.metadata?.game === 'string' ? clip.metadata.game : '')
+        setCurrentTime(fallbackPlayhead)
+        if (videoRef.current) {
+          videoRef.current.currentTime = fallbackPlayhead
+        }
+
         if (clipMetadata) {
           console.log('[Editor] Loading metadata for clip:', clip.id)
 
-          // Apply trim markers - but preserve trimEnd if video duration was already set
+          // Apply trim markers from persisted state when available.
           if (clipMetadata.trim) {
             setTrimStart(clipMetadata.trim.start)
-            // Only reset trimEnd from metadata if video duration hasn't been set yet
-            if (!isVideoDurationSetRef.current) {
-              setTrimEnd(clipMetadata.trim.end)
-            }
+            setTrimEnd(clipMetadata.trim.end)
+            isTrimEndFromMetadataRef.current = true
           }
 
           // Apply audio settings
@@ -194,9 +242,18 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
         }
       } catch (error) {
         console.error('[Editor] Failed to load editor state:', error)
+      } finally {
+        if (!cancelled) {
+          setIsEditorHydrated(true)
+        }
       }
     }
-    loadEditorState()
+
+    void loadEditorState()
+
+    return () => {
+      cancelled = true
+    }
   }, [clip.id])
 
   // Update duration when metadata changes
@@ -209,71 +266,150 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     }
   }, [metadata])
 
-  // Save editor state when trim, playhead, or audio settings change
+  // Reset one-shot audio recovery state when switching clips
   useEffect(() => {
-    let mounted = true
+    hasRetriedAudioDecodeRef.current = false
+    forceAudioReextractRef.current = false
 
-    const saveEditorState = async () => {
+    if (sourceNode1Ref.current) {
       try {
-        if (!clip.id) return
-
-        const newMetadata: ClipMetadata = {
-          favorite: isFavorite,
-          tags,
-          game,
-          trim: {
-            start: trimStart,
-            end: trimEnd,
-          },
-          audio: {
-            track1: {
-              enabled: audioTrack1,
-              muted: audioTrack1Muted,
-              volume: audioTrack1Volume,
-            },
-            track2: {
-              enabled: audioTrack2,
-              muted: audioTrack2Muted,
-              volume: audioTrack2Volume,
-            },
-          },
-          playheadPosition: videoRef.current?.currentTime ?? currentTime,
-          lastModified: new Date().toISOString(),
-        }
-
-        // Save everything to clips-metadata folder (single file)
-        await window.electronAPI.saveClipMetadata(clip.id, newMetadata)
-
-        // Trigger Library update (for real-time UI reflection)
-        if (mounted && onSave) {
-          onSave(clip.id, newMetadata)
-        }
-      } catch (error) {
-        console.error('[Editor] Failed to save editor state:', error)
+        sourceNode1Ref.current.stop()
+      } catch {
+        // Ignore errors if already stopped
       }
+      sourceNode1Ref.current = null
     }
 
-    const timeoutId = setTimeout(saveEditorState, 500)
-    return () => {
-      mounted = false
-      clearTimeout(timeoutId)
+    if (sourceNode2Ref.current) {
+      try {
+        sourceNode2Ref.current.stop()
+      } catch {
+        // Ignore errors if already stopped
+      }
+      sourceNode2Ref.current = null
+    }
+
+    isAudioPlayingRef.current = false
+    setAudioTrack1Src(null)
+    setAudioTrack2Src(null)
+    audioBuffer1Ref.current = null
+    audioBuffer2Ref.current = null
+    setIsLoadingAudio(false)
+  }, [clip.id])
+
+  const buildEditorMetadata = useCallback((): ClipMetadata => {
+    return {
+      favorite: isFavorite,
+      tags,
+      game,
+      trim: {
+        start: trimStart,
+        end: trimEnd,
+      },
+      audio: {
+        track1: {
+          enabled: audioTrack1,
+          muted: audioTrack1Muted,
+          volume: audioTrack1Volume,
+        },
+        track2: {
+          enabled: audioTrack2,
+          muted: audioTrack2Muted,
+          volume: audioTrack2Volume,
+        },
+      },
+      playheadPosition: videoRef.current?.currentTime ?? currentTime,
+      lastModified: new Date().toISOString(),
     }
   }, [
-    clip.id,
+    isFavorite,
+    tags,
+    game,
     trimStart,
     trimEnd,
-    isPlaying, // save playhead position when playback stops
     audioTrack1,
     audioTrack2,
     audioTrack1Muted,
     audioTrack2Muted,
     audioTrack1Volume,
     audioTrack2Volume,
-    isFavorite,
-    tags,
-    game,
-    onSave,
+    currentTime,
   ])
+
+  const persistEditorState = useCallback(async () => {
+    if (!clip.id) {
+      return
+    }
+
+    try {
+      const newMetadata = buildEditorMetadata()
+
+      // Save everything to clips-metadata folder (single file)
+      const saveSucceeded = await window.electronAPI.saveClipMetadata(clip.id, newMetadata)
+      if (!saveSucceeded) {
+        throw new Error('Failed to save clip metadata.')
+      }
+
+      // Trigger Library update (for real-time UI reflection)
+      onSave?.(clip.id, newMetadata)
+    } catch (error) {
+      console.error('[Editor] Failed to save editor state:', error)
+      throw error
+    }
+  }, [clip.id, buildEditorMetadata, onSave])
+
+  const flushPendingEditorState = useCallback(async (): Promise<boolean> => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+      saveTimeoutRef.current = null
+    }
+
+    if (!isEditorHydrated) {
+      return true
+    }
+
+    try {
+      await persistEditorState()
+      return true
+    } catch (error) {
+      console.error('[Editor] Failed to flush pending editor state:', error)
+      return false
+    }
+  }, [isEditorHydrated, persistEditorState])
+
+  useEffect(() => {
+    flushPendingEditorStateRef.current = flushPendingEditorState
+  }, [flushPendingEditorState])
+
+  // Save editor state when trim, playhead, or audio settings change
+  useEffect(() => {
+    if (!isEditorHydrated) {
+      return
+    }
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      void persistEditorState().catch(error => {
+        console.error('[Editor] Autosave failed:', error)
+      })
+    }, 500)
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+        saveTimeoutRef.current = null
+      }
+    }
+  }, [isEditorHydrated, persistEditorState, isPlaying])
+
+  useEffect(() => {
+    return () => {
+      void flushPendingEditorStateRef.current?.()
+    }
+  }, [clip.id])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -339,6 +475,8 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
 
   // Load audio buffers when sources are available
   useEffect(() => {
+    let cancelled = false
+
     const loadAudioBuffer = async (url: string): Promise<AudioBuffer | null> => {
       if (!audioContextRef.current) return null
 
@@ -353,58 +491,125 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     }
 
     void (async () => {
-      if (audioTrack1Src && audioContextRef.current) {
-        const buffer = await loadAudioBuffer(audioTrack1Src)
-        audioBuffer1Ref.current = buffer
-        // If video is already playing, start audio playback to sync
-        if (videoRef.current && !videoRef.current.paused) {
-          startAudioPlaybackRef.current?.(videoRef.current.currentTime)
-        }
+      if (!audioContextRef.current) return
+
+      const [track1Buffer, track2Buffer] = await Promise.all([
+        audioTrack1Src ? loadAudioBuffer(audioTrack1Src) : Promise.resolve(null),
+        audioTrack2Src ? loadAudioBuffer(audioTrack2Src) : Promise.resolve(null),
+      ])
+
+      if (cancelled) return
+
+      const hadDecodeFailure =
+        (!!audioTrack1Src && !track1Buffer) || (!!audioTrack2Src && !track2Buffer)
+
+      if (hadDecodeFailure && !hasRetriedAudioDecodeRef.current) {
+        console.warn('[Editor] Audio decode failed, forcing cache re-extraction for', clip.id)
+        hasRetriedAudioDecodeRef.current = true
+        forceAudioReextractRef.current = true
+        setAudioTrack1Src(null)
+        setAudioTrack2Src(null)
+        audioBuffer1Ref.current = null
+        audioBuffer2Ref.current = null
+        setAudioExtractionKey(k => k + 1)
+        return
+      }
+
+      audioBuffer1Ref.current = audioTrack1Src ? track1Buffer : null
+      audioBuffer2Ref.current = audioTrack2Src ? track2Buffer : null
+
+      // If video is already playing, start audio playback to sync once after both buffers finish.
+      if (videoRef.current && !videoRef.current.paused && (track1Buffer || track2Buffer)) {
+        startAudioPlaybackRef.current?.(videoRef.current.currentTime)
       }
     })()
 
-    void (async () => {
-      if (audioTrack2Src && audioContextRef.current) {
-        const buffer = await loadAudioBuffer(audioTrack2Src)
-        audioBuffer2Ref.current = buffer
-        // If video is already playing, start audio playback to sync
-        if (videoRef.current && !videoRef.current.paused) {
-          startAudioPlaybackRef.current?.(videoRef.current.currentTime)
-        }
-      }
-    })()
-  }, [audioTrack1Src, audioTrack2Src])
+    return () => {
+      cancelled = true
+    }
+  }, [audioTrack1Src, audioTrack2Src, clip.id])
 
   // Extract audio tracks on mount
   useEffect(() => {
-    // Small delay to ensure IPC is ready
-    const timer = setTimeout(() => {
-      void (async () => {
-        if (!window.electronAPI?.extractAudioTracks || metadata.audioTracks < 1) {
-          return
+    let cancelled = false
+
+    void (async () => {
+      if (!cancelled) {
+        if (sourceNode1Ref.current) {
+          try {
+            sourceNode1Ref.current.stop()
+          } catch {
+            // Ignore errors if already stopped
+          }
+          sourceNode1Ref.current = null
         }
 
-        setIsLoadingAudio(true)
-        try {
-          const result: AudioTrackUrls = await window.electronAPI.extractAudioTracks(
-            clip.id,
-            clip.path
-          )
-          if (result.track1) {
-            setAudioTrack1Src(result.track1)
+        if (sourceNode2Ref.current) {
+          try {
+            sourceNode2Ref.current.stop()
+          } catch {
+            // Ignore errors if already stopped
           }
-          if (result.track2) {
-            setAudioTrack2Src(result.track2)
-          }
-        } catch (error) {
-          console.error('Failed to extract audio tracks:', error)
-        } finally {
+          sourceNode2Ref.current = null
+        }
+
+        isAudioPlayingRef.current = false
+        setAudioTrack1Src(null)
+        setAudioTrack2Src(null)
+        audioBuffer1Ref.current = null
+        audioBuffer2Ref.current = null
+      }
+
+      if (!window.electronAPI?.extractAudioTracks || metadata.audioTracks < 1) {
+        if (!cancelled) {
+          setAudioTrack1Src(null)
+          setAudioTrack2Src(null)
+          audioBuffer1Ref.current = null
+          audioBuffer2Ref.current = null
+        }
+        forceAudioReextractRef.current = false
+        return
+      }
+
+      setIsLoadingAudio(true)
+      try {
+        const forceReextract = forceAudioReextractRef.current
+        const result: AudioTrackUrls = await window.electronAPI.extractAudioTracks(
+          clip.id,
+          clip.path,
+          forceReextract ? { forceReextract: true } : undefined
+        )
+
+        if (forceReextract) {
+          forceAudioReextractRef.current = false
+        }
+
+        if (!cancelled) {
+          const nextTrack1Src =
+            typeof result.track1 === 'string' && result.track1.trim().length > 0
+              ? result.track1
+              : null
+          const nextTrack2Src =
+            typeof result.track2 === 'string' && result.track2.trim().length > 0
+              ? result.track2
+              : null
+
+          setAudioTrack1Src(nextTrack1Src)
+          setAudioTrack2Src(nextTrack2Src)
+        }
+      } catch (error) {
+        console.error('Failed to extract audio tracks:', error)
+      } finally {
+        forceAudioReextractRef.current = false
+        if (!cancelled) {
           setIsLoadingAudio(false)
         }
-      })()
-    }, 100)
+      }
+    })()
 
-    return () => clearTimeout(timer)
+    return () => {
+      cancelled = true
+    }
   }, [clip.id, clip.path, metadata.audioTracks, audioExtractionKey])
 
   // Update gain node values when volume/mute/track enabled changes
@@ -516,6 +721,47 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     }
     isAudioPlayingRef.current = false
   }, [])
+
+  const { previousClip, nextClip } = useMemo(() => {
+    if (!getAdjacentClip) {
+      return {
+        previousClip: null,
+        nextClip: null,
+      }
+    }
+
+    return {
+      previousClip: getAdjacentClip(clip.id, 'previous'),
+      nextClip: getAdjacentClip(clip.id, 'next'),
+    }
+  }, [clip.id, getAdjacentClip])
+
+  const handleNavigateClip = useCallback(
+    async (direction: 'previous' | 'next') => {
+      if (!getAdjacentClip || !onOpenClip) {
+        return
+      }
+
+      const adjacentClip = getAdjacentClip(clip.id, direction)
+      if (!adjacentClip) {
+        return
+      }
+
+      const saved = await flushPendingEditorState()
+      if (!saved) {
+        window.alert('Could not save current clip edits. Please resolve the save error and try again.')
+        return
+      }
+
+      stopAudioPlayback()
+      if (videoRef.current) {
+        videoRef.current.pause()
+      }
+
+      onOpenClip(adjacentClip.clip, adjacentClip.metadata)
+    },
+    [clip.id, flushPendingEditorState, getAdjacentClip, onOpenClip, stopAudioPlayback]
+  )
 
   // Track whether playhead is inside trim region (edge detection)
   const insideTrimRef = useRef(false)
@@ -658,6 +904,23 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
     }
   }, [isPlaying])
 
+  const handleVideoClick = useCallback(
+    (e: React.MouseEvent<HTMLVideoElement>) => {
+      const video = videoRef.current
+      if (!video) return
+
+      // Chromium fullscreen video has its own click-to-toggle behavior.
+      // Running our toggle on top of that causes a double-toggle flicker.
+      if (document.fullscreenElement === video) {
+        return
+      }
+
+      e.preventDefault()
+      togglePlay()
+    },
+    [togglePlay]
+  )
+
   // Global spacebar shortcut for play/pause
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -763,11 +1026,9 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
 
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
-      videoRef.current?.requestFullscreen()
-      setIsFullscreen(true)
+      void videoRef.current?.requestFullscreen()
     } else {
-      document.exitFullscreen()
-      setIsFullscreen(false)
+      void document.exitFullscreen()
     }
   }, [])
 
@@ -1009,6 +1270,8 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
         setAudioTrack2Src(null)
         audioBuffer1Ref.current = null
         audioBuffer2Ref.current = null
+        hasRetriedAudioDecodeRef.current = false
+        forceAudioReextractRef.current = false
         setAudioExtractionKey(k => k + 1)
       }
     } catch (error) {
@@ -1052,6 +1315,46 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
           >
             <X className="h-5 w-5" />
           </button>
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-background-secondary p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  void handleNavigateClip('previous')
+                }}
+                disabled={!previousClip}
+                className="rounded-md p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
+                aria-label={
+                  previousClip
+                    ? `Previous clip: ${previousClip.clip.filename.replace('.mp4', '')}`
+                    : 'Previous clip'
+                }
+                title={
+                previousClip
+                  ? `Previous clip: ${previousClip.clip.filename.replace('.mp4', '')}`
+                  : 'No previous clip in current filtered list'
+              }
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleNavigateClip('next')
+                }}
+                disabled={!nextClip}
+                className="rounded-md p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
+                aria-label={
+                  nextClip ? `Next clip: ${nextClip.clip.filename.replace('.mp4', '')}` : 'Next clip'
+                }
+                title={
+                nextClip
+                  ? `Next clip: ${nextClip.clip.filename.replace('.mp4', '')}`
+                  : 'No next clip in current filtered list'
+              }
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
           <div>
             <h2 className="font-semibold text-text-primary">{clip.filename.replace('.mp4', '')}</h2>
             <p className="text-xs text-text-muted">
@@ -1136,7 +1439,7 @@ export const Editor: FC<EditorProps> = ({ clip, metadata, onClose, onSave }) => 
               ref={videoRef}
               src={videoSrc}
               className="max-h-full max-w-full cursor-pointer"
-              onClick={togglePlay}
+              onClick={handleVideoClick}
               onError={handleVideoError}
               onLoadedMetadata={() => {
                 const video = videoRef.current

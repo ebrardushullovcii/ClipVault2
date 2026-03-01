@@ -29,6 +29,13 @@ export interface LibraryProps {
   onRegisterUpdate:
     | ((updateFn: (clipId: string, metadata: ClipMetadata) => void) => void)
     | undefined
+  onRegisterNavigation?: (
+    getAdjacentClip: (
+      clipId: string,
+      direction: 'previous' | 'next'
+    ) => { clip: ClipInfo; metadata: VideoMetadata } | null
+  ) => void
+  hoverPreviewEnabled?: boolean
 }
 
 // Constants for virtualization
@@ -37,13 +44,19 @@ const LIST_CARD_HEIGHT = 88
 const GRID_GAP = 16
 const LIST_GAP = 16
 const OVERSCAN_ROWS = 2
+const HOVER_PREVIEW_DELAY_MS = 160
 
 const resolveAudioEnabled = (track?: AudioTrackSetting): boolean => {
   if (typeof track === 'boolean') return track
   return track?.enabled ?? true
 }
 
-export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate }) => {
+export const Library: React.FC<LibraryProps> = ({
+  onOpenEditor,
+  onRegisterUpdate,
+  onRegisterNavigation,
+  hoverPreviewEnabled = true,
+}) => {
   const [clips, setClips] = useState<ClipInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -66,7 +79,10 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
   const [bulkExportErrors, setBulkExportErrors] = useState<string[]>([])
   const [bulkTargetSizeMB, setBulkTargetSizeMB] = useState<number | 'original'>('original')
   const [showExportSizeDropdown, setShowExportSizeDropdown] = useState(false)
+  const [hoverPreviewClipId, setHoverPreviewClipId] = useState<string | null>(null)
   const bulkExportAbortRef = useRef(false)
+  const hoverPreviewTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const pendingHoverPreviewClipIdRef = useRef<string | null>(null)
   const lastSelectedIndexRef = useRef<number | null>(null)
   const bulkMessageTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const [showGameModal, setShowGameModal] = useState(false)
@@ -95,6 +111,25 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
   const { thumbnails, generateThumbnail } = useThumbnails()
   const { metadata, fetchMetadata } = useVideoMetadata()
 
+  const getClipMetadataOrFallback = useCallback(
+    (clip: ClipInfo): VideoMetadata => {
+      return (
+        metadata[clip.id] || {
+          duration: 0,
+          width: 1920,
+          height: 1080,
+          fps: 60,
+          bitrate: 0,
+          size: clip.size,
+          format: 'mp4',
+          videoCodec: 'h264',
+          audioTracks: 2,
+        }
+      )
+    },
+    [metadata]
+  )
+
   // Track filenames currently being processed to avoid re-processing on re-renders
   const processingFilesRef = useRef<Set<string>>(new Set())
   // Track retry attempts for each filename
@@ -105,6 +140,71 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
   )
   const selectedCount = selectedClipIds.size
   const selectionActive = selectedCount > 0
+
+  const clearHoverPreviewTimer = useCallback(() => {
+    if (hoverPreviewTimerRef.current) {
+      clearTimeout(hoverPreviewTimerRef.current)
+      hoverPreviewTimerRef.current = null
+    }
+    pendingHoverPreviewClipIdRef.current = null
+  }, [])
+
+  const stopHoverPreview = useCallback(
+    (clipId?: string) => {
+      if (clipId) {
+        if (pendingHoverPreviewClipIdRef.current === clipId && hoverPreviewTimerRef.current) {
+          clearTimeout(hoverPreviewTimerRef.current)
+          hoverPreviewTimerRef.current = null
+          pendingHoverPreviewClipIdRef.current = null
+        }
+
+        setHoverPreviewClipId(prev => (prev === clipId ? null : prev))
+        return
+      }
+
+      clearHoverPreviewTimer()
+      setHoverPreviewClipId(prev => (prev ? null : prev))
+    },
+    [clearHoverPreviewTimer]
+  )
+
+  const requestHoverPreview = useCallback(
+    (clipId: string) => {
+      if (!hoverPreviewEnabled) {
+        return
+      }
+
+      if (selectionActive) {
+        return
+      }
+
+      if (hoverPreviewClipId === clipId) {
+        return
+      }
+
+      if (hoverPreviewTimerRef.current) {
+        clearTimeout(hoverPreviewTimerRef.current)
+      }
+
+      pendingHoverPreviewClipIdRef.current = clipId
+
+      // Stop current preview immediately so only one decoder stays active.
+      setHoverPreviewClipId(prev => (prev && prev !== clipId ? null : prev))
+
+      hoverPreviewTimerRef.current = setTimeout(() => {
+        const pendingClipId = pendingHoverPreviewClipIdRef.current
+        hoverPreviewTimerRef.current = null
+        pendingHoverPreviewClipIdRef.current = null
+
+        if (!pendingClipId) {
+          return
+        }
+
+        setHoverPreviewClipId(prev => (prev === pendingClipId ? prev : pendingClipId))
+      }, HOVER_PREVIEW_DELAY_MS)
+    },
+    [hoverPreviewClipId, hoverPreviewEnabled, selectionActive]
+  )
 
   // Calculate responsive columns based on container width
   const getGridCols = (width: number): number => {
@@ -461,6 +561,32 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
     libraryState.selectedGame,
   ])
 
+  useEffect(() => {
+    if (!onRegisterNavigation) {
+      return
+    }
+
+    onRegisterNavigation((clipId, direction) => {
+      const currentIndex = filteredAndSortedClips.findIndex(clip => clip.id === clipId)
+
+      if (currentIndex === -1) {
+        return null
+      }
+
+      const adjacentIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1
+
+      if (adjacentIndex < 0 || adjacentIndex >= filteredAndSortedClips.length) {
+        return null
+      }
+
+      const adjacentClip = filteredAndSortedClips[adjacentIndex]
+      return {
+        clip: adjacentClip,
+        metadata: getClipMetadataOrFallback(adjacentClip),
+      }
+    })
+  }, [filteredAndSortedClips, getClipMetadataOrFallback, onRegisterNavigation])
+
   const clearSelection = useCallback(() => {
     setSelectedClipIds(new Set())
     lastSelectedIndexRef.current = null
@@ -514,6 +640,8 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
 
   const handleCardClick = useCallback(
     (clip: ClipInfo, index: number, event: React.MouseEvent<HTMLDivElement>) => {
+      stopHoverPreview()
+
       const hasModifier = event.ctrlKey || event.metaKey || event.shiftKey
       if (selectionActive || hasModifier) {
         applySelection(clip.id, index, {
@@ -524,24 +652,14 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
         return
       }
 
-      const fallbackMetadata: VideoMetadata = metadata[clip.id] || {
-        duration: 0,
-        width: 1920,
-        height: 1080,
-        fps: 60,
-        bitrate: 0,
-        size: clip.size,
-        format: 'mp4',
-        videoCodec: 'h264',
-        audioTracks: 2,
-      }
-      onOpenEditor(clip, fallbackMetadata)
+      onOpenEditor(clip, getClipMetadataOrFallback(clip))
     },
-    [applySelection, metadata, onOpenEditor, selectionActive]
+    [applySelection, getClipMetadataOrFallback, onOpenEditor, selectionActive, stopHoverPreview]
   )
 
   const handleToggleSelect = useCallback(
     (clip: ClipInfo, index: number, event: React.MouseEvent<HTMLButtonElement>) => {
+      stopHoverPreview(clip.id)
       applySelection(clip.id, index, {
         shiftKey: event.shiftKey,
         ctrlKey: event.ctrlKey,
@@ -549,7 +667,7 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
         forceToggle: true,
       })
     },
-    [applySelection]
+    [applySelection, stopHoverPreview]
   )
 
   useEffect(() => {
@@ -566,6 +684,52 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
       return next.size === prev.size ? prev : next
     })
   }, [clearSelection, filteredAndSortedClips, selectedClipIds.size])
+
+  useEffect(() => {
+    if (!hoverPreviewClipId) {
+      return
+    }
+
+    const clipStillVisible = filteredAndSortedClips.some(clip => clip.id === hoverPreviewClipId)
+    if (!clipStillVisible) {
+      setHoverPreviewClipId(null)
+    }
+  }, [filteredAndSortedClips, hoverPreviewClipId])
+
+  useEffect(() => {
+    if (selectionActive) {
+      stopHoverPreview()
+    }
+  }, [selectionActive, stopHoverPreview])
+
+  useEffect(() => {
+    if (!hoverPreviewEnabled) {
+      stopHoverPreview()
+    }
+  }, [hoverPreviewEnabled, stopHoverPreview])
+
+  useEffect(() => {
+    const scrollElement = scrollRef.current
+    if (!scrollElement) {
+      return
+    }
+
+    const handleMouseLeave = () => {
+      stopHoverPreview()
+    }
+
+    scrollElement.addEventListener('mouseleave', handleMouseLeave)
+
+    return () => {
+      scrollElement.removeEventListener('mouseleave', handleMouseLeave)
+    }
+  }, [scrollRef, stopHoverPreview])
+
+  useEffect(() => {
+    return () => {
+      clearHoverPreviewTimer()
+    }
+  }, [clearHoverPreviewTimer])
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -985,10 +1149,11 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
       const newScrollTop = e.currentTarget.scrollTop
+      stopHoverPreview()
       setScrollTop(newScrollTop)
       saveScrollPosition()
     },
-    [saveScrollPosition]
+    [saveScrollPosition, stopHoverPreview]
   )
 
   // Calculate visible range for virtualization
@@ -1006,6 +1171,19 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
   )
   const visibleStartIndex = visibleStartRow * cols
   const visibleEndIndex = Math.min(filteredAndSortedClips.length, visibleEndRow * cols)
+
+  useEffect(() => {
+    if (!hoverPreviewClipId) {
+      return
+    }
+
+    const isRendered = filteredAndSortedClips
+      .slice(visibleStartIndex, visibleEndIndex)
+      .some(clip => clip.id === hoverPreviewClipId)
+    if (!isRendered) {
+      setHoverPreviewClipId(null)
+    }
+  }, [filteredAndSortedClips, hoverPreviewClipId, visibleStartIndex, visibleEndIndex])
 
   return (
     <div className="flex h-full w-full flex-col bg-background-primary">
@@ -1414,7 +1592,11 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
       </div>
 
       {/* Content */}
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-6">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-6"
+      >
         {loading ? (
           <div className="flex h-full items-center justify-center">
             <div className="flex flex-col items-center gap-4 text-text-muted">
@@ -1476,6 +1658,14 @@ export const Library: React.FC<LibraryProps> = ({ onOpenEditor, onRegisterUpdate
                       onCardClick={handleCardClick}
                       onToggleSelect={handleToggleSelect}
                       onEditGame={handleEditGame}
+                      previewSrc={
+                        hoverPreviewEnabled && hoverPreviewClipId === clip.id
+                          ? `clipvault://clip/${encodeURIComponent(clip.filename)}`
+                          : undefined
+                      }
+                      isPreviewActive={hoverPreviewEnabled && hoverPreviewClipId === clip.id}
+                      onPreviewStart={hoverPreviewEnabled ? requestHoverPreview : undefined}
+                      onPreviewStop={hoverPreviewEnabled ? stopHoverPreview : undefined}
                     />
                   )
                 })}
