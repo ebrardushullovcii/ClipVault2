@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, clipboard } from 'electron'
 
+type YouTubePrivacy = 'private' | 'unlisted' | 'public'
+
 contextBridge.exposeInMainWorld('exportPreviewAPI', {
   copyPath: (filePath: string) => {
     clipboard.writeText(filePath)
@@ -18,7 +20,7 @@ contextBridge.exposeInMainWorld('exportPreviewAPI', {
     title?: string
     description?: string
     tags?: string[]
-    privacy?: string
+    privacy?: YouTubePrivacy
   }) => {
     return ipcRenderer.invoke('social:shareYouTube', params)
   },

@@ -1893,7 +1893,9 @@ ipcMain.handle('clips:getVideoMetadata', async (_, videoPath: string) => {
           duration: metadata.format.duration || 0,
           width: videoStream?.width || 0,
           height: videoStream?.height || 0,
-          fps: videoStream ? eval(videoStream.r_frame_rate || '0') : 0,
+          fps: parseFps(
+            typeof videoStream?.r_frame_rate === 'string' ? videoStream.r_frame_rate : undefined
+          ),
           bitrate: metadata.format.bit_rate || 0,
           size: metadata.format.size || 0,
           format: metadata.format.format_name || '',
@@ -2137,6 +2139,32 @@ const parseJsonSafe = <T>(raw: string): T | null => {
   }
 }
 
+const parseFps = (rateString: string | undefined): number => {
+  if (!rateString) {
+    return 0
+  }
+
+  const value = rateString.trim()
+  if (!value) {
+    return 0
+  }
+
+  if (value.includes('/')) {
+    const [numeratorRaw, denominatorRaw] = value.split('/', 2)
+    const numerator = Number(numeratorRaw)
+    const denominator = Number(denominatorRaw)
+
+    if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) {
+      return 0
+    }
+
+    return numerator / denominator
+  }
+
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 const performHttpRequest = async (
   method: 'GET' | 'POST' | 'PUT',
   urlString: string,
@@ -2313,6 +2341,59 @@ const isValidDiscordWebhookUrl = (candidate: string): boolean => {
   }
 }
 
+const sanitizeMultipartFilename = (fileName: string): string => {
+  const sanitized = fileName
+    .replace(/[\r\n\0]/g, '')
+    .replace(/[\x00-\x1F\x7F]/g, '')
+    .replace(/[^A-Za-z0-9._-]/g, '_')
+    .replace(/^[_\-.]+/, '')
+    .replace(/[_\-.]+$/, '')
+
+  return sanitized || 'clip.mp4'
+}
+
+const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
+
+const validateExternalUrl = (
+  candidateUrl: string
+): { valid: true; url: string } | { valid: false; error: string } => {
+  if (typeof candidateUrl !== 'string' || !candidateUrl.trim()) {
+    return {
+      valid: false,
+      error: 'invalid URL',
+    }
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(candidateUrl.trim())
+  } catch {
+    return {
+      valid: false,
+      error: 'invalid URL',
+    }
+  }
+
+  if (!ALLOWED_EXTERNAL_PROTOCOLS.has(parsed.protocol)) {
+    return {
+      valid: false,
+      error: 'unsupported URL protocol',
+    }
+  }
+
+  if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.hostname) {
+    return {
+      valid: false,
+      error: 'invalid URL',
+    }
+  }
+
+  return {
+    valid: true,
+    url: parsed.toString(),
+  }
+}
+
 const getSocialShareConfig = (settings: NormalizedSettings, filePath: string) => {
   const context = getShareTemplateContext(filePath)
   const discordTemplate = settings.social.discord.default_message_template
@@ -2345,7 +2426,7 @@ const uploadToDiscord = async (
   const url = new URL(webhookUrl)
   url.searchParams.set('wait', 'true')
 
-  const fileName = basename(filePath)
+  const fileName = sanitizeMultipartFilename(basename(filePath))
   const fileBuffer = await readFile(filePath)
   const boundary = `----ClipVaultBoundary${Date.now()}`
 
@@ -2358,7 +2439,7 @@ const uploadToDiscord = async (
       `Content-Disposition: form-data; name="payload_json"\r\n\r\n` +
       `${JSON.stringify(payload)}\r\n` +
       `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="files[0]"; filename="${fileName.replace(/"/g, '')}"\r\n` +
+      `Content-Disposition: form-data; name="files[0]"; filename="${fileName}"\r\n` +
       `Content-Type: video/mp4\r\n\r\n`,
     'utf-8'
   )
@@ -2938,8 +3019,16 @@ ipcMain.on('export:openFolder', (event, data: unknown) => {
 })
 
 ipcMain.handle('system:openExternal', async (_, targetUrl: string) => {
+  const validation = validateExternalUrl(targetUrl)
+  if (!validation.valid) {
+    return {
+      success: false,
+      error: validation.error,
+    }
+  }
+
   try {
-    await shell.openExternal(targetUrl)
+    await shell.openExternal(validation.url)
     return { success: true }
   } catch (error) {
     return { success: false, error: String(error) }

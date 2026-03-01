@@ -12,82 +12,11 @@ import {
   Power,
   Share2,
 } from 'lucide-react'
-
-interface AppSettings {
-  output_path: string
-  buffer_seconds: number
-  video: {
-    width: number
-    height: number
-    fps: number
-    encoder: 'auto' | 'nvenc' | 'x264'
-    quality: number
-    monitor: number
-  }
-  audio: {
-    sample_rate: number
-    bitrate: number
-    system_audio_enabled: boolean
-    microphone_enabled: boolean
-    system_audio_device_id?: string
-    microphone_device_id?: string
-  }
-  hotkey: {
-    save_clip: string
-  }
-  editor?: {
-    skip_seconds?: number
-  }
-  ui?: {
-    show_notifications?: boolean
-    play_sound?: boolean
-    minimize_to_tray?: boolean
-    start_with_windows?: boolean
-    library_hover_preview?: boolean
-    first_run_completed?: boolean
-  }
-  social?: {
-    discord?: {
-      webhook_url?: string
-      default_message_template?: string
-    }
-    youtube?: {
-      auth_mode?: 'managed' | 'custom'
-      client_id?: string
-      client_secret?: string
-      refresh_token?: string
-      access_token?: string
-      token_expiry?: number
-      channel_id?: string
-      channel_title?: string
-      default_privacy?: 'private' | 'unlisted' | 'public'
-      default_title_template?: string
-      default_description?: string
-      default_tags?: string[]
-    }
-  }
-}
+import type { AppSettings, AudioDeviceInfo, MonitorInfo } from '../../types/electron'
 
 interface SettingsProps {
   onClose: () => void
   onSettingsSaved?: (settings: AppSettings) => void
-}
-
-interface MonitorInfo {
-  id: number
-  name: string
-  width: number
-  height: number
-  x: number
-  y: number
-  primary: boolean
-}
-
-interface AudioDeviceInfo {
-  id: string
-  name: string
-  type: 'output' | 'input'
-  is_default: boolean
 }
 
 type OpenDialogResult = {
@@ -1325,10 +1254,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
 
                 <div className="space-y-3">
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-text-secondary">
+                    <label
+                      htmlFor="discordWebhookUrl"
+                      className="mb-1 block text-sm font-medium text-text-secondary"
+                    >
                       Webhook URL
                     </label>
                     <input
+                      id="discordWebhookUrl"
                       type="password"
                       value={settings.social?.discord?.webhook_url ?? ''}
                       onChange={e => updateDiscordSetting('webhook_url', e.target.value)}
@@ -1364,10 +1297,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
                   </div>
 
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-text-secondary">
+                    <label
+                      htmlFor="discordMessageTemplate"
+                      className="mb-1 block text-sm font-medium text-text-secondary"
+                    >
                       Default Discord Message Template
                     </label>
                     <input
+                      id="discordMessageTemplate"
                       type="text"
                       value={settings.social?.discord?.default_message_template ?? ''}
                       onChange={e =>
@@ -1522,10 +1459,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
                       <>
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                           <div>
-                            <label className="mb-1 block text-sm font-medium text-text-secondary">
+                            <label
+                              htmlFor="youtubeClientId"
+                              className="mb-1 block text-sm font-medium text-text-secondary"
+                            >
                               OAuth Client ID
                             </label>
                             <input
+                              id="youtubeClientId"
                               type="text"
                               value={settings.social?.youtube?.client_id ?? ''}
                               onChange={e => updateYouTubeSetting('client_id', e.target.value)}
@@ -1534,10 +1475,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
                             />
                           </div>
                           <div>
-                            <label className="mb-1 block text-sm font-medium text-text-secondary">
+                            <label
+                              htmlFor="youtubeClientSecret"
+                              className="mb-1 block text-sm font-medium text-text-secondary"
+                            >
                               OAuth Client Secret
                             </label>
                             <input
+                              id="youtubeClientSecret"
                               type="password"
                               value={settings.social?.youtube?.client_secret ?? ''}
                               onChange={e => updateYouTubeSetting('client_secret', e.target.value)}
@@ -1557,10 +1502,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
 
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-text-secondary">
+                    <label
+                      htmlFor="youtubeDefaultPrivacy"
+                      className="mb-1 block text-sm font-medium text-text-secondary"
+                    >
                       Default Privacy
                     </label>
                     <select
+                      id="youtubeDefaultPrivacy"
                       value={settings.social?.youtube?.default_privacy ?? 'unlisted'}
                       onChange={e => updateYouTubeSetting('default_privacy', e.target.value)}
                       className="w-full rounded-lg border border-border bg-background-secondary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
@@ -1571,10 +1520,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
                     </select>
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-text-secondary">
+                    <label
+                      htmlFor="youtubeDefaultTitleTemplate"
+                      className="mb-1 block text-sm font-medium text-text-secondary"
+                    >
                       Default Title Template
                     </label>
                     <input
+                      id="youtubeDefaultTitleTemplate"
                       type="text"
                       value={settings.social?.youtube?.default_title_template ?? ''}
                       onChange={e => updateYouTubeSetting('default_title_template', e.target.value)}
@@ -1585,10 +1538,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
                 </div>
 
                 <div className="mt-3">
-                  <label className="mb-1 block text-sm font-medium text-text-secondary">
+                  <label
+                    htmlFor="youtubeDefaultDescription"
+                    className="mb-1 block text-sm font-medium text-text-secondary"
+                  >
                     Default Description
                   </label>
                   <textarea
+                    id="youtubeDefaultDescription"
                     value={settings.social?.youtube?.default_description ?? ''}
                     onChange={e => updateYouTubeSetting('default_description', e.target.value)}
                     className="h-24 w-full rounded-lg border border-border bg-background-secondary px-4 py-2 text-sm text-text-primary focus:border-accent-primary focus:outline-none"
@@ -1597,10 +1554,14 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
                 </div>
 
                 <div className="mt-3">
-                  <label className="mb-1 block text-sm font-medium text-text-secondary">
+                  <label
+                    htmlFor="youtubeDefaultTags"
+                    className="mb-1 block text-sm font-medium text-text-secondary"
+                  >
                     Default Tags (comma separated)
                   </label>
                   <input
+                    id="youtubeDefaultTags"
                     type="text"
                     value={(settings.social?.youtube?.default_tags ?? []).join(', ')}
                     onChange={e =>

@@ -709,6 +709,23 @@ export const Library: React.FC<LibraryProps> = ({
   }, [hoverPreviewEnabled, stopHoverPreview])
 
   useEffect(() => {
+    const scrollElement = scrollRef.current
+    if (!scrollElement) {
+      return
+    }
+
+    const handleMouseLeave = () => {
+      stopHoverPreview()
+    }
+
+    scrollElement.addEventListener('mouseleave', handleMouseLeave)
+
+    return () => {
+      scrollElement.removeEventListener('mouseleave', handleMouseLeave)
+    }
+  }, [scrollRef, stopHoverPreview])
+
+  useEffect(() => {
     return () => {
       clearHoverPreviewTimer()
     }
@@ -1578,7 +1595,6 @@ export const Library: React.FC<LibraryProps> = ({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        onMouseLeave={() => stopHoverPreview()}
         className="flex-1 overflow-y-auto p-6"
       >
         {loading ? (

@@ -140,6 +140,7 @@ export const Editor: FC<EditorProps> = ({
   const [exportFps, setExportFps] = useState<number | 'original'>('original')
   const [exportResolution, setExportResolution] = useState<string>('original')
   const [videoSrc, setVideoSrc] = useState(`clipvault://clip/${encodeURIComponent(clip.filename)}`)
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Load settings
   useEffect(() => {
@@ -228,71 +229,88 @@ export const Editor: FC<EditorProps> = ({
     forceAudioReextractRef.current = false
   }, [clip.id])
 
-  // Save editor state when trim, playhead, or audio settings change
-  useEffect(() => {
-    let mounted = true
-
-    const saveEditorState = async () => {
-      try {
-        if (!clip.id) return
-
-        const newMetadata: ClipMetadata = {
-          favorite: isFavorite,
-          tags,
-          game,
-          trim: {
-            start: trimStart,
-            end: trimEnd,
-          },
-          audio: {
-            track1: {
-              enabled: audioTrack1,
-              muted: audioTrack1Muted,
-              volume: audioTrack1Volume,
-            },
-            track2: {
-              enabled: audioTrack2,
-              muted: audioTrack2Muted,
-              volume: audioTrack2Volume,
-            },
-          },
-          playheadPosition: videoRef.current?.currentTime ?? currentTime,
-          lastModified: new Date().toISOString(),
-        }
-
-        // Save everything to clips-metadata folder (single file)
-        await window.electronAPI.saveClipMetadata(clip.id, newMetadata)
-
-        // Trigger Library update (for real-time UI reflection)
-        if (mounted && onSave) {
-          onSave(clip.id, newMetadata)
-        }
-      } catch (error) {
-        console.error('[Editor] Failed to save editor state:', error)
-      }
-    }
-
-    const timeoutId = setTimeout(saveEditorState, 500)
-    return () => {
-      mounted = false
-      clearTimeout(timeoutId)
+  const buildEditorMetadata = useCallback((): ClipMetadata => {
+    return {
+      favorite: isFavorite,
+      tags,
+      game,
+      trim: {
+        start: trimStart,
+        end: trimEnd,
+      },
+      audio: {
+        track1: {
+          enabled: audioTrack1,
+          muted: audioTrack1Muted,
+          volume: audioTrack1Volume,
+        },
+        track2: {
+          enabled: audioTrack2,
+          muted: audioTrack2Muted,
+          volume: audioTrack2Volume,
+        },
+      },
+      playheadPosition: videoRef.current?.currentTime ?? 0,
+      lastModified: new Date().toISOString(),
     }
   }, [
-    clip.id,
+    isFavorite,
+    tags,
+    game,
     trimStart,
     trimEnd,
-    isPlaying, // save playhead position when playback stops
     audioTrack1,
     audioTrack2,
     audioTrack1Muted,
     audioTrack2Muted,
     audioTrack1Volume,
     audioTrack2Volume,
-    isFavorite,
-    tags,
-    game,
-    onSave,
   ])
+
+  const persistEditorState = useCallback(async () => {
+    if (!clip.id) {
+      return
+    }
+
+    try {
+      const newMetadata = buildEditorMetadata()
+
+      // Save everything to clips-metadata folder (single file)
+      await window.electronAPI.saveClipMetadata(clip.id, newMetadata)
+
+      // Trigger Library update (for real-time UI reflection)
+      onSave?.(clip.id, newMetadata)
+    } catch (error) {
+      console.error('[Editor] Failed to save editor state:', error)
+    }
+  }, [clip.id, buildEditorMetadata, onSave])
+
+  const flushPendingEditorState = useCallback(async () => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+      saveTimeoutRef.current = null
+    }
+
+    await persistEditorState()
+  }, [persistEditorState])
+
+  // Save editor state when trim, playhead, or audio settings change
+  useEffect(() => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current)
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      void persistEditorState()
+    }, 500)
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+        saveTimeoutRef.current = null
+      }
+    }
+  }, [persistEditorState, isPlaying])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -573,7 +591,7 @@ export const Editor: FC<EditorProps> = ({
   const nextClip = getAdjacentClip ? getAdjacentClip(clip.id, 'next') : null
 
   const handleNavigateClip = useCallback(
-    (direction: 'previous' | 'next') => {
+    async (direction: 'previous' | 'next') => {
       if (!getAdjacentClip || !onOpenClip) {
         return
       }
@@ -583,6 +601,8 @@ export const Editor: FC<EditorProps> = ({
         return
       }
 
+      await flushPendingEditorState()
+
       stopAudioPlayback()
       if (videoRef.current) {
         videoRef.current.pause()
@@ -590,7 +610,7 @@ export const Editor: FC<EditorProps> = ({
 
       onOpenClip(adjacentClip.clip, adjacentClip.metadata)
     },
-    [clip.id, getAdjacentClip, onOpenClip, stopAudioPlayback]
+    [clip.id, flushPendingEditorState, getAdjacentClip, onOpenClip, stopAudioPlayback]
   )
 
   // Track whether playhead is inside trim region (edge detection)
@@ -1146,12 +1166,14 @@ export const Editor: FC<EditorProps> = ({
             <X className="h-5 w-5" />
           </button>
           <div className="flex items-center gap-1 rounded-lg border border-border bg-background-secondary p-1">
-            <button
-              type="button"
-              onClick={() => handleNavigateClip('previous')}
-              disabled={!previousClip}
-              className="rounded-md p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
-              title={
+              <button
+                type="button"
+                onClick={() => {
+                  void handleNavigateClip('previous')
+                }}
+                disabled={!previousClip}
+                className="rounded-md p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
+                title={
                 previousClip
                   ? `Previous clip: ${previousClip.clip.filename.replace('.mp4', '')}`
                   : 'No previous clip in current filtered list'
@@ -1159,12 +1181,14 @@ export const Editor: FC<EditorProps> = ({
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <button
-              type="button"
-              onClick={() => handleNavigateClip('next')}
-              disabled={!nextClip}
-              className="rounded-md p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
-              title={
+              <button
+                type="button"
+                onClick={() => {
+                  void handleNavigateClip('next')
+                }}
+                disabled={!nextClip}
+                className="rounded-md p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
+                title={
                 nextClip
                   ? `Next clip: ${nextClip.clip.filename.replace('.mp4', '')}`
                   : 'No next clip in current filtered list'
