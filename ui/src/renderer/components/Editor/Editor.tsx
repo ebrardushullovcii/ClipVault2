@@ -456,11 +456,18 @@ export const Editor: FC<EditorProps> = ({
           forceAudioReextractRef.current = false
         }
 
-        if (!cancelled && result.track1) {
-          setAudioTrack1Src(result.track1)
-        }
-        if (!cancelled && result.track2) {
-          setAudioTrack2Src(result.track2)
+        if (!cancelled) {
+          const nextTrack1Src =
+            typeof result.track1 === 'string' && result.track1.trim().length > 0
+              ? result.track1
+              : null
+          const nextTrack2Src =
+            typeof result.track2 === 'string' && result.track2.trim().length > 0
+              ? result.track2
+              : null
+
+          setAudioTrack1Src(nextTrack1Src)
+          setAudioTrack2Src(nextTrack2Src)
         }
       } catch (error) {
         console.error('Failed to extract audio tracks:', error)

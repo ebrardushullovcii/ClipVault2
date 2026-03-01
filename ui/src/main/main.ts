@@ -1078,6 +1078,8 @@ interface GamesDatabaseFile {
 type GamesDatabaseResult = {
   success: boolean
   data?: GamesDatabaseFile | null
+  sourcePath?: string
+  sourceMtimeMs?: number
   error?: string
 }
 
@@ -1099,6 +1101,8 @@ const GAME_TAG_SMALL_WORDS = new Set([
 ])
 
 let cachedGameAliasMap: Map<string, string> | null = null
+let cachedGameAliasMapSourcePath: string | null = null
+let cachedGameAliasMapSourceMtimeMs = 0
 
 const getGamesDatabasePaths = (): string[] => {
   return [
@@ -1205,6 +1209,7 @@ const loadGamesDatabaseFromDisk = async (): Promise<GamesDatabaseResult> => {
         continue
       }
 
+      const fileStats = await stat(dbPath)
       console.log('[GamesDB] Loading from:', dbPath)
       const content = await readFile(dbPath, 'utf-8')
       const parsed = JSON.parse(content) as GamesDatabaseFile
@@ -1214,7 +1219,12 @@ const loadGamesDatabaseFromDisk = async (): Promise<GamesDatabaseResult> => {
       }
 
       console.log('[GamesDB] Successfully loaded', parsed.games.length, 'games')
-      return { success: true, data: parsed }
+      return {
+        success: true,
+        data: parsed,
+        sourcePath: dbPath,
+        sourceMtimeMs: fileStats.mtimeMs,
+      }
     } catch (error) {
       console.log('[GamesDB] Failed to load from:', dbPath, '-', error)
     }
@@ -1224,15 +1234,25 @@ const loadGamesDatabaseFromDisk = async (): Promise<GamesDatabaseResult> => {
   return { success: false, error: 'Games database not found', data: null }
 }
 
-const getGameAliasMap = async (): Promise<Map<string, string>> => {
-  if (cachedGameAliasMap) {
+const ensureGameAliasMapLoaded = async (): Promise<Map<string, string>> => {
+  const result = await loadGamesDatabaseFromDisk()
+  const sourcePath = result.sourcePath ?? null
+  const sourceMtimeMs = result.sourceMtimeMs ?? 0
+
+  if (
+    cachedGameAliasMap &&
+    cachedGameAliasMapSourcePath === sourcePath &&
+    cachedGameAliasMapSourceMtimeMs === sourceMtimeMs
+  ) {
     return cachedGameAliasMap
   }
 
-  const result = await loadGamesDatabaseFromDisk()
   const games = result.success && result.data?.games ? result.data.games : []
 
   cachedGameAliasMap = buildGameAliasMap(games)
+  cachedGameAliasMapSourcePath = sourcePath
+  cachedGameAliasMapSourceMtimeMs = sourceMtimeMs
+
   return cachedGameAliasMap
 }
 
@@ -1500,7 +1520,7 @@ ipcMain.handle('clips:getList', async () => {
       await mkdir(metadataDir, { recursive: true })
     }
 
-    const gameAliasMap = await getGameAliasMap()
+    const gameAliasMap = await ensureGameAliasMapLoaded()
     const pendingMetadataUpdates: Array<{ metadataPath: string; metadata: Record<string, unknown> }> = []
     let migratedGameTags = 0
 
@@ -1576,7 +1596,7 @@ ipcMain.handle('clips:saveMetadata', async (_, clipId: string, metadata: unknown
       await mkdir(metadataDir, { recursive: true })
     }
     const metadataPath = join(metadataDir, `${clipId}.json`)
-    const gameAliasMap = await getGameAliasMap()
+    const gameAliasMap = await ensureGameAliasMapLoaded()
 
     let metadataToSave: unknown = metadata
     if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
@@ -1610,7 +1630,7 @@ ipcMain.handle('clips:getMetadata', async (_, clipId: string) => {
       return parsed
     }
 
-    const gameAliasMap = await getGameAliasMap()
+    const gameAliasMap = await ensureGameAliasMapLoaded()
     const normalized = normalizeGameTagInMetadata(parsed as Record<string, unknown>, gameAliasMap)
 
     if (normalized.changed && normalized.metadata) {
@@ -1687,7 +1707,7 @@ ipcMain.handle('editor:saveState', async (_, clipId: string, state: unknown) => 
     const stateObj = typeof state === 'object' && state !== null ? state : {}
     const mergedState = { ...existingObj, ...stateObj } as Record<string, unknown>
 
-    const gameAliasMap = await getGameAliasMap()
+    const gameAliasMap = await ensureGameAliasMapLoaded()
     const normalized = normalizeGameTagInMetadata(mergedState, gameAliasMap)
 
     await writeFile(statePath, JSON.stringify(normalized.metadata, null, 2), 'utf-8')
@@ -1716,7 +1736,7 @@ ipcMain.handle('editor:loadState', async (_, clipId: string) => {
       return parsed
     }
 
-    const gameAliasMap = await getGameAliasMap()
+    const gameAliasMap = await ensureGameAliasMapLoaded()
     const normalized = normalizeGameTagInMetadata(parsed as Record<string, unknown>, gameAliasMap)
 
     if (normalized.changed && normalized.metadata) {
@@ -2216,9 +2236,20 @@ const uploadFileToUrl = async (
   uploadUrl: string,
   filePath: string,
   headers: Record<string, string | number>,
-  timeoutMs = 10 * 60_000
+  timeoutMs = 10 * 60_000,
+  startByte = 0
 ): Promise<HttpTextResponse> => {
   const stats = await stat(filePath)
+  if (stats.size <= 0) {
+    throw new Error('Cannot upload empty file to YouTube.')
+  }
+
+  if (startByte < 0 || startByte >= stats.size) {
+    throw new Error(`Invalid upload offset (${startByte}) for file size ${stats.size}.`)
+  }
+
+  const safeStartByte = startByte
+  const remainingBytes = stats.size - safeStartByte
   const url = new URL(uploadUrl)
 
   return await new Promise((resolve, reject) => {
@@ -2231,7 +2262,8 @@ const uploadFileToUrl = async (
         path: `${url.pathname}${url.search}`,
         headers: {
           ...headers,
-          'Content-Length': stats.size,
+          'Content-Length': remainingBytes,
+          'Content-Range': `bytes ${safeStartByte}-${stats.size - 1}/${stats.size}`,
         },
       },
       res => {
@@ -2254,7 +2286,7 @@ const uploadFileToUrl = async (
       req.destroy(new Error(`Upload timed out after ${timeoutMs}ms`))
     })
 
-    const stream = createReadStream(filePath)
+    const stream = createReadStream(filePath, { start: safeStartByte })
     stream.on('error', error => {
       req.destroy(error)
       reject(error)
@@ -2499,6 +2531,33 @@ type YouTubeDeviceAuthSession = {
 }
 
 const youtubeDeviceAuthSessions = new Map<string, YouTubeDeviceAuthSession>()
+const youtubeDeviceAuthSessionCleanupTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+const clearYouTubeDeviceAuthCleanupTimer = (deviceCode: string): void => {
+  const existingTimer = youtubeDeviceAuthSessionCleanupTimers.get(deviceCode)
+  if (existingTimer) {
+    clearTimeout(existingTimer)
+    youtubeDeviceAuthSessionCleanupTimers.delete(deviceCode)
+  }
+}
+
+const removeYouTubeDeviceAuthSession = (deviceCode: string): void => {
+  youtubeDeviceAuthSessions.delete(deviceCode)
+  clearYouTubeDeviceAuthCleanupTimer(deviceCode)
+}
+
+const scheduleYouTubeDeviceAuthSessionCleanup = (deviceCode: string, expiresAt: number): void => {
+  clearYouTubeDeviceAuthCleanupTimer(deviceCode)
+
+  const delayMs = Math.max(0, expiresAt - Date.now())
+  const cleanupTimer = setTimeout(() => {
+    youtubeDeviceAuthSessions.delete(deviceCode)
+    youtubeDeviceAuthSessionCleanupTimers.delete(deviceCode)
+  }, delayMs)
+
+  cleanupTimer.unref?.()
+  youtubeDeviceAuthSessionCleanupTimers.set(deviceCode, cleanupTimer)
+}
 
 const fetchYouTubeChannel = async (accessToken: string) => {
   const response = await performHttpRequest(
@@ -2589,6 +2648,71 @@ const ensureYouTubeAccessToken = async (): Promise<{
   }
 }
 
+const isRetryableYouTubeUploadStatus = (statusCode: number): boolean => {
+  return statusCode === 429 || statusCode >= 500
+}
+
+const getYouTubeUploadRetryDelayMs = (attempt: number): number => {
+  const baseDelayMs = Math.min(1000 * 2 ** Math.max(0, attempt - 1), 10_000)
+  const jitterMs = Math.floor(Math.random() * 250)
+  return baseDelayMs + jitterMs
+}
+
+type YouTubeUploadResumeState = {
+  nextByte: number
+  completedResponse?: HttpTextResponse
+}
+
+const queryYouTubeUploadResumeState = async (
+  uploadUrl: string,
+  accessToken: string,
+  totalSize: number
+): Promise<YouTubeUploadResumeState> => {
+  try {
+    const response = await performHttpRequest(
+      'PUT',
+      uploadUrl,
+      {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Length': 0,
+        'Content-Range': `bytes */${totalSize}`,
+      },
+      undefined,
+      30_000
+    )
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return {
+        nextByte: totalSize,
+        completedResponse: response,
+      }
+    }
+
+    if (response.statusCode !== 308) {
+      return { nextByte: 0 }
+    }
+
+    const rangeHeader = response.headers.range
+    const rangeValue = Array.isArray(rangeHeader) ? rangeHeader[0] : rangeHeader
+    const rangeMatch = typeof rangeValue === 'string' ? /bytes=0-(\d+)/i.exec(rangeValue) : null
+
+    if (!rangeMatch) {
+      return { nextByte: 0 }
+    }
+
+    const uploadedLastByte = Number.parseInt(rangeMatch[1], 10)
+    if (!Number.isFinite(uploadedLastByte)) {
+      return { nextByte: 0 }
+    }
+
+    return {
+      nextByte: Math.max(0, Math.min(uploadedLastByte + 1, totalSize)),
+    }
+  } catch {
+    return { nextByte: 0 }
+  }
+}
+
 const uploadToYouTube = async (
   accessToken: string,
   filePath: string,
@@ -2632,10 +2756,79 @@ const uploadToYouTube = async (
     throw new Error(`Failed to initialize YouTube upload (${initResponse.statusCode}): ${initResponse.body}`)
   }
 
-  const uploadResponse = await uploadFileToUrl(uploadUrl, filePath, {
-    Authorization: `Bearer ${accessToken}`,
-    'Content-Type': 'video/mp4',
-  })
+  let uploadResponse: HttpTextResponse | null = null
+  let resumeStartByte = 0
+  const maxUploadAttempts = 4
+
+  for (let attempt = 1; attempt <= maxUploadAttempts; attempt += 1) {
+    try {
+      uploadResponse = await uploadFileToUrl(
+        uploadUrl,
+        filePath,
+        {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'video/mp4',
+        },
+        10 * 60_000,
+        resumeStartByte
+      )
+    } catch (error) {
+      if (attempt >= maxUploadAttempts) {
+        throw error
+      }
+
+      const resumeState = await queryYouTubeUploadResumeState(uploadUrl, accessToken, fileStats.size)
+      if (resumeState.completedResponse) {
+        uploadResponse = resumeState.completedResponse
+        break
+      }
+
+      if (resumeState.nextByte >= fileStats.size) {
+        throw new Error(
+          'YouTube upload session reports completion without returning a final response. Please retry the upload.'
+        )
+      }
+
+      if (resumeState.nextByte > 0) {
+        resumeStartByte = resumeState.nextByte
+      }
+
+      const retryDelayMs = getYouTubeUploadRetryDelayMs(attempt)
+      await new Promise(resolve => setTimeout(resolve, retryDelayMs))
+      continue
+    }
+
+    if (uploadResponse.statusCode >= 200 && uploadResponse.statusCode < 300) {
+      break
+    }
+
+    if (!isRetryableYouTubeUploadStatus(uploadResponse.statusCode) || attempt >= maxUploadAttempts) {
+      throw new Error(`Failed to upload to YouTube (${uploadResponse.statusCode}): ${uploadResponse.body}`)
+    }
+
+    const resumeState = await queryYouTubeUploadResumeState(uploadUrl, accessToken, fileStats.size)
+    if (resumeState.completedResponse) {
+      uploadResponse = resumeState.completedResponse
+      break
+    }
+
+    if (resumeState.nextByte >= fileStats.size) {
+      throw new Error(
+        'YouTube upload session reports completion without returning a final response. Please retry the upload.'
+      )
+    }
+
+    if (resumeState.nextByte > 0) {
+      resumeStartByte = resumeState.nextByte
+    }
+
+    const retryDelayMs = getYouTubeUploadRetryDelayMs(attempt)
+    await new Promise(resolve => setTimeout(resolve, retryDelayMs))
+  }
+
+  if (!uploadResponse) {
+    throw new Error('YouTube upload failed before receiving a server response.')
+  }
 
   if (uploadResponse.statusCode < 200 || uploadResponse.statusCode >= 300) {
     throw new Error(`Failed to upload to YouTube (${uploadResponse.statusCode}): ${uploadResponse.body}`)
@@ -3145,12 +3338,15 @@ ipcMain.handle(
         }
       }
 
+      const sessionExpiresAt = Date.now() + (payload.expires_in || 1800) * 1000
+
       youtubeDeviceAuthSessions.set(payload.device_code, {
         mode: credentials.mode,
         clientId: credentials.clientId,
         clientSecret: credentials.clientSecret,
-        expiresAt: Date.now() + (payload.expires_in || 1800) * 1000,
+        expiresAt: sessionExpiresAt,
       })
+      scheduleYouTubeDeviceAuthSessionCleanup(payload.device_code, sessionExpiresAt)
 
       return {
         success: true,
@@ -3192,7 +3388,7 @@ ipcMain.handle(
       }
 
       if (Date.now() > authSession.expiresAt) {
-        youtubeDeviceAuthSessions.delete(deviceCode)
+        removeYouTubeDeviceAuthSession(deviceCode)
         return {
           success: false,
           error: 'YouTube authorization expired. Start connect again.',
@@ -3227,7 +3423,7 @@ ipcMain.handle(
       }
 
       if (payload?.error) {
-        youtubeDeviceAuthSessions.delete(deviceCode)
+        removeYouTubeDeviceAuthSession(deviceCode)
         return {
           success: false,
           error: payload.error_description || payload.error,
@@ -3235,7 +3431,7 @@ ipcMain.handle(
       }
 
       if (!payload?.access_token) {
-        youtubeDeviceAuthSessions.delete(deviceCode)
+        removeYouTubeDeviceAuthSession(deviceCode)
         return {
           success: false,
           error: 'No access token returned from YouTube OAuth.',
@@ -3256,7 +3452,7 @@ ipcMain.handle(
       settings.social.youtube.channel_title = channel.channelTitle
 
       if (!settings.social.youtube.refresh_token) {
-        youtubeDeviceAuthSessions.delete(deviceCode)
+        removeYouTubeDeviceAuthSession(deviceCode)
         return {
           success: false,
           error: 'No refresh token returned. Revoke ClipVault access in Google Account and try connecting again.',
@@ -3264,7 +3460,7 @@ ipcMain.handle(
       }
 
       await persistNormalizedSettings(settings)
-      youtubeDeviceAuthSessions.delete(deviceCode)
+      removeYouTubeDeviceAuthSession(deviceCode)
 
       return {
         success: true,
@@ -3284,6 +3480,10 @@ ipcMain.handle(
 ipcMain.handle('social:youtube:disconnect', async () => {
   try {
     youtubeDeviceAuthSessions.clear()
+    for (const cleanupTimer of youtubeDeviceAuthSessionCleanupTimers.values()) {
+      clearTimeout(cleanupTimer)
+    }
+    youtubeDeviceAuthSessionCleanupTimers.clear()
     const settings = await readNormalizedSettings()
     settings.social.youtube.access_token = ''
     settings.social.youtube.refresh_token = ''
