@@ -409,7 +409,7 @@ export const Editor: FC<EditorProps> = ({
     return () => {
       void flushPendingEditorStateRef.current?.()
     }
-  }, [])
+  }, [clip.id])
 
   // Close dropdown when clicking outside
   useEffect(() => {

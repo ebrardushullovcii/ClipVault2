@@ -619,7 +619,11 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
     }
 
     const pollAuth = async () => {
-      if (cancelled || Date.now() > youtubeAuthSession.expiresAt) {
+      if (cancelled) {
+        return
+      }
+
+      if (Date.now() > youtubeAuthSession.expiresAt) {
         setYoutubeAuthSession(null)
         setYoutubeAuthState('error')
         setYoutubeAuthMessage('YouTube authorization expired. Start again.')
