@@ -18,6 +18,7 @@ import {
   writeFile,
   readdir,
   stat,
+  realpath as fsRealpath,
   mkdir,
   unlink as fsUnlinkAsync,
   rename,
@@ -890,18 +891,22 @@ const normalizeSettings = (raw: unknown, fileExists: boolean) => {
   if (typeof merged.social.youtube.client_id !== 'string') {
     merged.social.youtube.client_id = ''
   }
+  merged.social.youtube.client_id = merged.social.youtube.client_id.trim()
   if (!['managed', 'custom'].includes(merged.social.youtube.auth_mode)) {
     merged.social.youtube.auth_mode = 'managed'
   }
   if (typeof merged.social.youtube.client_secret !== 'string') {
     merged.social.youtube.client_secret = ''
   }
+  merged.social.youtube.client_secret = merged.social.youtube.client_secret.trim()
   if (typeof merged.social.youtube.refresh_token !== 'string') {
     merged.social.youtube.refresh_token = ''
   }
+  merged.social.youtube.refresh_token = merged.social.youtube.refresh_token.trim()
   if (typeof merged.social.youtube.access_token !== 'string') {
     merged.social.youtube.access_token = ''
   }
+  merged.social.youtube.access_token = merged.social.youtube.access_token.trim()
   if (typeof merged.social.youtube.channel_id !== 'string') {
     merged.social.youtube.channel_id = ''
   }
@@ -1164,14 +1169,63 @@ const readNormalizedSettings = async (): Promise<NormalizedSettings> => {
     const normalized = normalizeSettings(JSON.parse(content), true)
 
     const secureSecrets = await readSecureYouTubeSecrets()
-    if (typeof secureSecrets.clientSecret === 'string' && secureSecrets.clientSecret) {
-      normalized.social.youtube.client_secret = secureSecrets.clientSecret
+
+    const plaintextSecrets: YouTubeSecretSnapshot = {
+      clientSecret: normalized.social.youtube.client_secret.trim(),
+      refreshToken: normalized.social.youtube.refresh_token.trim(),
+      accessToken: normalized.social.youtube.access_token.trim(),
     }
-    if (typeof secureSecrets.refreshToken === 'string' && secureSecrets.refreshToken) {
-      normalized.social.youtube.refresh_token = secureSecrets.refreshToken
+
+    const resolvedSecrets: YouTubeSecretSnapshot = {
+      clientSecret:
+        typeof secureSecrets.clientSecret === 'string' ? secureSecrets.clientSecret.trim() : '',
+      refreshToken:
+        typeof secureSecrets.refreshToken === 'string' ? secureSecrets.refreshToken.trim() : '',
+      accessToken: typeof secureSecrets.accessToken === 'string' ? secureSecrets.accessToken.trim() : '',
     }
-    if (typeof secureSecrets.accessToken === 'string' && secureSecrets.accessToken) {
-      normalized.social.youtube.access_token = secureSecrets.accessToken
+
+    let migratedLegacySecrets = false
+
+    if (!resolvedSecrets.clientSecret && plaintextSecrets.clientSecret) {
+      resolvedSecrets.clientSecret = plaintextSecrets.clientSecret
+      migratedLegacySecrets = true
+    }
+    if (!resolvedSecrets.refreshToken && plaintextSecrets.refreshToken) {
+      resolvedSecrets.refreshToken = plaintextSecrets.refreshToken
+      migratedLegacySecrets = true
+    }
+    if (!resolvedSecrets.accessToken && plaintextSecrets.accessToken) {
+      resolvedSecrets.accessToken = plaintextSecrets.accessToken
+      migratedLegacySecrets = true
+    }
+
+    if (migratedLegacySecrets) {
+      try {
+        await persistSecureYouTubeSecrets(resolvedSecrets)
+
+        const migratedSanitizedSettings = normalizeSettings(normalized, true)
+        migratedSanitizedSettings.social.youtube.client_secret = ''
+        migratedSanitizedSettings.social.youtube.refresh_token = ''
+        migratedSanitizedSettings.social.youtube.access_token = ''
+
+        await writeFile(settingsPath, JSON.stringify(migratedSanitizedSettings, null, 2), 'utf-8')
+      } catch (error) {
+        console.error('[Settings] Failed to migrate legacy plaintext YouTube secrets:', error)
+      }
+    }
+
+    normalized.social.youtube.client_secret = ''
+    normalized.social.youtube.refresh_token = ''
+    normalized.social.youtube.access_token = ''
+
+    if (resolvedSecrets.clientSecret) {
+      normalized.social.youtube.client_secret = resolvedSecrets.clientSecret
+    }
+    if (resolvedSecrets.refreshToken) {
+      normalized.social.youtube.refresh_token = resolvedSecrets.refreshToken
+    }
+    if (resolvedSecrets.accessToken) {
+      normalized.social.youtube.access_token = resolvedSecrets.accessToken
     }
 
     return normalized
@@ -2456,9 +2510,9 @@ const isPathWithinRoot = (rootPath: string, candidatePath: string): boolean => {
   return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
 }
 
-const validateExportSharePath = (
+const validateExportSharePath = async (
   candidatePath: string
-): { valid: true; filePath: string } | { valid: false; error: string } => {
+): Promise<{ valid: true; filePath: string } | { valid: false; error: string }> => {
   if (!candidatePath || typeof candidatePath !== 'string') {
     return { valid: false, error: 'Missing share file path.' }
   }
@@ -2466,14 +2520,34 @@ const validateExportSharePath = (
   const resolvedPath = resolve(candidatePath)
   const exportedClipsRoot = resolve(join(getClipsPath(), 'exported-clips'))
 
-  if (!isPathWithinRoot(exportedClipsRoot, resolvedPath)) {
+  let canonicalExportedClipsRoot: string
+  try {
+    canonicalExportedClipsRoot = await fsRealpath(exportedClipsRoot)
+  } catch {
+    return {
+      valid: false,
+      error: 'Exported clips directory is unavailable.',
+    }
+  }
+
+  let canonicalCandidatePath: string
+  try {
+    canonicalCandidatePath = await fsRealpath(resolvedPath)
+  } catch {
+    return {
+      valid: false,
+      error: 'Export file path could not be resolved.',
+    }
+  }
+
+  if (!isPathWithinRoot(canonicalExportedClipsRoot, canonicalCandidatePath)) {
     return {
       valid: false,
       error: 'Invalid share path. Only files in exported-clips can be shared.',
     }
   }
 
-  if (!resolvedPath.toLowerCase().endsWith('.mp4')) {
+  if (!canonicalCandidatePath.toLowerCase().endsWith('.mp4')) {
     return {
       valid: false,
       error: 'Only MP4 exports can be shared.',
@@ -2482,7 +2556,7 @@ const validateExportSharePath = (
 
   return {
     valid: true,
-    filePath: resolvedPath,
+    filePath: canonicalCandidatePath,
   }
 }
 
@@ -3010,7 +3084,7 @@ let exportPreviewCreationQueue: Promise<void> = Promise.resolve()
 
 // Create export preview window
 async function createExportPreviewWindow(filePath: string) {
-  const pathValidation = validateExportSharePath(filePath)
+  const pathValidation = await validateExportSharePath(filePath)
   if (!pathValidation.valid) {
     throw new Error(pathValidation.error)
   }
@@ -3327,13 +3401,13 @@ async function createExportPreviewWindow(filePath: string) {
 
 }
 
-ipcMain.on('export:startDrag', (event, data: unknown) => {
+ipcMain.on('export:startDrag', async (event, data: unknown) => {
   if (!exportPreviewWindow || event.sender !== exportPreviewWindow.webContents) {
     return
   }
 
   const filePath = typeof data === 'string' ? data : ''
-  const pathValidation = validateExportSharePath(filePath)
+  const pathValidation = await validateExportSharePath(filePath)
   if (!pathValidation.valid) {
     console.warn('Rejected export drag request:', pathValidation.error)
     return
@@ -3354,13 +3428,13 @@ ipcMain.on('export:startDrag', (event, data: unknown) => {
   }
 })
 
-ipcMain.on('export:openFolder', (event, data: unknown) => {
+ipcMain.on('export:openFolder', async (event, data: unknown) => {
   if (!exportPreviewWindow || event.sender !== exportPreviewWindow.webContents) {
     return
   }
 
   const filePath = typeof data === 'string' ? data : ''
-  const pathValidation = validateExportSharePath(filePath)
+  const pathValidation = await validateExportSharePath(filePath)
   if (!pathValidation.valid) {
     console.warn('Rejected open-folder request:', pathValidation.error)
     return
@@ -3666,7 +3740,7 @@ ipcMain.handle(
   'social:shareDiscord',
   async (_, params: { filePath: string; message?: string }) => {
     try {
-      const pathValidation = validateExportSharePath(params?.filePath)
+      const pathValidation = await validateExportSharePath(params?.filePath)
       if (!pathValidation.valid) {
         return {
           success: false,
@@ -3734,7 +3808,7 @@ ipcMain.handle(
     }
   ) => {
     try {
-      const pathValidation = validateExportSharePath(params?.filePath)
+      const pathValidation = await validateExportSharePath(params?.filePath)
       if (!pathValidation.valid) {
         return {
           success: false,

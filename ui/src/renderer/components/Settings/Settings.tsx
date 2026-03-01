@@ -382,7 +382,7 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
 
       if (!result.success) {
         setSaveSuccess(false)
-        setError('Failed to save settings')
+        setError(result.error || 'Failed to save settings')
         return
       }
 

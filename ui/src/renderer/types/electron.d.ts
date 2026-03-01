@@ -171,7 +171,7 @@ export interface MonitorInfo {
 
 export interface ElectronAPI {
   getSettings: () => Promise<AppSettings>
-  saveSettings: (settings: AppSettings) => Promise<{ success: boolean; restarted?: boolean }>
+  saveSettings: (settings: AppSettings) => Promise<{ success: boolean; restarted?: boolean; error?: string }>
   restartBackend: () => Promise<{ success: boolean; restarted?: boolean }>
   getMonitors: () => Promise<MonitorInfo[]>
   getAudioDevices: (type: 'output' | 'input') => Promise<AudioDeviceInfo[]>
