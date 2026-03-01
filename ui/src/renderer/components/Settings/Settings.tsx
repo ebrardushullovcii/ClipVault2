@@ -379,6 +379,13 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
       setSaving(true)
       setError(null)
       const result = await window.electronAPI.saveSettings(settings)
+
+      if (!result.success) {
+        setSaveSuccess(false)
+        setError('Failed to save settings')
+        return
+      }
+
       setSaveSuccess(true)
       setOriginalSettings(cloneSettings(settings))
       onSettingsSaved?.(cloneSettings(settings))

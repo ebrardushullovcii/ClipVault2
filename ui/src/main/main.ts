@@ -10,6 +10,7 @@ import {
   Tray,
   Rectangle,
   screen,
+  safeStorage,
 } from 'electron'
 import { dirname, join, basename, resolve, relative, isAbsolute } from 'path'
 import {
@@ -1027,6 +1028,99 @@ const getConfigDir = (): string => {
   return join(appDataPath, 'ClipVault')
 }
 
+type PersistedSecureYouTubeSecrets = {
+  version: number
+  provider: 'youtube'
+  clientSecret?: string
+  refreshToken?: string
+  accessToken?: string
+}
+
+type YouTubeSecretSnapshot = {
+  clientSecret: string
+  refreshToken: string
+  accessToken: string
+}
+
+const getSecureSettingsPath = (): string => {
+  return join(getConfigDir(), 'settings.secure.json')
+}
+
+const encryptSecretForStorage = (secretValue: string): string => {
+  const trimmedValue = secretValue.trim()
+  if (!trimmedValue) {
+    return ''
+  }
+
+  const encryptedValue = safeStorage.encryptString(trimmedValue)
+  return encryptedValue.toString('base64')
+}
+
+const decryptSecretFromStorage = (encryptedValue: unknown): string => {
+  if (typeof encryptedValue !== 'string' || !encryptedValue.trim()) {
+    return ''
+  }
+
+  try {
+    const encryptedBuffer = Buffer.from(encryptedValue, 'base64')
+    return safeStorage.decryptString(encryptedBuffer)
+  } catch {
+    return ''
+  }
+}
+
+const persistSecureYouTubeSecrets = async (secrets: YouTubeSecretSnapshot): Promise<void> => {
+  const secureSettingsPath = getSecureSettingsPath()
+  const hasSecrets = Boolean(secrets.clientSecret || secrets.refreshToken || secrets.accessToken)
+
+  if (!hasSecrets) {
+    if (existsSync(secureSettingsPath)) {
+      await fsUnlinkAsync(secureSettingsPath).catch(() => {})
+    }
+    return
+  }
+
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('Secure credential storage is unavailable on this system.')
+  }
+
+  const payload: PersistedSecureYouTubeSecrets = {
+    version: 1,
+    provider: 'youtube',
+    clientSecret: encryptSecretForStorage(secrets.clientSecret),
+    refreshToken: encryptSecretForStorage(secrets.refreshToken),
+    accessToken: encryptSecretForStorage(secrets.accessToken),
+  }
+
+  await writeFile(secureSettingsPath, JSON.stringify(payload, null, 2), 'utf-8')
+}
+
+const readSecureYouTubeSecrets = async (): Promise<Partial<YouTubeSecretSnapshot>> => {
+  const secureSettingsPath = getSecureSettingsPath()
+  if (!existsSync(secureSettingsPath)) {
+    return {}
+  }
+
+  if (!safeStorage.isEncryptionAvailable()) {
+    console.error('[Settings] Secure credential storage is unavailable; cannot decrypt YouTube secrets.')
+    return {}
+  }
+
+  try {
+    const content = await readFile(secureSettingsPath, 'utf-8')
+    const parsed = JSON.parse(content) as PersistedSecureYouTubeSecrets
+
+    return {
+      clientSecret: decryptSecretFromStorage(parsed.clientSecret),
+      refreshToken: decryptSecretFromStorage(parsed.refreshToken),
+      accessToken: decryptSecretFromStorage(parsed.accessToken),
+    }
+  } catch (error) {
+    console.error('[Settings] Failed to read secure YouTube secrets:', error)
+    return {}
+  }
+}
+
 const persistNormalizedSettings = async (settings: NormalizedSettings): Promise<void> => {
   const configDir = getConfigDir()
   const settingsPath = getSettingsPath()
@@ -1035,7 +1129,26 @@ const persistNormalizedSettings = async (settings: NormalizedSettings): Promise<
     await mkdir(configDir, { recursive: true })
   }
 
-  await writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8')
+  const normalizedToPersist = normalizeSettings(settings, true)
+  const secretSnapshot: YouTubeSecretSnapshot = {
+    clientSecret: normalizedToPersist.social.youtube.client_secret.trim(),
+    refreshToken: normalizedToPersist.social.youtube.refresh_token.trim(),
+    accessToken: normalizedToPersist.social.youtube.access_token.trim(),
+  }
+
+  try {
+    await persistSecureYouTubeSecrets(secretSnapshot)
+  } catch (error) {
+    console.error('[Settings] Failed to persist secure YouTube secrets:', error)
+    throw error
+  }
+
+  const sanitizedSettings = normalizeSettings(normalizedToPersist, true)
+  sanitizedSettings.social.youtube.client_secret = ''
+  sanitizedSettings.social.youtube.refresh_token = ''
+  sanitizedSettings.social.youtube.access_token = ''
+
+  await writeFile(settingsPath, JSON.stringify(sanitizedSettings, null, 2), 'utf-8')
 }
 
 const readNormalizedSettings = async (): Promise<NormalizedSettings> => {
@@ -1048,7 +1161,20 @@ const readNormalizedSettings = async (): Promise<NormalizedSettings> => {
 
   try {
     const content = await readFile(settingsPath, 'utf-8')
-    return normalizeSettings(JSON.parse(content), true)
+    const normalized = normalizeSettings(JSON.parse(content), true)
+
+    const secureSecrets = await readSecureYouTubeSecrets()
+    if (typeof secureSecrets.clientSecret === 'string' && secureSecrets.clientSecret) {
+      normalized.social.youtube.client_secret = secureSecrets.clientSecret
+    }
+    if (typeof secureSecrets.refreshToken === 'string' && secureSecrets.refreshToken) {
+      normalized.social.youtube.refresh_token = secureSecrets.refreshToken
+    }
+    if (typeof secureSecrets.accessToken === 'string' && secureSecrets.accessToken) {
+      normalized.social.youtube.access_token = secureSecrets.accessToken
+    }
+
+    return normalized
   } catch (error) {
     console.error('Failed to parse settings, using defaults:', error)
     return normalizeSettings(null, false)
@@ -1398,7 +1524,7 @@ ipcMain.handle('settings:save', async (_, settings: unknown) => {
     return { success: true, restarted }
   } catch (error) {
     console.error('Failed to save settings:', error)
-    throw error
+    return { success: false, error: String(error) }
   }
 })
 
@@ -2376,7 +2502,6 @@ const isValidDiscordWebhookUrl = (candidate: string): boolean => {
 const sanitizeMultipartFilename = (fileName: string): string => {
   const sanitized = fileName
     .replace(/[\r\n\0]/g, '')
-    .replace(/[\x00-\x1F\x7F]/g, '')
     .replace(/[^A-Za-z0-9._-]/g, '_')
     .replace(/^[_\-.]+/, '')
     .replace(/[_\-.]+$/, '')
@@ -2459,7 +2584,7 @@ const uploadToDiscord = async (
   url.searchParams.set('wait', 'true')
 
   const fileName = sanitizeMultipartFilename(basename(filePath))
-  const fileBuffer = await readFile(filePath)
+  const fileStats = await stat(filePath)
   const boundary = `----ClipVaultBoundary${Date.now()}`
 
   const payload = {
@@ -2476,17 +2601,51 @@ const uploadToDiscord = async (
     'utf-8'
   )
   const ending = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf-8')
-  const body = Buffer.concat([preamble, fileBuffer, ending])
+  const contentLength = preamble.byteLength + fileStats.size + ending.byteLength
 
-  const response = await performHttpRequest(
-    'POST',
-    url.toString(),
-    {
-      'Content-Type': `multipart/form-data; boundary=${boundary}`,
-      'Content-Length': body.byteLength,
-    },
-    body
-  )
+  const response = await new Promise<HttpTextResponse>((resolve, reject) => {
+    const req = httpsRequest(
+      {
+        method: 'POST',
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port ? Number(url.port) : undefined,
+        path: `${url.pathname}${url.search}`,
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': contentLength,
+        },
+      },
+      res => {
+        const chunks: Buffer[] = []
+        res.on('data', chunk => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        })
+        res.on('end', () => {
+          resolve({
+            statusCode: res.statusCode || 0,
+            headers: res.headers,
+            body: Buffer.concat(chunks).toString('utf-8'),
+          })
+        })
+      }
+    )
+
+    req.on('error', reject)
+    req.setTimeout(60_000, () => {
+      req.destroy(new Error('Discord upload request timed out after 60000ms'))
+    })
+
+    req.write(preamble)
+    const fileStream = createReadStream(filePath)
+    fileStream.on('error', error => {
+      req.destroy(error)
+    })
+    fileStream.on('end', () => {
+      req.end(ending)
+    })
+    fileStream.pipe(req, { end: false })
+  })
 
   if (response.statusCode < 200 || response.statusCode >= 300) {
     throw new Error(`Discord upload failed (${response.statusCode}): ${response.body}`)
@@ -2649,7 +2808,7 @@ const ensureYouTubeAccessToken = async (): Promise<{
 }
 
 const isRetryableYouTubeUploadStatus = (statusCode: number): boolean => {
-  return statusCode === 429 || statusCode >= 500
+  return statusCode === 308 || statusCode === 429 || statusCode >= 500
 }
 
 const getYouTubeUploadRetryDelayMs = (attempt: number): number => {

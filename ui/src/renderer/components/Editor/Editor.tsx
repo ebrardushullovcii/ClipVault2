@@ -141,6 +141,8 @@ export const Editor: FC<EditorProps> = ({
   const [exportResolution, setExportResolution] = useState<string>('original')
   const [videoSrc, setVideoSrc] = useState(`clipvault://clip/${encodeURIComponent(clip.filename)}`)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const flushPendingEditorStateRef = useRef<(() => Promise<void>) | null>(null)
+  const [isEditorHydrated, setIsEditorHydrated] = useState(false)
 
   // Load settings
   useEffect(() => {
@@ -159,10 +161,17 @@ export const Editor: FC<EditorProps> = ({
 
   // Load editor state from disk
   useEffect(() => {
+    let cancelled = false
+    setIsEditorHydrated(false)
+
     const loadEditorState = async () => {
       try {
         // Load from clips-metadata folder (single source of truth)
         const clipMetadata = await window.electronAPI.editor.loadState(clip.id)
+        if (cancelled) {
+          return
+        }
+
         if (clipMetadata) {
           console.log('[Editor] Loading metadata for clip:', clip.id)
 
@@ -208,9 +217,18 @@ export const Editor: FC<EditorProps> = ({
         }
       } catch (error) {
         console.error('[Editor] Failed to load editor state:', error)
+      } finally {
+        if (!cancelled) {
+          setIsEditorHydrated(true)
+        }
       }
     }
-    loadEditorState()
+
+    void loadEditorState()
+
+    return () => {
+      cancelled = true
+    }
   }, [clip.id])
 
   // Update duration when metadata changes
@@ -291,11 +309,23 @@ export const Editor: FC<EditorProps> = ({
       saveTimeoutRef.current = null
     }
 
+    if (!isEditorHydrated) {
+      return
+    }
+
     await persistEditorState()
-  }, [persistEditorState])
+  }, [isEditorHydrated, persistEditorState])
+
+  useEffect(() => {
+    flushPendingEditorStateRef.current = flushPendingEditorState
+  }, [flushPendingEditorState])
 
   // Save editor state when trim, playhead, or audio settings change
   useEffect(() => {
+    if (!isEditorHydrated) {
+      return
+    }
+
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)
     }
@@ -310,7 +340,13 @@ export const Editor: FC<EditorProps> = ({
         saveTimeoutRef.current = null
       }
     }
-  }, [persistEditorState, isPlaying])
+  }, [isEditorHydrated, persistEditorState, isPlaying])
+
+  useEffect(() => {
+    return () => {
+      void flushPendingEditorStateRef.current?.()
+    }
+  }, [])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -416,12 +452,8 @@ export const Editor: FC<EditorProps> = ({
         return
       }
 
-      if (audioTrack1Src) {
-        audioBuffer1Ref.current = track1Buffer
-      }
-      if (audioTrack2Src) {
-        audioBuffer2Ref.current = track2Buffer
-      }
+      audioBuffer1Ref.current = audioTrack1Src ? track1Buffer : null
+      audioBuffer2Ref.current = audioTrack2Src ? track2Buffer : null
 
       // If video is already playing, start audio playback to sync once after both buffers finish.
       if (videoRef.current && !videoRef.current.paused && (track1Buffer || track2Buffer)) {
@@ -440,6 +472,13 @@ export const Editor: FC<EditorProps> = ({
 
     void (async () => {
       if (!window.electronAPI?.extractAudioTracks || metadata.audioTracks < 1) {
+        if (!cancelled) {
+          setAudioTrack1Src(null)
+          setAudioTrack2Src(null)
+          audioBuffer1Ref.current = null
+          audioBuffer2Ref.current = null
+        }
+        forceAudioReextractRef.current = false
         return
       }
 
