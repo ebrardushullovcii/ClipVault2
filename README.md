@@ -76,6 +76,7 @@ ClipVault/
 | [docs/LIBOBS.md](docs/LIBOBS.md) | OBS API patterns |
 | [docs/FILE_PATHS.md](docs/FILE_PATHS.md) | File locations |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common issues |
+| [docs/FUTURE_FIXES.md](docs/FUTURE_FIXES.md) | Planned code review follow-ups |
 | [AGENTS.md](AGENTS.md) | For AI agents working on this codebase |
 
 ## License
