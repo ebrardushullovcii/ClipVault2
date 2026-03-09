@@ -398,6 +398,8 @@ export const ClipCard: React.FC<ClipCardProps> = memo(
       prevProps.thumbnailUrl === nextProps.thumbnailUrl &&
       prevProps.previewSrc === nextProps.previewSrc &&
       prevProps.isPreviewActive === nextProps.isPreviewActive &&
+      Boolean(prevProps.onPreviewStart) === Boolean(nextProps.onPreviewStart) &&
+      Boolean(prevProps.onPreviewStop) === Boolean(nextProps.onPreviewStop) &&
       prevProps.isSelected === nextProps.isSelected &&
       prevProps.showSelection === nextProps.showSelection &&
       prevProps.metadata?.duration === nextProps.metadata?.duration &&

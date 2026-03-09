@@ -336,9 +336,15 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
         return
       }
 
-      setSaveSuccess(true)
       setOriginalSettings(cloneSettings(settings))
       onSettingsSaved?.(cloneSettings(settings))
+      const restartSucceeded = result.restarted !== false
+      setSaveSuccess(restartSucceeded)
+
+      if (!restartSucceeded) {
+        setError('Settings saved, but the backend restart failed. Restart it manually to apply changes.')
+        return
+      }
 
       // Show restart message
       if (result.restarted) {
