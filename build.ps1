@@ -43,8 +43,44 @@ function Check-Tool {
     }
 }
 
+function Resolve-MingwToolchain {
+    $gxx = Get-Command g++ -ErrorAction SilentlyContinue
+    $gcc = Get-Command gcc -ErrorAction SilentlyContinue
+    if ($gxx -and $gcc) {
+        return @{
+            Gxx = $gxx.Source
+            Gcc = $gcc.Source
+            BinDir = Split-Path $gxx.Source
+        }
+    }
+
+    $candidateRoots = @(
+        (Join-Path $env:USERPROFILE "scoop\apps\mingw\current\bin"),
+        "C:\mingw64\bin",
+        "C:\msys64\mingw64\bin"
+    ) | Where-Object { $_ -and (Test-Path $_) }
+
+    foreach ($binDir in $candidateRoots) {
+        $resolvedGxx = Join-Path $binDir "g++.exe"
+        $resolvedGcc = Join-Path $binDir "gcc.exe"
+        if ((Test-Path $resolvedGxx) -and (Test-Path $resolvedGcc)) {
+            return @{
+                Gxx = $resolvedGxx
+                Gcc = $resolvedGcc
+                BinDir = $binDir
+            }
+        }
+    }
+
+    return $null
+}
+
 Check-Tool "CMake" "cmake"
-Check-Tool "MinGW" "g++"
+$MinGW = Resolve-MingwToolchain
+if (-not $MinGW) {
+    Write-Host "ERROR: MinGW not found. Install with: scoop install mingw" -ForegroundColor Red
+    exit 1
+}
 
 # Setup - clone OBS and build libobs
 if ($Setup) {
@@ -100,9 +136,10 @@ $BuildType = if ($Debug) { "Debug" } else { "Release" }
 Push-Location $BuildDir
 try {
     # Explicitly specify MinGW compilers to avoid Clang being picked up
-    $env:CC = "gcc"
-    $env:CXX = "g++"
-    cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=$BuildType -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+    $env:Path = "$($MinGW.BinDir);$env:Path"
+    $env:CC = $MinGW.Gcc
+    $env:CXX = $MinGW.Gxx
+    cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=$BuildType -DCMAKE_C_COMPILER="$($MinGW.Gcc)" -DCMAKE_CXX_COMPILER="$($MinGW.Gxx)"
     if ($LASTEXITCODE -ne 0) {
         Write-Host "ERROR: CMake configuration failed" -ForegroundColor Red
         exit 1
@@ -124,7 +161,7 @@ Write-Host "Output: bin\ClipVault.exe"
 
 # Copy MinGW runtime DLLs (required for the backend to run on other PCs)
 Write-Host "`n[Copy] Copying MinGW runtime DLLs..."
-$MinGWPath = (Get-Command g++).Source | Split-Path
+$MinGWPath = $MinGW.BinDir
 $MinGWDLLs = @("libgcc_s_seh-1.dll", "libstdc++-6.dll", "libwinpthread-1.dll")
 $DestDir = Join-Path $ProjectRoot "bin"
 
