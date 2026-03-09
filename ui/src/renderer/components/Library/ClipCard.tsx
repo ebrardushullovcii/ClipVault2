@@ -162,14 +162,14 @@ export const ClipCard: React.FC<ClipCardProps> = memo(
         // Allow clicking even without full metadata - Editor will load it
         const fallbackMetadata: VideoMetadata = metadata || {
           duration: 0,
-          width: 1920,
-          height: 1080,
-          fps: 60,
+          width: 0,
+          height: 0,
+          fps: 0,
           bitrate: 0,
           size: clip.size,
-          format: 'mp4',
-          videoCodec: 'h264',
-          audioTracks: 2,
+          format: '',
+          videoCodec: '',
+          audioTracks: 0,
         }
         onOpenEditor(clip, fallbackMetadata)
       }
@@ -305,7 +305,11 @@ export const ClipCard: React.FC<ClipCardProps> = memo(
           {metadata && (
             <div className="absolute left-2 top-2 flex items-center gap-1 rounded bg-black/70 px-2 py-1 text-xs font-medium text-white">
               <Maximize className="h-3 w-3" />
-              {metadata.width >= 1920 ? '1080p' : `${metadata.height}p`}
+              {metadata.width > 0 && metadata.height > 0
+                ? metadata.width >= 1920
+                  ? '1080p'
+                  : `${metadata.height}p`
+                : 'Unknown'}
             </div>
           )}
         </div>
@@ -334,7 +338,7 @@ export const ClipCard: React.FC<ClipCardProps> = memo(
             {metadata && (
               <span className="flex items-center gap-1">
                 <span className="h-1 w-1 rounded-full bg-text-muted" />
-                {Math.round(metadata.fps)}fps
+                {metadata.fps > 0 ? `${Math.round(metadata.fps)}fps` : 'FPS unknown'}
               </span>
             )}
           </div>

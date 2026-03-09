@@ -116,14 +116,14 @@ export const Library: React.FC<LibraryProps> = ({
       return (
         metadata[clip.id] || {
           duration: 0,
-          width: 1920,
-          height: 1080,
-          fps: 60,
+          width: 0,
+          height: 0,
+          fps: 0,
           bitrate: 0,
           size: clip.size,
-          format: 'mp4',
-          videoCodec: 'h264',
-          audioTracks: 2,
+          format: '',
+          videoCodec: '',
+          audioTracks: 0,
         }
       )
     },
@@ -639,7 +639,7 @@ export const Library: React.FC<LibraryProps> = ({
   )
 
   const handleCardClick = useCallback(
-    (clip: ClipInfo, index: number, event: React.MouseEvent<HTMLDivElement>) => {
+    async (clip: ClipInfo, index: number, event: React.MouseEvent<HTMLDivElement>) => {
       stopHoverPreview()
 
       const hasModifier = event.ctrlKey || event.metaKey || event.shiftKey
@@ -652,9 +652,19 @@ export const Library: React.FC<LibraryProps> = ({
         return
       }
 
-      onOpenEditor(clip, getClipMetadataOrFallback(clip))
+      const resolvedMetadata =
+        metadata[clip.id] || (await fetchMetadata(clip.id, clip.path)) || getClipMetadataOrFallback(clip)
+      onOpenEditor(clip, resolvedMetadata)
     },
-    [applySelection, getClipMetadataOrFallback, onOpenEditor, selectionActive, stopHoverPreview]
+    [
+      applySelection,
+      fetchMetadata,
+      getClipMetadataOrFallback,
+      metadata,
+      onOpenEditor,
+      selectionActive,
+      stopHoverPreview,
+    ]
   )
 
   const handleToggleSelect = useCallback(

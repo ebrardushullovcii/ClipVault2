@@ -62,6 +62,7 @@ const allResolutionPresets = [
 
 // FPS options
 const fpsOptions = [30, 60, 120, 144]
+const CONFIGURED_WEBHOOK_PLACEHOLDER = 'configured'
 
 // Calculate estimated file size
 const calculateEstimatedSize = (
