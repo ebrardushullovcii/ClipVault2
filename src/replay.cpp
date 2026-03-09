@@ -200,7 +200,7 @@ void ReplayManager::shutdown()
     LOG_INFO("[REPLAY] SHUTTING DOWN REPLAY BUFFER");
     LOG_INFO("[REPLAY] ==========================================");
 
-    if (active_) {
+    if (active_.load()) {
         LOG_INFO("[REPLAY] Stopping active buffer...");
         stop();
     }
@@ -230,7 +230,7 @@ bool ReplayManager::start()
         return false;
     }
 
-    if (active_) {
+    if (active_.load()) {
         LOG_WARNING("[REPLAY] Already active, skipping start");
         return true;
     }
@@ -288,7 +288,7 @@ bool ReplayManager::start()
 
                 LOG_INFO("[REPLAY] Retrying start with " + encoder.encoder_name() + "...");
                 if (obs_api::output_start(replay_output_)) {
-                    active_ = true;
+                    active_.store(true);
                     start_render_thread();
                     LOG_INFO("[REPLAY] ==========================================");
                     LOG_INFO("[REPLAY] STARTED WITH " + encoder.encoder_name() + " (NVENC)");
@@ -311,7 +311,7 @@ bool ReplayManager::start()
 
                 LOG_INFO("[REPLAY] Retrying start with x264...");
                 if (obs_api::output_start(replay_output_)) {
-                    active_ = true;
+                    active_.store(true);
                     
                     // Start the render thread (CRITICAL for video frame production)
                     start_render_thread();
@@ -340,7 +340,7 @@ bool ReplayManager::start()
         return false;
     }
 
-    active_ = true;
+    active_.store(true);
 
     // Start the render thread (CRITICAL for video frame production)
     start_render_thread();
@@ -355,7 +355,7 @@ bool ReplayManager::start()
 
 void ReplayManager::stop()
 {
-    if (!active_) {
+    if (!active_.load()) {
         LOG_WARNING("[REPLAY] Stop called but not active");
         return;
     }
@@ -366,7 +366,7 @@ void ReplayManager::stop()
     stop_render_thread();
     
     obs_api::output_stop(replay_output_);
-    active_ = false;
+    active_.store(false);
     LOG_INFO("[REPLAY] Stopped");
 }
 
@@ -378,7 +378,7 @@ bool ReplayManager::save_clip()
 
     // Check if active
     LOG_INFO("[REPLAY] Checking status...");
-    if (!active_) {
+    if (!active_.load()) {
         last_error_ = "Replay buffer not active";
         LOG_ERROR("[REPLAY] " + last_error_);
         LOG_ERROR("[REPLAY] Cannot save - buffer is not recording!");
@@ -387,7 +387,7 @@ bool ReplayManager::save_clip()
     LOG_INFO("[REPLAY] Status: Active = YES");
 
     // Check if save already pending
-    if (save_pending_) {
+    if (save_pending_.load()) {
         last_error_ = "Save already in progress";
         LOG_WARNING("[REPLAY] " + last_error_);
         return false;
@@ -412,7 +412,7 @@ bool ReplayManager::save_clip()
     LOG_INFO("    Desktop Audio: " + std::string(audio.system_audio_enabled ? "enabled" : "disabled"));
     LOG_INFO("    Microphone: " + std::string(audio.microphone_enabled ? "enabled" : "disabled"));
     
-    save_pending_ = true;
+    save_pending_.store(true);
     FILETIME save_start_ft;
     GetSystemTimeAsFileTime(&save_start_ft);
     ULARGE_INTEGER save_start_uli;
@@ -428,7 +428,7 @@ bool ReplayManager::save_clip()
     proc_handler_t* ph = obs_api::output_get_proc_handler(replay_output_);
     if (!ph) {
         LOG_ERROR("[REPLAY] CRITICAL: Failed to get procedure handler!");
-        save_pending_ = false;
+        save_pending_.store(false);
         last_error_ = "Failed to get procedure handler";
         return false;
     }
@@ -441,7 +441,7 @@ bool ReplayManager::save_clip()
     
     if (!result) {
         LOG_ERROR("[REPLAY] Save procedure call failed!");
-        save_pending_ = false;
+        save_pending_.store(false);
         last_error_ = "Save procedure call failed";
         return false;
     }
@@ -455,7 +455,7 @@ bool ReplayManager::save_clip()
 
 void ReplayManager::log_pipeline_stats()
 {
-    if (!replay_output_ || !active_) return;
+    if (!replay_output_ || !active_.load()) return;
     
     LOG_INFO("[REPLAY] ==========================================");
     LOG_INFO("[REPLAY] PIPELINE STATS");
@@ -520,7 +520,7 @@ void ReplayManager::on_replay_saved(void* data, calldata_t* calldata)
     }
 
     LOG_INFO("[REPLAY] Callback data pointer valid");
-    LOG_INFO("[REPLAY] save_pending was: " + std::string(self->save_pending_ ? "TRUE" : "FALSE"));
+    LOG_INFO("[REPLAY] save_pending was: " + std::string(self->save_pending_.load() ? "TRUE" : "FALSE"));
 
     const char* path = obs_api::calldata_string(calldata, "path");
 
@@ -673,7 +673,7 @@ void ReplayManager::on_replay_saved(void* data, calldata_t* calldata)
         }
     }
     
-    self->save_pending_ = false;
+    self->save_pending_.store(false);
     LOG_INFO("[REPLAY] save_pending set to FALSE");
     LOG_INFO("[REPLAY] ==========================================");
 }
@@ -692,8 +692,8 @@ void ReplayManager::on_replay_stopped(void* data, calldata_t* calldata)
         return;
     }
 
-    LOG_INFO("[REPLAY] Active flag was: " + std::string(self->active_ ? "TRUE" : "FALSE"));
-    self->active_ = false;
+    LOG_INFO("[REPLAY] Active flag was: " + std::string(self->active_.load() ? "TRUE" : "FALSE"));
+    self->active_.store(false);
     LOG_INFO("[REPLAY] Active flag set to FALSE");
     LOG_INFO("[REPLAY] Buffer stopped recording");
 }
@@ -772,7 +772,7 @@ void ReplayManager::render_thread_loop()
 
 void ReplayManager::log_performance_stats()
 {
-    if (!active_ || !replay_output_) return;
+    if (!active_.load() || !replay_output_) return;
 
     LOG_INFO("[PERF] ==========================================");
     LOG_INFO("[PERF] PERFORMANCE STATS");

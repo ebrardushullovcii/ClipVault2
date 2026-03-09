@@ -32,11 +32,8 @@ const electronAPI: ElectronAPI = {
   getVideoMetadata: (videoPath: string) => ipcRenderer.invoke('clips:getVideoMetadata', videoPath),
 
   // Audio tracks
-  extractAudioTracks: (
-    clipId: string,
-    videoPath: string,
-    options?: { forceReextract?: boolean }
-  ) => ipcRenderer.invoke('audio:extractTracks', clipId, videoPath, options),
+  extractAudioTracks: (clipId: string, videoPath: string, options?: { forceReextract?: boolean }) =>
+    ipcRenderer.invoke('audio:extractTracks', clipId, videoPath, options),
 
   // Video loading
   getVideoFileUrl: (filename: string) => ipcRenderer.invoke('video:getFileUrl', filename),
@@ -56,8 +53,7 @@ const electronAPI: ElectronAPI = {
       mode?: 'managed' | 'custom'
       clientId?: string
       clientSecret?: string
-    }) =>
-      ipcRenderer.invoke('social:youtube:startDeviceAuth', params),
+    }) => ipcRenderer.invoke('social:youtube:startDeviceAuth', params),
     youtubePollDeviceAuth: (params: { deviceCode: string }) =>
       ipcRenderer.invoke('social:youtube:pollDeviceAuth', params),
     youtubeDisconnect: () => ipcRenderer.invoke('social:youtube:disconnect'),

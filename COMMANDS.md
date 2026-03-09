@@ -35,7 +35,7 @@ npm run build:all
 npm run package:portable
 ```
 
-Output: `ui\release\win-unpacked\ClipVault.exe`
+Output: `ui\release\ClipVault-Portable.exe`
 
 ### Installer
 
@@ -60,11 +60,29 @@ npm run dev
 Start-Process .\bin\ClipVault.exe; npm run dev
 ```
 
-### Production (Packaged)
+### Production (Installed)
+
+```powershell
+.\ui\release\ClipVault-Setup-{version}.exe
+```
+
+Run the setup exe to install ClipVault with Start menu/Search/Uninstall registration.
+
+### Production (Portable)
+
+```powershell
+.\ui\release\ClipVault-Portable.exe
+```
+
+Portable builds run without installing and do not register with Windows.
+
+### Unpacked Smoke Test
 
 ```powershell
 .\ui\release\win-unpacked\ClipVault.exe
 ```
+
+This is only for packaging smoke tests. It is not an installed app and will not show up in Windows Search or Apps & features.
 
 ## Test
 
@@ -87,16 +105,16 @@ npm run lint
 ### Verify Package
 
 ```powershell
-# Build and run packaged version
-npm run package:portable
-.\ui\release\win-unpacked\ClipVault.exe
+# Build and test the real installer flow
+npm run package:win
+.\ui\release\ClipVault-Setup-{version}.exe
 ```
 
 ### Verify Clip Recording
 
 ```powershell
-# 1. Run packaged app
-.\ui\release\win-unpacked\ClipVault.exe
+# 1. Run a packaged app
+.\ui\release\ClipVault-Portable.exe
 
 # 2. Wait for tray icon to appear
 # 3. Press F9 to save clip

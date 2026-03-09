@@ -41,8 +41,8 @@ public:
 
     // Check status
     bool is_initialized() const { return initialized_; }
-    bool is_active() const { return active_; }
-    bool is_save_pending() const { return save_pending_; }
+    bool is_active() const { return active_.load(); }
+    bool is_save_pending() const { return save_pending_.load(); }
     const std::string& last_error() const { return last_error_; }
     const std::string& last_saved_file() const { return last_saved_file_; }
 
@@ -63,8 +63,8 @@ private:
     obs_output_t* replay_output_ = nullptr;
 
     bool initialized_ = false;
-    bool active_ = false;
-    bool save_pending_ = false;
+    std::atomic<bool> active_{false};
+    std::atomic<bool> save_pending_{false};
     std::string last_error_;
     std::string last_saved_file_;
     std::string current_game_;  // Game name for next save operation (protected by mutex)

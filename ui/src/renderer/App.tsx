@@ -84,14 +84,16 @@ function App() {
   }, [])
 
   // Add entry to history when opening a clip
-  const addToHistory = useCallback((entry: HistoryEntry) => {
-    setHistory(prev => {
-      // Remove any forward history if we're branching off
-      const newHistory = prev.slice(0, prev.length)
-      return [...newHistory, entry]
-    })
-    setHistoryIndex(prev => prev + 1)
-  }, [])
+  const addToHistory = useCallback(
+    (entry: HistoryEntry) => {
+      setHistory(prev => {
+        const newHistory = prev.slice(0, historyIndex + 1)
+        return [...newHistory, entry]
+      })
+      setHistoryIndex(historyIndex + 1)
+    },
+    [historyIndex]
+  )
 
   // Go back in history
   const goBack = useCallback(() => {

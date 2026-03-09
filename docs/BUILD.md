@@ -83,13 +83,18 @@ bin/                          # Backend build output
 └── obs-plugins/
     └── 64bit/               # OBS plugins (capture, encoding)
 
-ui/release/win-unpacked/     # Packaged app
-├── ClipVault.exe            # Electron app (run this)
-└── resources/
-    ├── bin/                 # Bundled backend + OBS
-    ├── ffmpeg/              # FFmpeg binaries
-    └── app.asar             # Bundled UI
+ui/release/
+├── ClipVault-Portable.exe    # Portable build (runs without installing)
+├── ClipVault-Setup-X.Y.Z.exe # Real installer (registers with Windows)
+└── win-unpacked/            # Unpacked smoke-test output from electron-builder
+    ├── ClipVault.exe        # Do not use for normal installation
+    └── resources/
+        ├── bin/             # Bundled backend + OBS
+        ├── ffmpeg/          # FFmpeg binaries
+        └── app.asar         # Bundled UI
 ```
+
+Use `ClipVault-Setup-X.Y.Z.exe` if you want the normal Windows install flow, Start menu/Search entry, and uninstall registration. `win-unpacked\ClipVault.exe` only launches the app directly and does not install it.
 
 ## Troubleshooting
 

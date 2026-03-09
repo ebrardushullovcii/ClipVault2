@@ -56,6 +56,24 @@ const bufferOptions = [
   { value: 300, label: '5 min' },
 ]
 
+type OpenFolderResult = {
+  canceled: boolean
+  filePaths: string[]
+}
+
+const isOpenFolderResult = (value: unknown): value is OpenFolderResult => {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const candidate = value as { canceled?: unknown; filePaths?: unknown }
+  return (
+    typeof candidate.canceled === 'boolean' &&
+    Array.isArray(candidate.filePaths) &&
+    candidate.filePaths.every(path => typeof path === 'string')
+  )
+}
+
 const formatHotkey = (hotkey: string): string => {
   if (!hotkey) return ''
   return hotkey
@@ -278,7 +296,11 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
 
   const handleBrowseFolder = async () => {
     try {
-      const result = await window.electronAPI.dialog.openFolder()
+      const result = (await window.electronAPI.dialog.openFolder()) as unknown
+      if (!isOpenFolderResult(result)) {
+        throw new Error('Invalid folder picker response')
+      }
+
       if (!result.canceled && result.filePaths.length > 0) {
         const [selectedPath] = result.filePaths
         setSettings(prev => ({ ...prev, output_path: selectedPath }))

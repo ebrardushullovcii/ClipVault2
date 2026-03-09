@@ -120,6 +120,8 @@ export const Library: React.FC<LibraryProps> = ({
   const lastSelectedIndexRef = useRef<number | null>(null)
   const bulkMessageTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const rowResizeObserversRef = useRef<Map<number, ResizeObserver>>(new Map())
+  const rowNodesRef = useRef<Map<number, HTMLDivElement>>(new Map())
+  const rowRefCallbacksRef = useRef<Map<number, (node: HTMLDivElement | null) => void>>(new Map())
   const [showGameModal, setShowGameModal] = useState(false)
   const [bulkGameMode, setBulkGameMode] = useState<'add' | 'remove'>('add')
   const [bulkGameValue, setBulkGameValue] = useState('')
@@ -688,7 +690,9 @@ export const Library: React.FC<LibraryProps> = ({
       }
 
       const resolvedMetadata =
-        metadata[clip.id] || (await fetchMetadata(clip.id, clip.path)) || getClipMetadataOrFallback(clip)
+        metadata[clip.id] ||
+        (await fetchMetadata(clip.id, clip.path)) ||
+        getClipMetadataOrFallback(clip)
       onOpenEditor(clip, resolvedMetadata)
     },
     [
@@ -1161,6 +1165,8 @@ export const Library: React.FC<LibraryProps> = ({
     return () => {
       rowResizeObserversRef.current.forEach(observer => observer.disconnect())
       rowResizeObserversRef.current.clear()
+      rowNodesRef.current.clear()
+      rowRefCallbacksRef.current.clear()
     }
   }, [])
 
@@ -1196,6 +1202,11 @@ export const Library: React.FC<LibraryProps> = ({
 
   const observeRow = useCallback(
     (rowIndex: number, node: HTMLDivElement | null) => {
+      const previousNode = rowNodesRef.current.get(rowIndex)
+      if (previousNode === node) {
+        return
+      }
+
       const existingObserver = rowResizeObserversRef.current.get(rowIndex)
       if (existingObserver) {
         existingObserver.disconnect()
@@ -1203,8 +1214,11 @@ export const Library: React.FC<LibraryProps> = ({
       }
 
       if (!node) {
+        rowNodesRef.current.delete(rowIndex)
         return
       }
+
+      rowNodesRef.current.set(rowIndex, node)
 
       const measure = () => {
         updateMeasuredRowHeight(rowIndex, node.getBoundingClientRect().height)
@@ -1219,6 +1233,23 @@ export const Library: React.FC<LibraryProps> = ({
       rowResizeObserversRef.current.set(rowIndex, observer)
     },
     [updateMeasuredRowHeight]
+  )
+
+  const getRowRefCallback = useCallback(
+    (rowIndex: number) => {
+      const existingCallback = rowRefCallbacksRef.current.get(rowIndex)
+      if (existingCallback) {
+        return existingCallback
+      }
+
+      const callback = (node: HTMLDivElement | null) => {
+        observeRow(rowIndex, node)
+      }
+
+      rowRefCallbacksRef.current.set(rowIndex, callback)
+      return callback
+    },
+    [observeRow]
   )
 
   // Update container size and handle scroll
@@ -1259,9 +1290,7 @@ export const Library: React.FC<LibraryProps> = ({
   const rowGap = isGrid ? GRID_GAP : LIST_GAP
   const cols = isGrid ? getGridCols(containerWidth) : 1
   const totalRows = Math.ceil(filteredAndSortedClips.length / cols)
-  const estimatedRowHeight = isGrid
-    ? estimateGridRowHeight(containerWidth, cols)
-    : LIST_CARD_HEIGHT
+  const estimatedRowHeight = isGrid ? estimateGridRowHeight(containerWidth, cols) : LIST_CARD_HEIGHT
   const averageMeasuredRowHeight = useMemo(() => {
     const values = Object.values(measuredRowHeights)
     if (values.length === 0) {
@@ -1297,10 +1326,7 @@ export const Library: React.FC<LibraryProps> = ({
   const visibleStartIndex = visibleStartRow * cols
   const visibleEndIndex = Math.min(filteredAndSortedClips.length, visibleEndRow * cols)
   const topSpacerHeight = rowOffsets[visibleStartRow] ?? 0
-  const bottomSpacerHeight = Math.max(
-    0,
-    totalHeight - (rowOffsets[visibleEndRow] ?? totalHeight)
-  )
+  const bottomSpacerHeight = Math.max(0, totalHeight - (rowOffsets[visibleEndRow] ?? totalHeight))
   const visibleRows = useMemo(() => {
     const rows: Array<{ rowIndex: number; clips: ClipInfo[] }> = []
 
@@ -1317,6 +1343,21 @@ export const Library: React.FC<LibraryProps> = ({
 
     return rows
   }, [cols, filteredAndSortedClips, visibleEndIndex, visibleEndRow, visibleStartRow])
+
+  const rowCompositionKey = useMemo(
+    () =>
+      [libraryState.viewMode, cols, filteredAndSortedClips.map(clip => clip.id).join('|')].join(
+        '::'
+      ),
+    [cols, filteredAndSortedClips, libraryState.viewMode]
+  )
+
+  useEffect(() => {
+    setMeasuredRowHeights({})
+    rowResizeObserversRef.current.forEach(observer => observer.disconnect())
+    rowResizeObserversRef.current.clear()
+    rowNodesRef.current.clear()
+  }, [rowCompositionKey])
 
   useEffect(() => {
     if (!hoverPreviewClipId) {
@@ -1738,11 +1779,7 @@ export const Library: React.FC<LibraryProps> = ({
       </div>
 
       {/* Content */}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-6"
-      >
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-6">
         {loading ? (
           <div className="flex h-full items-center justify-center">
             <div className="flex flex-col items-center gap-4 text-text-muted">
@@ -1781,7 +1818,7 @@ export const Library: React.FC<LibraryProps> = ({
             {visibleRows.map(({ rowIndex, clips: rowClips }) => (
               <div
                 key={rowIndex}
-                ref={node => observeRow(rowIndex, node)}
+                ref={getRowRefCallback(rowIndex)}
                 style={{ paddingBottom: rowIndex < totalRows - 1 ? rowGap : 0 }}
               >
                 <div
