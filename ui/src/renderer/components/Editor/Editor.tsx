@@ -45,6 +45,25 @@ interface EditorProps {
   ) => { clip: ClipInfo; metadata: VideoMetadata } | null
 }
 
+const MIN_TRIM_LENGTH = 1
+
+const toFiniteNumber = (value: number | undefined | null): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 0
+  }
+
+  return value
+}
+
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max)
+
+const sanitizeDuration = (value: number | undefined | null): number => Math.max(0, toFiniteNumber(value))
+
+const getSafeTimelineDuration = (value: number): number => {
+  const duration = sanitizeDuration(value)
+  return duration > 0 ? duration : 1
+}
+
 const resolveAudioEnabled = (track?: AudioTrackSetting): boolean => {
   if (typeof track === 'boolean') return track
   return track?.enabled ?? true
@@ -143,6 +162,34 @@ export const Editor: FC<EditorProps> = ({
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const flushPendingEditorStateRef = useRef<(() => Promise<boolean>) | null>(null)
   const [isEditorHydrated, setIsEditorHydrated] = useState(false)
+  const safeDuration = getSafeTimelineDuration(duration)
+  const minTrimLength = Math.min(MIN_TRIM_LENGTH, safeDuration)
+  const clampedTrimStart = clamp(toFiniteNumber(trimStart), 0, safeDuration)
+  const clampedTrimEnd = clamp(toFiniteNumber(trimEnd), clampedTrimStart, safeDuration)
+  const clampedCurrentTime = clamp(toFiniteNumber(currentTime), 0, safeDuration)
+
+  const syncTimelineBounds = useCallback(
+    (nextDuration: number, options?: { forceTrimEnd?: boolean }) => {
+      const sanitizedDuration = sanitizeDuration(nextDuration)
+      setDuration(sanitizedDuration)
+
+      if (sanitizedDuration <= 0) {
+        setTrimStart(0)
+        setTrimEnd(0)
+        setCurrentTime(0)
+        return
+      }
+
+      setTrimStart(prev => clamp(toFiniteNumber(prev), 0, sanitizedDuration))
+      setTrimEnd(prev =>
+        options?.forceTrimEnd
+          ? sanitizedDuration
+          : clamp(toFiniteNumber(prev), 0, sanitizedDuration)
+      )
+      setCurrentTime(prev => clamp(toFiniteNumber(prev), 0, sanitizedDuration))
+    },
+    []
+  )
 
   // Load settings
   useEffect(() => {
@@ -204,8 +251,8 @@ export const Editor: FC<EditorProps> = ({
 
           // Apply trim markers from persisted state when available.
           if (clipMetadata.trim) {
-            setTrimStart(clipMetadata.trim.start)
-            setTrimEnd(clipMetadata.trim.end)
+            setTrimStart(Math.max(0, toFiniteNumber(clipMetadata.trim.start)))
+            setTrimEnd(Math.max(0, toFiniteNumber(clipMetadata.trim.end)))
             isTrimEndFromMetadataRef.current = true
           }
 
@@ -234,9 +281,12 @@ export const Editor: FC<EditorProps> = ({
 
           // Apply playhead position
           if (clipMetadata.playheadPosition !== undefined) {
-            setCurrentTime(clipMetadata.playheadPosition)
+            setCurrentTime(Math.max(0, toFiniteNumber(clipMetadata.playheadPosition)))
             if (videoRef.current) {
-              videoRef.current.currentTime = clipMetadata.playheadPosition
+              videoRef.current.currentTime = Math.max(
+                0,
+                toFiniteNumber(clipMetadata.playheadPosition)
+              )
             }
           }
         }
@@ -258,13 +308,11 @@ export const Editor: FC<EditorProps> = ({
 
   // Update duration when metadata changes
   useEffect(() => {
-    if (metadata.duration) {
-      setDuration(metadata.duration)
-      if (trimEnd === 0 || trimEnd > metadata.duration) {
-        setTrimEnd(metadata.duration)
-      }
+    const nextDuration = sanitizeDuration(metadata.duration)
+    if (nextDuration > 0) {
+      syncTimelineBounds(nextDuration, { forceTrimEnd: trimEnd === 0 })
     }
-  }, [metadata])
+  }, [metadata, syncTimelineBounds, trimEnd])
 
   // Reset one-shot audio recovery state when switching clips
   useEffect(() => {
@@ -303,8 +351,8 @@ export const Editor: FC<EditorProps> = ({
       tags,
       game,
       trim: {
-        start: trimStart,
-        end: trimEnd,
+        start: clampedTrimStart,
+        end: clampedTrimEnd,
       },
       audio: {
         track1: {
@@ -318,22 +366,27 @@ export const Editor: FC<EditorProps> = ({
           volume: audioTrack2Volume,
         },
       },
-      playheadPosition: videoRef.current?.currentTime ?? currentTime,
+      playheadPosition: clamp(
+        toFiniteNumber(videoRef.current?.currentTime ?? clampedCurrentTime),
+        0,
+        safeDuration
+      ),
       lastModified: new Date().toISOString(),
     }
   }, [
     isFavorite,
     tags,
     game,
-    trimStart,
-    trimEnd,
+    clampedTrimStart,
+    clampedTrimEnd,
     audioTrack1,
     audioTrack2,
     audioTrack1Muted,
     audioTrack2Muted,
     audioTrack1Volume,
     audioTrack2Volume,
-    currentTime,
+    clampedCurrentTime,
+    safeDuration,
   ])
 
   const persistEditorState = useCallback(async () => {
@@ -815,7 +868,10 @@ export const Editor: FC<EditorProps> = ({
     if (!video) return
 
     const handleLoadedMetadata = () => {
-      setDuration(video.duration)
+      syncTimelineBounds(video.duration, {
+        forceTrimEnd: !isTrimEndFromMetadataRef.current,
+      })
+      isVideoDurationSetRef.current = true
     }
 
     const handlePlay = () => {
@@ -868,7 +924,7 @@ export const Editor: FC<EditorProps> = ({
       video.removeEventListener('ended', handleEnded)
       stopRafLoop()
     }
-  }, [trimStart, trimEnd, startRafLoop, stopRafLoop, stopAudioPlayback])
+  }, [trimStart, trimEnd, startRafLoop, stopRafLoop, stopAudioPlayback, syncTimelineBounds])
 
   // Handle video load errors - fallback to IPC file url
   const handleVideoError = useCallback(async () => {
@@ -1040,11 +1096,11 @@ export const Editor: FC<EditorProps> = ({
       const rect = timelineRef.current.getBoundingClientRect()
       const x = e.clientX - rect.left
       const percentage = Math.max(0, Math.min(1, x / rect.width))
-      const time = percentage * duration
+      const time = percentage * safeDuration
 
       seek(time)
     },
-    [duration, isDragging, seek]
+    [isDragging, safeDuration, seek]
   )
 
   const handleMarkerDragStart = useCallback((marker: 'start' | 'end') => {
@@ -1062,12 +1118,12 @@ export const Editor: FC<EditorProps> = ({
       const rect = timelineRef.current.getBoundingClientRect()
       const x = e.clientX - rect.left
       const percentage = Math.max(0, Math.min(1, x / rect.width))
-      const time = percentage * duration
+      const time = percentage * safeDuration
 
       if (isDragging === 'start') {
-        setTrimStart(Math.min(trimEnd - 1, Math.max(0, time)))
+        setTrimStart(Math.min(clampedTrimEnd - minTrimLength, Math.max(0, time)))
       } else if (isDragging === 'end') {
-        setTrimEnd(Math.max(trimStart + 1, Math.min(duration, time)))
+        setTrimEnd(Math.max(clampedTrimStart + minTrimLength, Math.min(safeDuration, time)))
       } else if (isDragging === 'playhead') {
         seek(time)
       }
@@ -1086,7 +1142,7 @@ export const Editor: FC<EditorProps> = ({
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [isDragging, duration, trimStart, trimEnd, seek])
+  }, [clampedTrimEnd, clampedTrimStart, isDragging, minTrimLength, safeDuration, seek])
 
   // Format time display
   const formatTime = (seconds: number): string => {
@@ -1450,12 +1506,11 @@ export const Editor: FC<EditorProps> = ({
                   !isVideoDurationSetRef.current
                 ) {
                   const videoDuration = video.duration
-                  setDuration(videoDuration)
-                  if (!isTrimEndFromMetadataRef.current) {
-                    setTrimEnd(videoDuration)
-                    isVideoDurationSetRef.current = true
-                    console.log('[Editor] Set trimEnd to video duration:', videoDuration)
-                  }
+                  syncTimelineBounds(videoDuration, {
+                    forceTrimEnd: !isTrimEndFromMetadataRef.current,
+                  })
+                  isVideoDurationSetRef.current = true
+                  console.log('[Editor] Synced duration from video metadata:', videoDuration)
                 }
               }}
               playsInline
@@ -1491,28 +1546,28 @@ export const Editor: FC<EditorProps> = ({
               {/* Cut region - before trim start (grayed out) */}
               <div
                 className="absolute bottom-0 top-0 rounded-l-full bg-text-muted/20"
-                style={{ left: '0%', width: `${(trimStart / duration) * 100}%` }}
+                style={{ left: '0%', width: `${(clampedTrimStart / safeDuration) * 100}%` }}
               />
 
               {/* Cut region - after trim end (grayed out) */}
               <div
                 className="absolute bottom-0 top-0 rounded-r-full bg-text-muted/20"
-                style={{ left: `${(trimEnd / duration) * 100}%`, right: '0%' }}
+                style={{ left: `${(clampedTrimEnd / safeDuration) * 100}%`, right: '0%' }}
               />
 
               {/* Trim region */}
               <div
                 className="absolute inset-y-0 rounded-full bg-accent-primary/20"
                 style={{
-                  left: `${(trimStart / duration) * 100}%`,
-                  right: `${100 - (trimEnd / duration) * 100}%`,
+                  left: `${(clampedTrimStart / safeDuration) * 100}%`,
+                  right: `${100 - (clampedTrimEnd / safeDuration) * 100}%`,
                 }}
               />
 
               {/* Playhead - full height, vertically centered */}
               <div
                 className="absolute inset-y-0 w-0.5 cursor-ew-resize bg-white"
-                style={{ left: `${(currentTime / duration) * 100}%` }}
+                style={{ left: `${(clampedCurrentTime / safeDuration) * 100}%` }}
                 onMouseDown={e => {
                   e.stopPropagation()
                   handlePlayheadDragStart()
@@ -1524,7 +1579,7 @@ export const Editor: FC<EditorProps> = ({
               {/* Start trim marker - pin style extending above */}
               <div
                 className="absolute bottom-0 w-1 cursor-ew-resize bg-accent-primary transition-all hover:w-1.5"
-                style={{ left: `${(trimStart / duration) * 100}%`, height: '200%', top: '-100%' }}
+                style={{ left: `${(clampedTrimStart / safeDuration) * 100}%`, height: '200%', top: '-100%' }}
                 onMouseDown={e => {
                   e.stopPropagation()
                   handleMarkerDragStart('start')
@@ -1536,7 +1591,7 @@ export const Editor: FC<EditorProps> = ({
               {/* End trim marker - pin style extending above */}
               <div
                 className="absolute bottom-0 w-1 cursor-ew-resize bg-accent-primary transition-all hover:w-1.5"
-                style={{ left: `${(trimEnd / duration) * 100}%`, height: '200%', top: '-100%' }}
+                style={{ left: `${(clampedTrimEnd / safeDuration) * 100}%`, height: '200%', top: '-100%' }}
                 onMouseDown={e => {
                   e.stopPropagation()
                   handleMarkerDragStart('end')
