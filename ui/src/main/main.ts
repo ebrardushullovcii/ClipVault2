@@ -2645,25 +2645,6 @@ const validateExternalUrl = (
     url: parsed.toString(),
   }
 }
-
-const getSocialShareConfig = (settings: NormalizedSettings, filePath: string) => {
-  const context = getShareTemplateContext(filePath)
-  const discordTemplate = settings.social.discord.default_message_template
-  const youtubeTemplate = settings.social.youtube.default_title_template
-
-  return {
-    context,
-    discordConfigured: Boolean(settings.social.discord.webhook_url),
-    youtubeConnected: Boolean(settings.social.youtube.refresh_token),
-    youtubeChannelTitle: settings.social.youtube.channel_title,
-    defaultDiscordMessage: renderShareTemplate(discordTemplate, context),
-    defaultYouTubeTitle: renderShareTemplate(youtubeTemplate, context),
-    defaultYouTubeDescription: settings.social.youtube.default_description,
-    defaultYouTubePrivacy: settings.social.youtube.default_privacy,
-    defaultYouTubeTags: settings.social.youtube.default_tags,
-  }
-}
-
 type DiscordWebhookMessage = {
   id?: string
   channel_id?: string
@@ -3117,10 +3098,6 @@ async function createExportPreviewWindow(filePath: string) {
     exportPreviewWindow.close()
   }
 
-  const settings = await readNormalizedSettings()
-  const shareConfig = getSocialShareConfig(settings, safeFilePath)
-  const safeShareConfig = JSON.stringify(shareConfig).replace(/</g, '\\u003c')
-
   exportPreviewWindow = new BrowserWindow({
     width: 980,
     height: 760,
@@ -3161,7 +3138,6 @@ async function createExportPreviewWindow(filePath: string) {
   const htmlContent = renderHtmlTemplate(exportPreviewTemplate, {
     VIDEO_URL: videoUrl,
     ESCAPED_FILE_PATH: escapedFilePath,
-    SAFE_SHARE_CONFIG: safeShareConfig,
   })
 
   exportPreviewWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(htmlContent))
