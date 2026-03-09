@@ -714,14 +714,14 @@ export const Library: React.FC<LibraryProps> = ({
       return
     }
 
-    const handleMouseLeave = () => {
+    const handlePointerLeave = () => {
       stopHoverPreview()
     }
 
-    scrollElement.addEventListener('mouseleave', handleMouseLeave)
+    scrollElement.addEventListener('pointerleave', handlePointerLeave)
 
     return () => {
-      scrollElement.removeEventListener('mouseleave', handleMouseLeave)
+      scrollElement.removeEventListener('pointerleave', handlePointerLeave)
     }
   }, [scrollRef, stopHoverPreview])
 

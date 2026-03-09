@@ -285,7 +285,9 @@ function App() {
           onOpenEditor={handleOpenEditor}
           onRegisterUpdate={handleRegisterLibraryUpdate}
           onRegisterNavigation={handleRegisterLibraryNavigation}
-          hoverPreviewEnabled={appSettings?.ui?.library_hover_preview !== false}
+          hoverPreviewEnabled={
+            appSettings !== null && appSettings.ui?.library_hover_preview !== false
+          }
         />
       </div>
 

@@ -1271,7 +1271,7 @@ export const Editor: FC<EditorProps> = ({
         audioBuffer1Ref.current = null
         audioBuffer2Ref.current = null
         hasRetriedAudioDecodeRef.current = false
-        forceAudioReextractRef.current = false
+        forceAudioReextractRef.current = true
         setAudioExtractionKey(k => k + 1)
       }
     } catch (error) {
