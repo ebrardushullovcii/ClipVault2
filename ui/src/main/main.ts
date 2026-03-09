@@ -1248,8 +1248,12 @@ const readNormalizedSettings = async (): Promise<NormalizedSettings> => {
 
 const sanitizeSettingsForRenderer = (settings: NormalizedSettings): NormalizedSettings => {
   const safe = normalizeSettings(settings, true)
+  safe.social.discord.webhook_url = safe.social.discord.webhook_url
+    ? DISCORD_WEBHOOK_RENDERER_PLACEHOLDER
+    : ''
   safe.social.youtube.access_token = ''
   safe.social.youtube.refresh_token = ''
+  safe.social.youtube.token_expiry = 0
   safe.social.youtube.client_secret = ''
   return safe
 }
@@ -1294,6 +1298,8 @@ const GAME_TAG_SMALL_WORDS = new Set([
 let cachedGameAliasMap: Map<string, string> | null = null
 let cachedGameAliasMapSourcePath: string | null = null
 let cachedGameAliasMapSourceMtimeMs = 0
+const DISCORD_WEBHOOK_RENDERER_PLACEHOLDER = 'configured'
+const SAFE_CLIP_ID_REGEX = /^[A-Za-z0-9_-]+$/
 
 const getGamesDatabasePaths = (): string[] => {
   return [
@@ -1427,6 +1433,10 @@ const loadGamesDatabaseFromDisk = async (): Promise<GamesDatabaseResult> => {
 
 const ensureGameAliasMapLoaded = async (): Promise<Map<string, string>> => {
   const result = await loadGamesDatabaseFromDisk()
+  if (!result.success) {
+    return cachedGameAliasMap ?? new Map<string, string>()
+  }
+
   const sourcePath = result.sourcePath ?? null
   const sourceMtimeMs = result.sourceMtimeMs ?? 0
 
@@ -1446,6 +1456,33 @@ const ensureGameAliasMapLoaded = async (): Promise<Map<string, string>> => {
 
   return cachedGameAliasMap
 }
+
+const ensureSafeClipScopedPath = (rootPath: string, clipId: string, suffix: string): string => {
+  if (typeof clipId !== 'string' || !SAFE_CLIP_ID_REGEX.test(clipId)) {
+    throw new Error('Invalid clip ID.')
+  }
+
+  const resolvedRoot = resolve(rootPath)
+  const resolvedPath = resolve(resolvedRoot, `${clipId}${suffix}`)
+
+  if (!isPathWithinRoot(resolvedRoot, resolvedPath)) {
+    throw new Error('Clip path escapes the allowed root.')
+  }
+
+  return resolvedPath
+}
+
+const ensureSafeClipMetadataPath = (clipId: string): string =>
+  ensureSafeClipScopedPath(join(getClipsPath(), 'clips-metadata'), clipId, '.json')
+
+const ensureSafeClipVideoPath = (clipId: string): string =>
+  ensureSafeClipScopedPath(getClipsPath(), clipId, '.mp4')
+
+const ensureSafeClipThumbnailPath = (clipId: string): string =>
+  ensureSafeClipScopedPath(thumbnailsPath, clipId, '.jpg')
+
+const ensureSafeClipAudioCachePath = (clipId: string, trackNumber: 1 | 2): string =>
+  ensureSafeClipScopedPath(join(thumbnailsPath, 'audio'), clipId, `_track${trackNumber}.m4a`)
 
 const canonicalizeGameTag = (rawGameTag: string, aliasMap: Map<string, string>): string => {
   const trimmed = rawGameTag.trim()
@@ -1518,6 +1555,13 @@ ipcMain.handle('settings:save', async (_, settings: unknown) => {
     const configDir = getConfigDir()
     const normalized = normalizeSettings(settings, true)
     const existingSettings = await readNormalizedSettings()
+    const incomingWebhookUrl = normalized.social.discord.webhook_url.trim()
+
+    if (!incomingWebhookUrl) {
+      normalized.social.discord.webhook_url = ''
+    } else if (incomingWebhookUrl === DISCORD_WEBHOOK_RENDERER_PLACEHOLDER) {
+      normalized.social.discord.webhook_url = existingSettings.social.discord.webhook_url
+    }
 
     const incomingClientId = normalized.social.youtube.client_id.trim()
     const incomingClientSecret = normalized.social.youtube.client_secret.trim()
@@ -1786,7 +1830,7 @@ ipcMain.handle('clips:saveMetadata', async (_, clipId: string, metadata: unknown
     if (!existsSync(metadataDir)) {
       await mkdir(metadataDir, { recursive: true })
     }
-    const metadataPath = join(metadataDir, `${clipId}.json`)
+    const metadataPath = ensureSafeClipMetadataPath(clipId)
     const gameAliasMap = await ensureGameAliasMapLoaded()
 
     let metadataToSave: unknown = metadata
@@ -1810,8 +1854,7 @@ ipcMain.handle('clips:saveMetadata', async (_, clipId: string, metadata: unknown
 // Get clip metadata
 ipcMain.handle('clips:getMetadata', async (_, clipId: string) => {
   try {
-    const metadataDir = join(getClipsPath(), 'clips-metadata')
-    const metadataPath = join(metadataDir, `${clipId}.json`)
+    const metadataPath = ensureSafeClipMetadataPath(clipId)
     if (!existsSync(metadataPath)) {
       return null
     }
@@ -1838,35 +1881,30 @@ ipcMain.handle('clips:getMetadata', async (_, clipId: string) => {
 // Delete clip
 ipcMain.handle('clips:delete', async (_, clipId: string) => {
   try {
-    const clipsPath = getClipsPath()
-
     // Delete video file
-    const videoPath = join(clipsPath, `${clipId}.mp4`)
+    const videoPath = ensureSafeClipVideoPath(clipId)
     if (existsSync(videoPath)) {
       await fsUnlinkAsync(videoPath)
       console.log('[Main] Deleted video file:', videoPath)
     }
 
     // Delete metadata file
-    const metadataDir = join(clipsPath, 'clips-metadata')
-    const metadataPath = join(metadataDir, `${clipId}.json`)
+    const metadataPath = ensureSafeClipMetadataPath(clipId)
     if (existsSync(metadataPath)) {
       await fsUnlinkAsync(metadataPath)
       console.log('[Main] Deleted metadata file:', metadataPath)
     }
 
     // Delete thumbnail if exists
-    const thumbnailsPath = join(app.getPath('userData'), 'thumbnails')
-    const thumbnailPath = join(thumbnailsPath, `${clipId}.jpg`)
+    const thumbnailPath = ensureSafeClipThumbnailPath(clipId)
     if (existsSync(thumbnailPath)) {
       await fsUnlinkAsync(thumbnailPath)
       console.log('[Main] Deleted thumbnail:', thumbnailPath)
     }
 
     // Delete audio cache if exists
-    const audioCachePath = join(thumbnailsPath, 'audio')
-    const track1Path = join(audioCachePath, `${clipId}_track1.m4a`)
-    const track2Path = join(audioCachePath, `${clipId}_track2.m4a`)
+    const track1Path = ensureSafeClipAudioCachePath(clipId, 1)
+    const track2Path = ensureSafeClipAudioCachePath(clipId, 2)
     if (existsSync(track1Path)) {
       await fsUnlinkAsync(track1Path)
     }
@@ -1888,7 +1926,7 @@ ipcMain.handle('editor:saveState', async (_, clipId: string, state: unknown) => 
     if (!existsSync(metadataDir)) {
       await mkdir(metadataDir, { recursive: true })
     }
-    const statePath = join(metadataDir, `${clipId}.json`)
+    const statePath = ensureSafeClipMetadataPath(clipId)
     // Merge with existing metadata if any
     const existingContent = existsSync(statePath)
       ? JSON.parse(await readFile(statePath, 'utf-8'))
@@ -1913,8 +1951,7 @@ ipcMain.handle('editor:saveState', async (_, clipId: string, state: unknown) => 
 // Load editor state
 ipcMain.handle('editor:loadState', async (_, clipId: string) => {
   try {
-    const metadataDir = join(getClipsPath(), 'clips-metadata')
-    const statePath = join(metadataDir, `${clipId}.json`)
+    const statePath = ensureSafeClipMetadataPath(clipId)
 
     if (!existsSync(statePath)) {
       return null
@@ -2007,7 +2044,7 @@ ipcMain.handle('clips:generateThumbnail', async (_, clipId: string, videoPath: s
     }
 
     const thumbnailFilename = `${clipId}.jpg`
-    const thumbnailPath = join(thumbnailsPath, thumbnailFilename)
+    const thumbnailPath = ensureSafeClipThumbnailPath(clipId)
 
     if (existsSync(thumbnailPath)) {
       return `clipvault://thumb/${encodeURIComponent(thumbnailFilename)}`
@@ -2604,7 +2641,13 @@ const sanitizeMultipartFilename = (fileName: string): string => {
   return sanitized || 'clip.mp4'
 }
 
-const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
+const ALLOWED_EXTERNAL_HOSTS = [
+  'discord.com',
+  'google.com',
+  'googleapis.com',
+  'support.discord.com',
+  'youtube.com',
+]
 
 const validateExternalUrl = (
   candidateUrl: string
@@ -2622,21 +2665,26 @@ const validateExternalUrl = (
   } catch {
     return {
       valid: false,
-      error: 'invalid URL',
+      error: 'invalid-url',
     }
   }
 
-  if (!ALLOWED_EXTERNAL_PROTOCOLS.has(parsed.protocol)) {
+  if (parsed.protocol !== 'https:' || !parsed.hostname) {
     return {
       valid: false,
-      error: 'unsupported URL protocol',
+      error: 'disallowed-url',
     }
   }
 
-  if ((parsed.protocol === 'http:' || parsed.protocol === 'https:') && !parsed.hostname) {
+  const hostname = parsed.hostname.toLowerCase()
+  const hostAllowed = ALLOWED_EXTERNAL_HOSTS.some(
+    allowedHost => hostname === allowedHost || hostname.endsWith(`.${allowedHost}`)
+  )
+
+  if (!hostAllowed) {
     return {
       valid: false,
-      error: 'invalid URL',
+      error: 'disallowed-url',
     }
   }
 
@@ -3710,8 +3758,8 @@ ipcMain.handle(
       await mkdir(audioCachePath, { recursive: true })
     }
 
-    const track1Path = join(audioCachePath, `${clipId}_track1.m4a`)
-    const track2Path = join(audioCachePath, `${clipId}_track2.m4a`)
+    const track1Path = ensureSafeClipAudioCachePath(clipId, 1)
+    const track2Path = ensureSafeClipAudioCachePath(clipId, 2)
 
     const results: { track1?: string; track2?: string; error?: string } = {}
     const track1Url = `clipvault://audio/${encodeURIComponent(`${clipId}_track1.m4a`)}`
@@ -4046,7 +4094,7 @@ ipcMain.handle(
 
         // Step 5: Update metadata - reset trim markers and playhead
         const metadataDir = join(dirname(clipPath), 'clips-metadata')
-        const metadataPath = join(metadataDir, `${clipId}.json`)
+        const metadataPath = ensureSafeClipScopedPath(metadataDir, clipId, '.json')
         if (existsSync(metadataPath)) {
           const existing: Record<string, unknown> = JSON.parse(
             await readFile(metadataPath, 'utf-8')
@@ -4070,13 +4118,12 @@ ipcMain.handle(
 
       // Step 6: Delete cached thumbnail and audio tracks so they regenerate
       try {
-        const thumbPath = join(thumbnailsPath, `${clipId}.jpg`)
+        const thumbPath = ensureSafeClipThumbnailPath(clipId)
         if (existsSync(thumbPath)) {
           await fsUnlinkAsync(thumbPath)
         }
-        const audioCachePath = join(thumbnailsPath, 'audio')
-        const track1Path = join(audioCachePath, `${clipId}_track1.m4a`)
-        const track2Path = join(audioCachePath, `${clipId}_track2.m4a`)
+        const track1Path = ensureSafeClipAudioCachePath(clipId, 1)
+        const track2Path = ensureSafeClipAudioCachePath(clipId, 2)
         if (existsSync(track1Path)) await fsUnlinkAsync(track1Path)
         if (existsSync(track2Path)) await fsUnlinkAsync(track2Path)
       } catch (cacheErr) {

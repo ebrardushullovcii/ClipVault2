@@ -51,6 +51,7 @@ config/settings.local.json
 temp_obs/
 temp_obs.zip
 tmp_copy.sh
+qa-evidence/
 
 # Test scripts
 test_nvenc.bat

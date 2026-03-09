@@ -45,6 +45,25 @@ interface EditorProps {
   ) => { clip: ClipInfo; metadata: VideoMetadata } | null
 }
 
+const MIN_TRIM_LENGTH = 1
+
+const toFiniteNumber = (value: number | undefined | null): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 0
+  }
+
+  return value
+}
+
+const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max)
+
+const sanitizeDuration = (value: number | undefined | null): number => Math.max(0, toFiniteNumber(value))
+
+const getSafeTimelineDuration = (value: number): number => {
+  const duration = sanitizeDuration(value)
+  return duration > 0 ? duration : 1
+}
+
 const resolveAudioEnabled = (track?: AudioTrackSetting): boolean => {
   if (typeof track === 'boolean') return track
   return track?.enabled ?? true
@@ -70,6 +89,7 @@ export const Editor: FC<EditorProps> = ({
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null)
   const timelineRef = useRef<HTMLDivElement>(null)
+  const [resolvedMetadata, setResolvedMetadata] = useState(metadata)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(metadata.duration || 0)
@@ -100,7 +120,7 @@ export const Editor: FC<EditorProps> = ({
 
   // Trim markers (in seconds)
   const [trimStart, setTrimStart] = useState(clip.metadata?.trim?.start ?? 0)
-  const [trimEnd, setTrimEnd] = useState(clip.metadata?.trim?.end ?? metadata.duration ?? 0)
+  const [trimEnd, setTrimEnd] = useState(clip.metadata?.trim?.end ?? resolvedMetadata.duration ?? 0)
   const [isDragging, setIsDragging] = useState<'start' | 'end' | 'playhead' | null>(null)
 
   // Audio tracks (for export selection)
@@ -143,6 +163,80 @@ export const Editor: FC<EditorProps> = ({
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const flushPendingEditorStateRef = useRef<(() => Promise<boolean>) | null>(null)
   const [isEditorHydrated, setIsEditorHydrated] = useState(false)
+  const safeDuration = getSafeTimelineDuration(duration)
+  const minTrimLength = Math.min(MIN_TRIM_LENGTH, safeDuration)
+  const clampedTrimStart = clamp(toFiniteNumber(trimStart), 0, safeDuration)
+  const clampedTrimEnd = clamp(toFiniteNumber(trimEnd), clampedTrimStart, safeDuration)
+  const clampedCurrentTime = clamp(toFiniteNumber(currentTime), 0, safeDuration)
+  const hasResolvedDimensions = resolvedMetadata.width > 0 && resolvedMetadata.height > 0
+  const hasResolvedFps = resolvedMetadata.fps > 0
+  const hasResolvedBitrate = resolvedMetadata.bitrate > 0
+
+  useEffect(() => {
+    setResolvedMetadata(metadata)
+  }, [metadata, clip.id])
+
+  useEffect(() => {
+    if (metadata.duration > 0 && metadata.width > 0 && metadata.height > 0 && metadata.fps > 0) {
+      return
+    }
+
+    let cancelled = false
+
+    const loadResolvedMetadata = async () => {
+      try {
+        const nextMetadata = await window.electronAPI.getVideoMetadata(clip.path)
+        if (!cancelled) {
+          setResolvedMetadata(nextMetadata)
+        }
+      } catch (error) {
+        console.error('[Editor] Failed to load video metadata:', error)
+      }
+    }
+
+    void loadResolvedMetadata()
+
+    return () => {
+      cancelled = true
+    }
+  }, [clip.path, clip.id, metadata])
+
+  const syncTimelineBounds = useCallback(
+    (nextDuration: number, options?: { forceTrimEnd?: boolean }) => {
+      const sanitizedDuration = sanitizeDuration(nextDuration)
+      setDuration(sanitizedDuration)
+
+      if (sanitizedDuration <= 0) {
+        setTrimStart(0)
+        setTrimEnd(0)
+        setCurrentTime(0)
+        return
+      }
+
+      setTrimStart(prevTrimStart => {
+        const newTrimStart = clamp(toFiniteNumber(prevTrimStart), 0, sanitizedDuration)
+
+        setTrimEnd(prevTrimEnd => {
+          const newTrimEnd = options?.forceTrimEnd
+            ? sanitizedDuration
+            : clamp(
+                toFiniteNumber(prevTrimEnd),
+                Math.min(newTrimStart + MIN_TRIM_LENGTH, sanitizedDuration),
+                sanitizedDuration
+              )
+
+          setCurrentTime(prevCurrentTime =>
+            clamp(toFiniteNumber(prevCurrentTime), newTrimStart, newTrimEnd)
+          )
+
+          return newTrimEnd
+        })
+
+        return newTrimStart
+      })
+    },
+    []
+  )
 
   // Load settings
   useEffect(() => {
@@ -175,14 +269,14 @@ export const Editor: FC<EditorProps> = ({
         const fallbackTrack1 = clip.metadata?.audio?.track1
         const fallbackTrack2 = clip.metadata?.audio?.track2
         const fallbackTrimStart = clip.metadata?.trim?.start ?? 0
-        const fallbackTrimEnd = clip.metadata?.trim?.end ?? metadata.duration ?? 0
+        const fallbackTrimEnd = clip.metadata?.trim?.end ?? resolvedMetadata.duration ?? 0
         const fallbackPlayhead = clip.metadata?.playheadPosition ?? 0
 
         isVideoDurationSetRef.current = false
         isTrimEndFromMetadataRef.current = clip.metadata?.trim?.end !== undefined
 
         // Reset all editor state to clip-specific defaults before applying persisted metadata.
-        setDuration(metadata.duration || 0)
+        setDuration(resolvedMetadata.duration || 0)
         setTrimStart(fallbackTrimStart)
         setTrimEnd(fallbackTrimEnd)
         setAudioTrack1(resolveAudioEnabled(fallbackTrack1))
@@ -204,8 +298,8 @@ export const Editor: FC<EditorProps> = ({
 
           // Apply trim markers from persisted state when available.
           if (clipMetadata.trim) {
-            setTrimStart(clipMetadata.trim.start)
-            setTrimEnd(clipMetadata.trim.end)
+            setTrimStart(Math.max(0, toFiniteNumber(clipMetadata.trim.start)))
+            setTrimEnd(Math.max(0, toFiniteNumber(clipMetadata.trim.end)))
             isTrimEndFromMetadataRef.current = true
           }
 
@@ -234,9 +328,12 @@ export const Editor: FC<EditorProps> = ({
 
           // Apply playhead position
           if (clipMetadata.playheadPosition !== undefined) {
-            setCurrentTime(clipMetadata.playheadPosition)
+            setCurrentTime(Math.max(0, toFiniteNumber(clipMetadata.playheadPosition)))
             if (videoRef.current) {
-              videoRef.current.currentTime = clipMetadata.playheadPosition
+              videoRef.current.currentTime = Math.max(
+                0,
+                toFiniteNumber(clipMetadata.playheadPosition)
+              )
             }
           }
         }
@@ -258,13 +355,11 @@ export const Editor: FC<EditorProps> = ({
 
   // Update duration when metadata changes
   useEffect(() => {
-    if (metadata.duration) {
-      setDuration(metadata.duration)
-      if (trimEnd === 0 || trimEnd > metadata.duration) {
-        setTrimEnd(metadata.duration)
-      }
+    const nextDuration = sanitizeDuration(resolvedMetadata.duration)
+    if (nextDuration > 0) {
+      syncTimelineBounds(nextDuration, { forceTrimEnd: trimEnd === 0 })
     }
-  }, [metadata])
+  }, [resolvedMetadata, syncTimelineBounds, trimEnd])
 
   // Reset one-shot audio recovery state when switching clips
   useEffect(() => {
@@ -303,8 +398,8 @@ export const Editor: FC<EditorProps> = ({
       tags,
       game,
       trim: {
-        start: trimStart,
-        end: trimEnd,
+        start: clampedTrimStart,
+        end: clampedTrimEnd,
       },
       audio: {
         track1: {
@@ -318,22 +413,27 @@ export const Editor: FC<EditorProps> = ({
           volume: audioTrack2Volume,
         },
       },
-      playheadPosition: videoRef.current?.currentTime ?? currentTime,
+      playheadPosition: clamp(
+        toFiniteNumber(videoRef.current?.currentTime ?? clampedCurrentTime),
+        0,
+        safeDuration
+      ),
       lastModified: new Date().toISOString(),
     }
   }, [
     isFavorite,
     tags,
     game,
-    trimStart,
-    trimEnd,
+    clampedTrimStart,
+    clampedTrimEnd,
     audioTrack1,
     audioTrack2,
     audioTrack1Muted,
     audioTrack2Muted,
     audioTrack1Volume,
     audioTrack2Volume,
-    currentTime,
+    clampedCurrentTime,
+    safeDuration,
   ])
 
   const persistEditorState = useCallback(async () => {
@@ -560,7 +660,7 @@ export const Editor: FC<EditorProps> = ({
         audioBuffer2Ref.current = null
       }
 
-      if (!window.electronAPI?.extractAudioTracks || metadata.audioTracks < 1) {
+      if (!window.electronAPI?.extractAudioTracks || resolvedMetadata.audioTracks < 1) {
         if (!cancelled) {
           setAudioTrack1Src(null)
           setAudioTrack2Src(null)
@@ -610,7 +710,7 @@ export const Editor: FC<EditorProps> = ({
     return () => {
       cancelled = true
     }
-  }, [clip.id, clip.path, metadata.audioTracks, audioExtractionKey])
+  }, [clip.id, clip.path, resolvedMetadata.audioTracks, audioExtractionKey])
 
   // Update gain node values when volume/mute/track enabled changes
   useEffect(() => {
@@ -815,7 +915,10 @@ export const Editor: FC<EditorProps> = ({
     if (!video) return
 
     const handleLoadedMetadata = () => {
-      setDuration(video.duration)
+      syncTimelineBounds(video.duration, {
+        forceTrimEnd: !isTrimEndFromMetadataRef.current,
+      })
+      isVideoDurationSetRef.current = true
     }
 
     const handlePlay = () => {
@@ -868,7 +971,7 @@ export const Editor: FC<EditorProps> = ({
       video.removeEventListener('ended', handleEnded)
       stopRafLoop()
     }
-  }, [trimStart, trimEnd, startRafLoop, stopRafLoop, stopAudioPlayback])
+  }, [trimStart, trimEnd, startRafLoop, stopRafLoop, stopAudioPlayback, syncTimelineBounds])
 
   // Handle video load errors - fallback to IPC file url
   const handleVideoError = useCallback(async () => {
@@ -962,8 +1065,8 @@ export const Editor: FC<EditorProps> = ({
 
   const skipFrame = useCallback(
     (direction: 'back' | 'forward') => {
-      if (videoRef.current && metadata.fps > 0) {
-        const frameTime = 1 / metadata.fps
+      if (videoRef.current && resolvedMetadata.fps > 0) {
+        const frameTime = 1 / resolvedMetadata.fps
         const adjustment = direction === 'forward' ? frameTime : -frameTime
         const newTime = Math.max(0, Math.min(duration, currentTime + adjustment))
         videoRef.current.currentTime = newTime
@@ -975,7 +1078,7 @@ export const Editor: FC<EditorProps> = ({
         }
       }
     },
-    [currentTime, duration, metadata.fps, isPlaying, startAudioPlayback, updateLoopIntent]
+    [currentTime, duration, resolvedMetadata.fps, isPlaying, startAudioPlayback, updateLoopIntent]
   )
 
   const seek = useCallback(
@@ -1040,11 +1143,11 @@ export const Editor: FC<EditorProps> = ({
       const rect = timelineRef.current.getBoundingClientRect()
       const x = e.clientX - rect.left
       const percentage = Math.max(0, Math.min(1, x / rect.width))
-      const time = percentage * duration
+      const time = percentage * safeDuration
 
       seek(time)
     },
-    [duration, isDragging, seek]
+    [isDragging, safeDuration, seek]
   )
 
   const handleMarkerDragStart = useCallback((marker: 'start' | 'end') => {
@@ -1062,12 +1165,12 @@ export const Editor: FC<EditorProps> = ({
       const rect = timelineRef.current.getBoundingClientRect()
       const x = e.clientX - rect.left
       const percentage = Math.max(0, Math.min(1, x / rect.width))
-      const time = percentage * duration
+      const time = percentage * safeDuration
 
       if (isDragging === 'start') {
-        setTrimStart(Math.min(trimEnd - 1, Math.max(0, time)))
+        setTrimStart(Math.min(clampedTrimEnd - minTrimLength, Math.max(0, time)))
       } else if (isDragging === 'end') {
-        setTrimEnd(Math.max(trimStart + 1, Math.min(duration, time)))
+        setTrimEnd(Math.max(clampedTrimStart + minTrimLength, Math.min(safeDuration, time)))
       } else if (isDragging === 'playhead') {
         seek(time)
       }
@@ -1086,7 +1189,7 @@ export const Editor: FC<EditorProps> = ({
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [isDragging, duration, trimStart, trimEnd, seek])
+  }, [clampedTrimEnd, clampedTrimStart, isDragging, minTrimLength, safeDuration, seek])
 
   // Format time display
   const formatTime = (seconds: number): string => {
@@ -1358,8 +1461,13 @@ export const Editor: FC<EditorProps> = ({
           <div>
             <h2 className="font-semibold text-text-primary">{clip.filename.replace('.mp4', '')}</h2>
             <p className="text-xs text-text-muted">
-              {metadata.width}x{metadata.height} • {Math.round(metadata.fps)}fps •{' '}
-              {Math.round(metadata.bitrate / 1000)}kbps
+              {hasResolvedDimensions
+                ? `${resolvedMetadata.width}x${resolvedMetadata.height}`
+                : 'Resolution pending'}
+              {' • '}
+              {hasResolvedFps ? `${Math.round(resolvedMetadata.fps)}fps` : 'FPS pending'}
+              {' • '}
+              {hasResolvedBitrate ? `${Math.round(resolvedMetadata.bitrate / 1000)}kbps` : 'Bitrate pending'}
             </p>
           </div>
         </div>
@@ -1450,12 +1558,11 @@ export const Editor: FC<EditorProps> = ({
                   !isVideoDurationSetRef.current
                 ) {
                   const videoDuration = video.duration
-                  setDuration(videoDuration)
-                  if (!isTrimEndFromMetadataRef.current) {
-                    setTrimEnd(videoDuration)
-                    isVideoDurationSetRef.current = true
-                    console.log('[Editor] Set trimEnd to video duration:', videoDuration)
-                  }
+                  syncTimelineBounds(videoDuration, {
+                    forceTrimEnd: !isTrimEndFromMetadataRef.current,
+                  })
+                  isVideoDurationSetRef.current = true
+                  console.log('[Editor] Synced duration from video metadata:', videoDuration)
                 }
               }}
               playsInline
@@ -1491,28 +1598,28 @@ export const Editor: FC<EditorProps> = ({
               {/* Cut region - before trim start (grayed out) */}
               <div
                 className="absolute bottom-0 top-0 rounded-l-full bg-text-muted/20"
-                style={{ left: '0%', width: `${(trimStart / duration) * 100}%` }}
+                style={{ left: '0%', width: `${(clampedTrimStart / safeDuration) * 100}%` }}
               />
 
               {/* Cut region - after trim end (grayed out) */}
               <div
                 className="absolute bottom-0 top-0 rounded-r-full bg-text-muted/20"
-                style={{ left: `${(trimEnd / duration) * 100}%`, right: '0%' }}
+                style={{ left: `${(clampedTrimEnd / safeDuration) * 100}%`, right: '0%' }}
               />
 
               {/* Trim region */}
               <div
                 className="absolute inset-y-0 rounded-full bg-accent-primary/20"
                 style={{
-                  left: `${(trimStart / duration) * 100}%`,
-                  right: `${100 - (trimEnd / duration) * 100}%`,
+                  left: `${(clampedTrimStart / safeDuration) * 100}%`,
+                  right: `${100 - (clampedTrimEnd / safeDuration) * 100}%`,
                 }}
               />
 
               {/* Playhead - full height, vertically centered */}
               <div
                 className="absolute inset-y-0 w-0.5 cursor-ew-resize bg-white"
-                style={{ left: `${(currentTime / duration) * 100}%` }}
+                style={{ left: `${(clampedCurrentTime / safeDuration) * 100}%` }}
                 onMouseDown={e => {
                   e.stopPropagation()
                   handlePlayheadDragStart()
@@ -1524,7 +1631,7 @@ export const Editor: FC<EditorProps> = ({
               {/* Start trim marker - pin style extending above */}
               <div
                 className="absolute bottom-0 w-1 cursor-ew-resize bg-accent-primary transition-all hover:w-1.5"
-                style={{ left: `${(trimStart / duration) * 100}%`, height: '200%', top: '-100%' }}
+                style={{ left: `${(clampedTrimStart / safeDuration) * 100}%`, height: '200%', top: '-100%' }}
                 onMouseDown={e => {
                   e.stopPropagation()
                   handleMarkerDragStart('start')
@@ -1536,7 +1643,7 @@ export const Editor: FC<EditorProps> = ({
               {/* End trim marker - pin style extending above */}
               <div
                 className="absolute bottom-0 w-1 cursor-ew-resize bg-accent-primary transition-all hover:w-1.5"
-                style={{ left: `${(trimEnd / duration) * 100}%`, height: '200%', top: '-100%' }}
+                style={{ left: `${(clampedTrimEnd / safeDuration) * 100}%`, height: '200%', top: '-100%' }}
                 onMouseDown={e => {
                   e.stopPropagation()
                   handleMarkerDragStart('end')
@@ -1746,12 +1853,14 @@ export const Editor: FC<EditorProps> = ({
                     const v = e.target.value
                     setExportFps(v === 'original' ? 'original' : Number(v))
                   }}
-                  disabled={isExporting}
+                  disabled={isExporting || !hasResolvedFps}
                   className="rounded-md bg-background-tertiary px-2 py-1 text-sm text-text-secondary"
                 >
-                  <option value="original">Original ({Math.round(metadata.fps)})</option>
+                  <option value="original">
+                    {hasResolvedFps ? `Original (${Math.round(resolvedMetadata.fps)})` : 'Original (Unknown)'}
+                  </option>
                   {[30, 60, 120, 144]
-                    .filter((fps) => fps <= Math.round(metadata.fps))
+                    .filter((fps) => fps <= Math.round(resolvedMetadata.fps))
                     .map((fps) => (
                       <option key={fps} value={String(fps)}>
                         {fps}
@@ -1764,11 +1873,13 @@ export const Editor: FC<EditorProps> = ({
                 <select
                   value={exportResolution}
                   onChange={e => setExportResolution(e.target.value)}
-                  disabled={isExporting}
+                  disabled={isExporting || !hasResolvedDimensions}
                   className="rounded-md bg-background-tertiary px-2 py-1 text-sm text-text-secondary"
                 >
                   <option value="original">
-                    Original ({metadata.width}x{metadata.height})
+                    {hasResolvedDimensions
+                      ? `Original (${resolvedMetadata.width}x${resolvedMetadata.height})`
+                      : 'Original (Unknown)'}
                   </option>
                   {[
                     { label: '720p', value: '1280x720', w: 1280, h: 720 },
@@ -1776,7 +1887,7 @@ export const Editor: FC<EditorProps> = ({
                     { label: '1440p', value: '2560x1440', w: 2560, h: 1440 },
                     { label: '4K', value: '3840x2160', w: 3840, h: 2160 },
                   ]
-                    .filter((r) => r.w <= metadata.width && r.h <= metadata.height)
+                    .filter((r) => r.w <= resolvedMetadata.width && r.h <= resolvedMetadata.height)
                     .map((r) => (
                       <option key={r.value} value={r.value}>
                         {r.label}
