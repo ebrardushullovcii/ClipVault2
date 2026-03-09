@@ -386,8 +386,9 @@ bool ReplayManager::save_clip()
     }
     LOG_INFO("[REPLAY] Status: Active = YES");
 
-    // Check if save already pending
-    if (save_pending_.load()) {
+    // Atomically claim the right to start a save.
+    bool expected_save_pending = false;
+    if (!save_pending_.compare_exchange_strong(expected_save_pending, true)) {
         last_error_ = "Save already in progress";
         LOG_WARNING("[REPLAY] " + last_error_);
         return false;
@@ -412,7 +413,6 @@ bool ReplayManager::save_clip()
     LOG_INFO("    Desktop Audio: " + std::string(audio.system_audio_enabled ? "enabled" : "disabled"));
     LOG_INFO("    Microphone: " + std::string(audio.microphone_enabled ? "enabled" : "disabled"));
     
-    save_pending_.store(true);
     FILETIME save_start_ft;
     GetSystemTimeAsFileTime(&save_start_ft);
     ULARGE_INTEGER save_start_uli;
@@ -455,7 +455,9 @@ bool ReplayManager::save_clip()
 
 void ReplayManager::log_pipeline_stats()
 {
-    if (!replay_output_ || !active_.load()) return;
+    if (!replay_output_ || !active_.load()) {
+        return;
+    }
     
     LOG_INFO("[REPLAY] ==========================================");
     LOG_INFO("[REPLAY] PIPELINE STATS");
@@ -772,7 +774,9 @@ void ReplayManager::render_thread_loop()
 
 void ReplayManager::log_performance_stats()
 {
-    if (!active_.load() || !replay_output_) return;
+    if (!active_.load() || !replay_output_) {
+        return;
+    }
 
     LOG_INFO("[PERF] ==========================================");
     LOG_INFO("[PERF] PERFORMANCE STATS");

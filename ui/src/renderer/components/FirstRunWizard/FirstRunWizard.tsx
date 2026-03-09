@@ -58,7 +58,7 @@ const bufferOptions = [
 
 type OpenFolderResult = {
   canceled: boolean
-  filePaths: string[]
+  filePaths?: string[]
 }
 
 const isOpenFolderResult = (value: unknown): value is OpenFolderResult => {
@@ -67,11 +67,15 @@ const isOpenFolderResult = (value: unknown): value is OpenFolderResult => {
   }
 
   const candidate = value as { canceled?: unknown; filePaths?: unknown }
-  return (
-    typeof candidate.canceled === 'boolean' &&
-    Array.isArray(candidate.filePaths) &&
-    candidate.filePaths.every(path => typeof path === 'string')
-  )
+  if (typeof candidate.canceled !== 'boolean') {
+    return false
+  }
+
+  if (candidate.filePaths === undefined) {
+    return candidate.canceled
+  }
+
+  return Array.isArray(candidate.filePaths) && candidate.filePaths.every(path => typeof path === 'string')
 }
 
 const formatHotkey = (hotkey: string): string => {
@@ -301,8 +305,9 @@ export const FirstRunWizard: React.FC<FirstRunWizardProps> = ({
         throw new Error('Invalid folder picker response')
       }
 
-      if (!result.canceled && result.filePaths.length > 0) {
-        const [selectedPath] = result.filePaths
+      const filePaths = result.filePaths ?? []
+      if (!result.canceled && filePaths.length > 0) {
+        const [selectedPath] = filePaths
         setSettings(prev => ({ ...prev, output_path: selectedPath }))
       }
     } catch (error) {

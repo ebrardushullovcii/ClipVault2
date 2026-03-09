@@ -61,6 +61,8 @@ npm run package:portable
 
 Output: `ui\release\ClipVault-Portable.exe` (portable app)
 
+Smoke test after packaging: launch `ui\release\win-unpacked\ClipVault.exe` once to confirm the packaged app starts before testing the portable artifact.
+
 ### Installer
 
 ```powershell
@@ -95,6 +97,8 @@ ui/release/
 ```
 
 Use `ClipVault-Setup-X.Y.Z.exe` if you want the normal Windows install flow, Start menu/Search entry, and uninstall registration. `win-unpacked\ClipVault.exe` only launches the app directly and does not install it.
+
+Release smoke test: after packaging, run `ui\release\win-unpacked\ClipVault.exe` to verify the packaged app boots successfully before handing off the portable or installer artifacts.
 
 ## Troubleshooting
 

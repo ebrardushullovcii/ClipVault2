@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect, useReducer } from 'react'
 import { AppLayout } from './components/Layout/AppLayout'
 import { Library } from './components/Library/Library'
 import { Editor } from './components/Editor/Editor'
@@ -28,6 +28,45 @@ type LibraryNavigationResolver = (
   direction: ClipNavigationDirection
 ) => AdjacentClipResult | null
 
+type HistoryState = {
+  history: HistoryEntry[]
+  historyIndex: number
+}
+
+type HistoryAction =
+  | {
+      type: 'ADD_HISTORY'
+      entry: HistoryEntry
+    }
+  | {
+      type: 'SET_HISTORY_INDEX'
+      historyIndex: number
+    }
+
+const initialHistoryState: HistoryState = {
+  history: [{ type: 'library' }],
+  historyIndex: 0,
+}
+
+const historyReducer = (state: HistoryState, action: HistoryAction): HistoryState => {
+  switch (action.type) {
+    case 'ADD_HISTORY': {
+      const history = [...state.history.slice(0, state.historyIndex + 1), action.entry]
+      return {
+        history,
+        historyIndex: history.length - 1,
+      }
+    }
+    case 'SET_HISTORY_INDEX':
+      return {
+        ...state,
+        historyIndex: action.historyIndex,
+      }
+    default:
+      return state
+  }
+}
+
 function App() {
   const [currentView, setCurrentView] = useState<View>('library')
   const [selectedClip, setSelectedClip] = useState<ClipInfo | null>(null)
@@ -37,8 +76,10 @@ function App() {
   const [firstRunSettings, setFirstRunSettings] = useState<AppSettings | null>(null)
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null)
   // Navigation history for browser-like back/forward
-  const [history, setHistory] = useState<HistoryEntry[]>([{ type: 'library' }])
-  const [historyIndex, setHistoryIndex] = useState(0)
+  const [{ history, historyIndex }, dispatchHistory] = useReducer(
+    historyReducer,
+    initialHistoryState
+  )
   // Ref to hold the Library's update function
   const libraryUpdateRef = useRef<((clipId: string, metadata: ClipMetadata) => void) | null>(null)
   // Ref to hold the Library's clip navigation resolver
@@ -84,16 +125,9 @@ function App() {
   }, [])
 
   // Add entry to history when opening a clip
-  const addToHistory = useCallback(
-    (entry: HistoryEntry) => {
-      setHistory(prev => {
-        const newHistory = prev.slice(0, historyIndex + 1)
-        return [...newHistory, entry]
-      })
-      setHistoryIndex(historyIndex + 1)
-    },
-    [historyIndex]
-  )
+  const addToHistory = useCallback((entry: HistoryEntry) => {
+    dispatchHistory({ type: 'ADD_HISTORY', entry })
+  }, [])
 
   // Go back in history
   const goBack = useCallback(() => {
@@ -101,7 +135,7 @@ function App() {
       isNavigatingRef.current = true
       const newIndex = historyIndex - 1
       const entry = history[newIndex]
-      setHistoryIndex(newIndex)
+      dispatchHistory({ type: 'SET_HISTORY_INDEX', historyIndex: newIndex })
 
       if (entry.type === 'library') {
         setShowEditor(false)
@@ -124,7 +158,7 @@ function App() {
       isNavigatingRef.current = true
       const newIndex = historyIndex + 1
       const entry = history[newIndex]
-      setHistoryIndex(newIndex)
+      dispatchHistory({ type: 'SET_HISTORY_INDEX', historyIndex: newIndex })
 
       if (entry.type === 'library') {
         setShowEditor(false)

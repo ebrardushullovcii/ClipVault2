@@ -1350,12 +1350,7 @@ const isSafeClipId = (clipId: string): boolean => {
 }
 
 const isSafeProtocolFilename = (fileName: string, expectedExtension: string): boolean => {
-  if (
-    !fileName.trim() ||
-    WINDOWS_RESERVED_FILENAME_CHARS_REGEX.test(fileName) ||
-    fileName.includes('/') ||
-    fileName.includes('\\')
-  ) {
+  if (!fileName.trim() || WINDOWS_RESERVED_FILENAME_CHARS_REGEX.test(fileName)) {
     return false
   }
 
