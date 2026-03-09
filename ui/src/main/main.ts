@@ -3595,6 +3595,15 @@ ipcMain.handle('social:youtube:pollDeviceAuth', async (_, params: { deviceCode: 
       }
     }
 
+    if (!payload.refresh_token) {
+      removeYouTubeDeviceAuthSession(deviceCode)
+      return {
+        success: false,
+        error:
+          'No refresh token returned from YouTube OAuth. Revoke ClipVault access in Google Account and try connecting again.',
+      }
+    }
+
     const channel = await fetchYouTubeChannel(payload.access_token)
     const settings = await readNormalizedSettings()
     settings.social.youtube.auth_mode = authSession.mode
@@ -3603,20 +3612,10 @@ ipcMain.handle('social:youtube:pollDeviceAuth', async (_, params: { deviceCode: 
       settings.social.youtube.client_secret = authSession.clientSecret
     }
     settings.social.youtube.access_token = payload.access_token
-    settings.social.youtube.refresh_token =
-      payload.refresh_token || settings.social.youtube.refresh_token
+    settings.social.youtube.refresh_token = payload.refresh_token
     settings.social.youtube.token_expiry = Date.now() + (payload.expires_in || 3600) * 1000
     settings.social.youtube.channel_id = channel.channelId
     settings.social.youtube.channel_title = channel.channelTitle
-
-    if (!settings.social.youtube.refresh_token) {
-      removeYouTubeDeviceAuthSession(deviceCode)
-      return {
-        success: false,
-        error:
-          'No refresh token returned. Revoke ClipVault access in Google Account and try connecting again.',
-      }
-    }
 
     await persistNormalizedSettings(settings)
     removeYouTubeDeviceAuthSession(deviceCode)
@@ -3862,6 +3861,17 @@ ipcMain.handle(
       const videoStats = await stat(canonicalVideoPath)
       if (!videoStats.isFile()) {
         throw new Error('Audio extraction source must be a file.')
+      }
+
+      let canonicalExpectedVideoPath: string
+      try {
+        canonicalExpectedVideoPath = await fsRealpath(ensureSafeClipVideoPath(clipId))
+      } catch {
+        throw new Error('Audio extraction rejected because the clip ID does not match an existing clip.')
+      }
+
+      if (canonicalExpectedVideoPath.toLowerCase() !== canonicalVideoPath.toLowerCase()) {
+        throw new Error('Audio extraction rejected because the clip ID does not match the requested clip file.')
       }
 
       // Ensure audio cache directory exists

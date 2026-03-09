@@ -42,6 +42,11 @@ type HistoryAction =
       type: 'SET_HISTORY_INDEX'
       historyIndex: number
     }
+  | {
+      type: 'SYNC_CLIP_METADATA'
+      clipId: string
+      metadata: ClipMetadata
+    }
 
 const initialHistoryState: HistoryState = {
   history: [{ type: 'library' }],
@@ -61,6 +66,26 @@ const historyReducer = (state: HistoryState, action: HistoryAction): HistoryStat
       return {
         ...state,
         historyIndex: action.historyIndex,
+      }
+    case 'SYNC_CLIP_METADATA':
+      return {
+        ...state,
+        history: state.history.map(entry => {
+          if (!entry.clip || entry.clip.id !== action.clipId) {
+            return entry
+          }
+
+          return {
+            ...entry,
+            clip: {
+              ...entry.clip,
+              metadata: {
+                ...(entry.clip.metadata ?? {}),
+                ...action.metadata,
+              },
+            },
+          }
+        }),
       }
     default:
       return state
@@ -131,6 +156,10 @@ function App() {
 
   // Go back in history
   const goBack = useCallback(() => {
+    if (currentView === 'settings') {
+      return
+    }
+
     if (historyIndex > 0) {
       isNavigatingRef.current = true
       const newIndex = historyIndex - 1
@@ -150,10 +179,14 @@ function App() {
         isNavigatingRef.current = false
       }, 100)
     }
-  }, [history, historyIndex])
+  }, [currentView, history, historyIndex])
 
   // Go forward in history
   const goForward = useCallback(() => {
+    if (currentView === 'settings') {
+      return
+    }
+
     if (historyIndex < history.length - 1) {
       isNavigatingRef.current = true
       const newIndex = historyIndex + 1
@@ -173,7 +206,7 @@ function App() {
         isNavigatingRef.current = false
       }, 100)
     }
-  }, [history, historyIndex])
+  }, [currentView, history, historyIndex])
 
   const handleOpenEditor = useCallback(
     (clip: ClipInfo, metadata: VideoMetadata) => {
@@ -285,6 +318,18 @@ function App() {
   const handleSaveMetadata = useCallback(async (clipId: string, metadata: ClipMetadata) => {
     try {
       await window.electronAPI.saveClipMetadata(clipId, metadata)
+      setSelectedClip(prev =>
+        prev && prev.id === clipId
+          ? {
+              ...prev,
+              metadata: {
+                ...(prev.metadata ?? {}),
+                ...metadata,
+              },
+            }
+          : prev
+      )
+      dispatchHistory({ type: 'SYNC_CLIP_METADATA', clipId, metadata })
       if (libraryUpdateRef.current) {
         libraryUpdateRef.current(clipId, metadata)
       }
