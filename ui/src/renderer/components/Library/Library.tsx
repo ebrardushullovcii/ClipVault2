@@ -39,12 +39,44 @@ export interface LibraryProps {
 }
 
 // Constants for virtualization
-const GRID_CARD_HEIGHT = 240
-const LIST_CARD_HEIGHT = 88
+const DEFAULT_LIBRARY_WIDTH = 1200
+const LIBRARY_HORIZONTAL_PADDING = 48
+const GRID_CARD_INFO_HEIGHT = 96
+const LIST_CARD_HEIGHT = 140
 const GRID_GAP = 16
 const LIST_GAP = 16
 const OVERSCAN_ROWS = 2
 const HOVER_PREVIEW_DELAY_MS = 160
+
+const estimateGridRowHeight = (containerWidth: number, cols: number): number => {
+  const safeWidth = containerWidth || DEFAULT_LIBRARY_WIDTH
+  const contentWidth = Math.max(safeWidth - LIBRARY_HORIZONTAL_PADDING, 0)
+  const totalGapWidth = GRID_GAP * Math.max(0, cols - 1)
+  const cardWidth = cols > 0 ? Math.max((contentWidth - totalGapWidth) / cols, 0) : 0
+  const thumbnailHeight = cardWidth * (9 / 16)
+  return Math.ceil(thumbnailHeight + GRID_CARD_INFO_HEIGHT)
+}
+
+const findRowForOffset = (rowOffsets: number[], offset: number): number => {
+  if (rowOffsets.length <= 1) {
+    return 0
+  }
+
+  const clampedOffset = Math.max(0, offset)
+  let low = 0
+  let high = rowOffsets.length - 2
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2)
+    if (rowOffsets[mid + 1] <= clampedOffset) {
+      low = mid + 1
+    } else {
+      high = mid - 1
+    }
+  }
+
+  return Math.min(Math.max(low, 0), rowOffsets.length - 2)
+}
 
 const resolveAudioEnabled = (track?: AudioTrackSetting): boolean => {
   if (typeof track === 'boolean') return track
@@ -61,7 +93,9 @@ export const Library: React.FC<LibraryProps> = ({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
+  const [containerWidth, setContainerWidth] = useState(DEFAULT_LIBRARY_WIDTH)
   const [containerHeight, setContainerHeight] = useState(0)
+  const [measuredRowHeights, setMeasuredRowHeights] = useState<Record<number, number>>({})
   const [editingGameClip, setEditingGameClip] = useState<ClipInfo | null>(null)
   const [selectedClipIds, setSelectedClipIds] = useState<Set<string>>(new Set())
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -85,6 +119,7 @@ export const Library: React.FC<LibraryProps> = ({
   const pendingHoverPreviewClipIdRef = useRef<string | null>(null)
   const lastSelectedIndexRef = useRef<number | null>(null)
   const bulkMessageTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const rowResizeObserversRef = useRef<Map<number, ResizeObserver>>(new Map())
   const [showGameModal, setShowGameModal] = useState(false)
   const [bulkGameMode, setBulkGameMode] = useState<'add' | 'remove'>('add')
   const [bulkGameValue, setBulkGameValue] = useState('')
@@ -1122,6 +1157,13 @@ export const Library: React.FC<LibraryProps> = ({
     }
   }, [selectionActive, showExportSizeDropdown])
 
+  useEffect(() => {
+    return () => {
+      rowResizeObserversRef.current.forEach(observer => observer.disconnect())
+      rowResizeObserversRef.current.clear()
+    }
+  }, [])
+
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes'
     const k = 1024
@@ -1142,19 +1184,65 @@ export const Library: React.FC<LibraryProps> = ({
     })
   }
 
-  // Update container height and handle scroll
+  const updateMeasuredRowHeight = useCallback((rowIndex: number, height: number) => {
+    const nextHeight = Math.ceil(height)
+    setMeasuredRowHeights(prev => {
+      if (prev[rowIndex] === nextHeight) {
+        return prev
+      }
+      return { ...prev, [rowIndex]: nextHeight }
+    })
+  }, [])
+
+  const observeRow = useCallback(
+    (rowIndex: number, node: HTMLDivElement | null) => {
+      const existingObserver = rowResizeObserversRef.current.get(rowIndex)
+      if (existingObserver) {
+        existingObserver.disconnect()
+        rowResizeObserversRef.current.delete(rowIndex)
+      }
+
+      if (!node) {
+        return
+      }
+
+      const measure = () => {
+        updateMeasuredRowHeight(rowIndex, node.getBoundingClientRect().height)
+      }
+
+      measure()
+
+      const observer = new ResizeObserver(() => {
+        measure()
+      })
+      observer.observe(node)
+      rowResizeObserversRef.current.set(rowIndex, observer)
+    },
+    [updateMeasuredRowHeight]
+  )
+
+  // Update container size and handle scroll
   useEffect(() => {
     const container = scrollRef.current
     if (!container) return
 
-    const updateHeight = () => {
-      setContainerHeight(container.clientHeight)
+    const updateSize = () => {
+      const nextWidth = container.clientWidth || DEFAULT_LIBRARY_WIDTH
+      const nextHeight = container.clientHeight
+
+      setContainerWidth(prev => (prev === nextWidth ? prev : nextWidth))
+      setContainerHeight(prev => (prev === nextHeight ? prev : nextHeight))
     }
 
-    updateHeight()
-    window.addEventListener('resize', updateHeight)
-    return () => window.removeEventListener('resize', updateHeight)
-  }, [])
+    updateSize()
+
+    const observer = new ResizeObserver(() => {
+      updateSize()
+    })
+    observer.observe(container)
+
+    return () => observer.disconnect()
+  }, [scrollRef])
 
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
@@ -1168,19 +1256,67 @@ export const Library: React.FC<LibraryProps> = ({
 
   // Calculate visible range for virtualization
   const isGrid = libraryState.viewMode === 'grid'
-  const rowHeight = isGrid ? GRID_CARD_HEIGHT + GRID_GAP : LIST_CARD_HEIGHT + LIST_GAP
-  const containerWidth = scrollRef.current?.clientWidth || 1200
+  const rowGap = isGrid ? GRID_GAP : LIST_GAP
   const cols = isGrid ? getGridCols(containerWidth) : 1
   const totalRows = Math.ceil(filteredAndSortedClips.length / cols)
+  const estimatedRowHeight = isGrid
+    ? estimateGridRowHeight(containerWidth, cols)
+    : LIST_CARD_HEIGHT
+  const averageMeasuredRowHeight = useMemo(() => {
+    const values = Object.values(measuredRowHeights)
+    if (values.length === 0) {
+      return null
+    }
+
+    return Math.round(values.reduce((sum, height) => sum + height, 0) / values.length)
+  }, [measuredRowHeights])
+
+  const rowOffsets = useMemo(() => {
+    const offsets = new Array<number>(totalRows + 1).fill(0)
+
+    for (let rowIndex = 0; rowIndex < totalRows; rowIndex++) {
+      const estimatedExtent = estimatedRowHeight + (rowIndex < totalRows - 1 ? rowGap : 0)
+      const rowHeight = measuredRowHeights[rowIndex] ?? averageMeasuredRowHeight ?? estimatedExtent
+      offsets[rowIndex + 1] = offsets[rowIndex] + rowHeight
+    }
+
+    return offsets
+  }, [averageMeasuredRowHeight, estimatedRowHeight, measuredRowHeights, rowGap, totalRows])
+  const totalHeight = rowOffsets[totalRows] ?? 0
 
   // Calculate which rows are visible
-  const visibleStartRow = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN_ROWS)
-  const visibleEndRow = Math.min(
-    totalRows,
-    Math.ceil((scrollTop + containerHeight) / rowHeight) + OVERSCAN_ROWS
-  )
+  const visibleStartRow =
+    totalRows === 0 ? 0 : Math.max(0, findRowForOffset(rowOffsets, scrollTop) - OVERSCAN_ROWS)
+  const visibleEndRow =
+    totalRows === 0
+      ? 0
+      : Math.min(
+          totalRows,
+          findRowForOffset(rowOffsets, scrollTop + containerHeight) + 1 + OVERSCAN_ROWS
+        )
   const visibleStartIndex = visibleStartRow * cols
   const visibleEndIndex = Math.min(filteredAndSortedClips.length, visibleEndRow * cols)
+  const topSpacerHeight = rowOffsets[visibleStartRow] ?? 0
+  const bottomSpacerHeight = Math.max(
+    0,
+    totalHeight - (rowOffsets[visibleEndRow] ?? totalHeight)
+  )
+  const visibleRows = useMemo(() => {
+    const rows: Array<{ rowIndex: number; clips: ClipInfo[] }> = []
+
+    for (let rowIndex = visibleStartRow; rowIndex < visibleEndRow; rowIndex++) {
+      const startIndex = rowIndex * cols
+      rows.push({
+        rowIndex,
+        clips: filteredAndSortedClips.slice(
+          startIndex,
+          Math.min(visibleEndIndex, startIndex + cols)
+        ),
+      })
+    }
+
+    return rows
+  }, [cols, filteredAndSortedClips, visibleEndIndex, visibleEndRow, visibleStartRow])
 
   useEffect(() => {
     if (!hoverPreviewClipId) {
@@ -1639,52 +1775,57 @@ export const Library: React.FC<LibraryProps> = ({
         ) : (
           <>
             {/* Spacer for rows above visible range */}
-            {visibleStartRow > 0 && <div style={{ height: visibleStartRow * rowHeight }} />}
+            {topSpacerHeight > 0 && <div style={{ height: topSpacerHeight }} />}
 
             {/* Visible clips grid */}
-            <div
-              className={`grid gap-4 ${
-                isGrid ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1'
-              }`}
-            >
-              {filteredAndSortedClips
-                .slice(visibleStartIndex, visibleEndIndex)
-                .map((clip, index) => {
-                  const clipIndex = visibleStartIndex + index
-                  return (
-                    <ClipCard
-                      key={clip.id}
-                      clip={clip}
-                      clipIndex={clipIndex}
-                      viewMode={libraryState.viewMode}
-                      formatFileSize={formatFileSize}
-                      formatDate={formatDate}
-                      thumbnailUrl={thumbnails[clip.id]}
-                      metadata={metadata[clip.id]}
-                      isSelected={selectedClipIds.has(clip.id)}
-                      showSelection={selectionActive}
-                      onGenerateThumbnail={generateThumbnail}
-                      onFetchMetadata={fetchMetadata}
-                      onCardClick={handleCardClick}
-                      onToggleSelect={handleToggleSelect}
-                      onEditGame={handleEditGame}
-                      previewSrc={
-                        hoverPreviewEnabled && hoverPreviewClipId === clip.id
-                          ? `clipvault://clip/${encodeURIComponent(clip.filename)}`
-                          : undefined
-                      }
-                      isPreviewActive={hoverPreviewEnabled && hoverPreviewClipId === clip.id}
-                      onPreviewStart={hoverPreviewEnabled ? requestHoverPreview : undefined}
-                      onPreviewStop={hoverPreviewEnabled ? stopHoverPreview : undefined}
-                    />
-                  )
-                })}
-            </div>
+            {visibleRows.map(({ rowIndex, clips: rowClips }) => (
+              <div
+                key={rowIndex}
+                ref={node => observeRow(rowIndex, node)}
+                style={{ paddingBottom: rowIndex < totalRows - 1 ? rowGap : 0 }}
+              >
+                <div
+                  className={isGrid ? 'grid gap-4' : 'grid grid-cols-1'}
+                  style={{
+                    gridTemplateColumns: isGrid ? `repeat(${cols}, minmax(0, 1fr))` : undefined,
+                  }}
+                >
+                  {rowClips.map((clip, index) => {
+                    const clipIndex = rowIndex * cols + index
+                    return (
+                      <ClipCard
+                        key={clip.id}
+                        clip={clip}
+                        clipIndex={clipIndex}
+                        viewMode={libraryState.viewMode}
+                        formatFileSize={formatFileSize}
+                        formatDate={formatDate}
+                        thumbnailUrl={thumbnails[clip.id]}
+                        metadata={metadata[clip.id]}
+                        isSelected={selectedClipIds.has(clip.id)}
+                        showSelection={selectionActive}
+                        onGenerateThumbnail={generateThumbnail}
+                        onFetchMetadata={fetchMetadata}
+                        onCardClick={handleCardClick}
+                        onToggleSelect={handleToggleSelect}
+                        onEditGame={handleEditGame}
+                        previewSrc={
+                          hoverPreviewEnabled && hoverPreviewClipId === clip.id
+                            ? `clipvault://clip/${encodeURIComponent(clip.filename)}`
+                            : undefined
+                        }
+                        isPreviewActive={hoverPreviewEnabled && hoverPreviewClipId === clip.id}
+                        onPreviewStart={hoverPreviewEnabled ? requestHoverPreview : undefined}
+                        onPreviewStop={hoverPreviewEnabled ? stopHoverPreview : undefined}
+                      />
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
 
             {/* Spacer for rows below visible range */}
-            {visibleEndRow < totalRows && (
-              <div style={{ height: (totalRows - visibleEndRow) * rowHeight }} />
-            )}
+            {bottomSpacerHeight > 0 && <div style={{ height: bottomSpacerHeight }} />}
           </>
         )}
       </div>
