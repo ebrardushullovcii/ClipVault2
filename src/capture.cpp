@@ -111,8 +111,6 @@ bool CaptureManager::create_video_source()
             capture_method_used = "monitor_capture";
             LOG_INFO("  Using monitor_capture (WGC method)");
         } else {
-            obs_api::data_release(settings);
-            
             // Fallback to window_capture
             settings = obs_api::data_create();
             

@@ -7,21 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Guidelines: add new entries at the top using a `YYYY-MM-DD` heading, and keep bullets short and user-facing.
+## [1.5.0] - 2026-03-09
 
-### 2026-02-05
+### Added
 
-- Repo tooling/docs updates: root npm build/package scripts, release templates, GPL license file, and troubleshooting command alternatives.
+- First-run setup wizard for new installs.
+- Bulk clip operations for selecting and managing multiple clips.
+- Game detection and tagging for saved clips.
+- Audio source selection and clip save sound feedback.
 
-### 2026-02-03
+### Fixed
 
-- Added a first-run setup wizard for new installs.
-- Added bulk clip operations for selecting and managing multiple clips.
-- Added clip save sound feedback.
-- Fixed export dropdown crash and window state persistence.
-- Documentation cleanup and repository hygiene updates.
+- Library/editor navigation regressions, including stale history state and settings-overlay back/forward behavior.
+- Thumbnail generation and audio extraction validation for existing clips and clip IDs.
+- Replay buffer lifecycle and save-state races during stop, shutdown, and repeated save requests.
+- Export dropdown, first-run folder picker, and window-state persistence issues.
 
-### 2026-02-02
+### Changed
 
-- Added game detection and tagging for clips.
-- Added audio source selection, encoder fixes, and library auto-refresh.
+- Packaging guidance now clearly distinguishes installer, portable, and unpacked smoke-test builds.
+- Repo tooling, release templates, GPL/license packaging, and troubleshooting docs were cleaned up and aligned.

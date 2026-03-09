@@ -55,9 +55,11 @@ const toFiniteNumber = (value: number | undefined | null): number => {
   return value
 }
 
-const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max)
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(Math.max(value, min), max)
 
-const sanitizeDuration = (value: number | undefined | null): number => Math.max(0, toFiniteNumber(value))
+const sanitizeDuration = (value: number | undefined | null): number =>
+  Math.max(0, toFiniteNumber(value))
 
 const getSafeTimelineDuration = (value: number): number => {
   const duration = sanitizeDuration(value)
@@ -849,7 +851,9 @@ export const Editor: FC<EditorProps> = ({
 
       const saved = await flushPendingEditorState()
       if (!saved) {
-        window.alert('Could not save current clip edits. Please resolve the save error and try again.')
+        window.alert(
+          'Could not save current clip edits. Please resolve the save error and try again.'
+        )
         return
       }
 
@@ -1419,19 +1423,19 @@ export const Editor: FC<EditorProps> = ({
             <X className="h-5 w-5" />
           </button>
           <div className="flex items-center gap-1 rounded-lg border border-border bg-background-secondary p-1">
-              <button
-                type="button"
-                onClick={() => {
-                  void handleNavigateClip('previous')
-                }}
-                disabled={!previousClip}
-                className="rounded-md p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
-                aria-label={
-                  previousClip
-                    ? `Previous clip: ${previousClip.clip.filename.replace('.mp4', '')}`
-                    : 'Previous clip'
-                }
-                title={
+            <button
+              type="button"
+              onClick={() => {
+                void handleNavigateClip('previous')
+              }}
+              disabled={!previousClip}
+              className="rounded-md p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
+              aria-label={
+                previousClip
+                  ? `Previous clip: ${previousClip.clip.filename.replace('.mp4', '')}`
+                  : 'Previous clip'
+              }
+              title={
                 previousClip
                   ? `Previous clip: ${previousClip.clip.filename.replace('.mp4', '')}`
                   : 'No previous clip in current filtered list'
@@ -1439,17 +1443,17 @@ export const Editor: FC<EditorProps> = ({
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void handleNavigateClip('next')
-                }}
-                disabled={!nextClip}
-                className="rounded-md p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
-                aria-label={
-                  nextClip ? `Next clip: ${nextClip.clip.filename.replace('.mp4', '')}` : 'Next clip'
-                }
-                title={
+            <button
+              type="button"
+              onClick={() => {
+                void handleNavigateClip('next')
+              }}
+              disabled={!nextClip}
+              className="rounded-md p-2 text-text-muted transition-colors hover:bg-background-tertiary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-muted"
+              aria-label={
+                nextClip ? `Next clip: ${nextClip.clip.filename.replace('.mp4', '')}` : 'Next clip'
+              }
+              title={
                 nextClip
                   ? `Next clip: ${nextClip.clip.filename.replace('.mp4', '')}`
                   : 'No next clip in current filtered list'
@@ -1467,7 +1471,9 @@ export const Editor: FC<EditorProps> = ({
               {' • '}
               {hasResolvedFps ? `${Math.round(resolvedMetadata.fps)}fps` : 'FPS pending'}
               {' • '}
-              {hasResolvedBitrate ? `${Math.round(resolvedMetadata.bitrate / 1000)}kbps` : 'Bitrate pending'}
+              {hasResolvedBitrate
+                ? `${Math.round(resolvedMetadata.bitrate / 1000)}kbps`
+                : 'Bitrate pending'}
             </p>
           </div>
         </div>
@@ -1631,7 +1637,11 @@ export const Editor: FC<EditorProps> = ({
               {/* Start trim marker - pin style extending above */}
               <div
                 className="absolute bottom-0 w-1 cursor-ew-resize bg-accent-primary transition-all hover:w-1.5"
-                style={{ left: `${(clampedTrimStart / safeDuration) * 100}%`, height: '200%', top: '-100%' }}
+                style={{
+                  left: `${(clampedTrimStart / safeDuration) * 100}%`,
+                  height: '200%',
+                  top: '-100%',
+                }}
                 onMouseDown={e => {
                   e.stopPropagation()
                   handleMarkerDragStart('start')
@@ -1643,7 +1653,11 @@ export const Editor: FC<EditorProps> = ({
               {/* End trim marker - pin style extending above */}
               <div
                 className="absolute bottom-0 w-1 cursor-ew-resize bg-accent-primary transition-all hover:w-1.5"
-                style={{ left: `${(clampedTrimEnd / safeDuration) * 100}%`, height: '200%', top: '-100%' }}
+                style={{
+                  left: `${(clampedTrimEnd / safeDuration) * 100}%`,
+                  height: '200%',
+                  top: '-100%',
+                }}
                 onMouseDown={e => {
                   e.stopPropagation()
                   handleMarkerDragStart('end')
@@ -1857,11 +1871,13 @@ export const Editor: FC<EditorProps> = ({
                   className="rounded-md bg-background-tertiary px-2 py-1 text-sm text-text-secondary"
                 >
                   <option value="original">
-                    {hasResolvedFps ? `Original (${Math.round(resolvedMetadata.fps)})` : 'Original (Unknown)'}
+                    {hasResolvedFps
+                      ? `Original (${Math.round(resolvedMetadata.fps)})`
+                      : 'Original (Unknown)'}
                   </option>
                   {[30, 60, 120, 144]
-                    .filter((fps) => fps <= Math.round(resolvedMetadata.fps))
-                    .map((fps) => (
+                    .filter(fps => fps <= Math.round(resolvedMetadata.fps))
+                    .map(fps => (
                       <option key={fps} value={String(fps)}>
                         {fps}
                       </option>
@@ -1887,8 +1903,8 @@ export const Editor: FC<EditorProps> = ({
                     { label: '1440p', value: '2560x1440', w: 2560, h: 1440 },
                     { label: '4K', value: '3840x2160', w: 3840, h: 2160 },
                   ]
-                    .filter((r) => r.w <= resolvedMetadata.width && r.h <= resolvedMetadata.height)
-                    .map((r) => (
+                    .filter(r => r.w <= resolvedMetadata.width && r.h <= resolvedMetadata.height)
+                    .map(r => (
                       <option key={r.value} value={r.value}>
                         {r.label}
                       </option>

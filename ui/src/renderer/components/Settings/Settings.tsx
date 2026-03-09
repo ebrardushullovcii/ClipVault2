@@ -62,7 +62,6 @@ const allResolutionPresets = [
 
 // FPS options
 const fpsOptions = [30, 60, 120, 144]
-const CONFIGURED_WEBHOOK_PLACEHOLDER = 'configured'
 
 // Calculate estimated file size
 const calculateEstimatedSize = (
@@ -342,7 +341,9 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
       setSaveSuccess(restartSucceeded)
 
       if (!restartSucceeded) {
-        setError('Settings saved, but the backend restart failed. Restart it manually to apply changes.')
+        setError(
+          'Settings saved, but the backend restart failed. Restart it manually to apply changes.'
+        )
         return
       }
 
