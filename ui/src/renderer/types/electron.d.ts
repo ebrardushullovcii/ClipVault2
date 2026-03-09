@@ -100,9 +100,6 @@ export interface AppSettings {
       auth_mode?: 'managed' | 'custom'
       client_id?: string
       client_secret?: string
-      refresh_token?: string
-      access_token?: string
-      token_expiry?: number
       channel_id?: string
       channel_title?: string
       default_privacy?: 'private' | 'unlisted' | 'public'

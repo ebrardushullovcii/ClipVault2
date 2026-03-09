@@ -73,6 +73,7 @@ const allResolutionPresets = [
 
 // FPS options
 const fpsOptions = [30, 60, 120, 144]
+const CONFIGURED_WEBHOOK_PLACEHOLDER = 'configured'
 
 // Calculate estimated file size
 const calculateEstimatedSize = (
@@ -494,6 +495,12 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
       return
     }
 
+    if (webhookUrl === CONFIGURED_WEBHOOK_PLACEHOLDER) {
+      setDiscordTestStatus('error')
+      setDiscordTestMessage('Enter a replacement webhook URL to test it.')
+      return
+    }
+
     setDiscordTestStatus('loading')
     setDiscordTestMessage('Testing webhook...')
 
@@ -580,9 +587,6 @@ export const Settings: React.FC<SettingsProps> = ({ onClose, onSettingsSaved }) 
             ...(prev.social || {}),
             youtube: {
               ...(prev.social?.youtube || {}),
-              access_token: '',
-              refresh_token: '',
-              token_expiry: 0,
               channel_id: '',
               channel_title: '',
             },
