@@ -261,7 +261,7 @@ void ReplayManager::shutdown()
     }
 
     while (true) {
-        LifecycleState state;
+        LifecycleState state = LifecycleState::Inactive;
         {
             std::unique_lock<std::mutex> lock(lifecycle_mutex_);
             lifecycle_cv_.wait(lock, [this]() {
